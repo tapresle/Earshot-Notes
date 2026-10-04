@@ -25,9 +25,9 @@ pub struct MeetingDetail {
     pub notes_updated_at: i64,
 }
 
-const MEETING_COLUMNS: &str = "m.id, m.title, m.created_at, m.started_at, m.ended_at";
+pub(super) const MEETING_COLUMNS: &str = "m.id, m.title, m.created_at, m.started_at, m.ended_at";
 
-fn meeting_from_row(row: &Row) -> rusqlite::Result<Meeting> {
+pub(super) fn meeting_from_row(row: &Row) -> rusqlite::Result<Meeting> {
     Ok(Meeting {
         id: row.get(0)?,
         title: row.get(1)?,

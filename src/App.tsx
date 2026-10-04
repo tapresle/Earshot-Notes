@@ -3,6 +3,8 @@ import { api, errorMessage, type Meeting } from "./lib/api";
 import { MeetingList } from "./features/meetings/MeetingList";
 import { MeetingView } from "./features/meetings/MeetingView";
 import { TranscriptPanel } from "./features/transcript/TranscriptPanel";
+import { ExportBar } from "./features/export/ExportBar";
+import { select, type Selection } from "./features/meetings/selection";
 import "./styles.css";
 
 type ListState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; meetings: Meeting[] };
@@ -13,6 +15,7 @@ export default function App() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [recordingMeetingId, setRecordingMeetingId] = useState<number | null>(null);
+  const [selection, setSelection] = useState<Selection>({ ids: [], anchor: null });
 
   const load = useCallback(() => {
     api
@@ -37,6 +40,7 @@ export default function App() {
       const meeting = await api.createMeeting();
       setList((current) => (current.kind === "ready" ? { kind: "ready", meetings: [meeting, ...current.meetings] } : current));
       setSelectedId(meeting.id);
+      setSelection({ ids: [meeting.id], anchor: meeting.id });
     } catch (error) {
       setCreateError(errorMessage(error));
     } finally {
@@ -55,10 +59,23 @@ export default function App() {
       <MeetingList
         meetings={meetings}
         selectedId={selectedId}
+        selectedIds={selection.ids}
         recordingMeetingId={recordingMeetingId}
-        onSelect={setSelectedId}
+        onSelect={(id, mode) => {
+          // Start a multi-selection from the open meeting, like Finder.
+          const current = selection.ids.length > 0 || selectedId === null ? selection : { ids: [selectedId], anchor: selectedId };
+          setSelection(select(meetings.map((m) => m.id), current, id, mode));
+          if (mode === "single") setSelectedId(id);
+        }}
         onCreate={() => void createMeeting()}
         creating={creating}
+        footer={
+          <ExportBar
+            selectedIds={selection.ids}
+            meetingCount={meetings.length}
+            onClearSelection={() => setSelection({ ids: selectedId === null ? [] : [selectedId], anchor: selectedId })}
+          />
+        }
       />
 
       <main className="workspace">
@@ -99,6 +116,7 @@ export default function App() {
               onDeleted={(id) => {
                 updateMeetings((all) => all.filter((m) => m.id !== id));
                 setSelectedId(null);
+                setSelection((current) => ({ ids: current.ids.filter((selected) => selected !== id), anchor: null }));
               }}
             />
           ))}

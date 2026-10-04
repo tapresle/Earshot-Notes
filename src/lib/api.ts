@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 export interface Meeting {
   id: number;
@@ -111,6 +111,11 @@ export interface SummaryFailed {
   cancelled: boolean;
 }
 
+export interface ExportReport {
+  written: string[];
+  failed: { title: string; message: string }[];
+}
+
 export interface CommandError {
   kind: "notFound" | "conflict" | "unavailable" | "invalid" | "internal";
   message: string;
@@ -170,6 +175,19 @@ export const api = {
   /** Asks the user for a .gguf file. Resolves to null if they cancel. */
   pickModelFile: async (): Promise<string | null> => {
     const path = await open({ multiple: false, directory: false, filters: [{ name: "GGUF model", extensions: ["gguf"] }] });
+    return typeof path === "string" ? path : null;
+  },
+  exportFileName: (meetingId: number) => invoke<string>("export_file_name", { meetingId }),
+  exportMeeting: (meetingId: number, path: string) => invoke<string>("export_meeting", { meetingId, path }),
+  /** Exports the given meetings, or all of them when `meetingIds` is null. */
+  exportMeetings: (meetingIds: number[] | null, folder: string) =>
+    invoke<ExportReport>("export_meetings", { meetingIds, folder }),
+  /** Asks where to save one file. Resolves to null if the user cancels. */
+  pickSavePath: async (defaultName: string): Promise<string | null> =>
+    (await save({ defaultPath: defaultName, filters: [{ name: "Markdown", extensions: ["md"] }] })) ?? null,
+  /** Asks for a folder. Resolves to null if the user cancels. */
+  pickFolder: async (): Promise<string | null> => {
+    const path = await open({ directory: true, multiple: false });
     return typeof path === "string" ? path : null;
   },
   onSummaryProgress: (handler: (event: SummaryProgress) => void): Promise<UnlistenFn> =>

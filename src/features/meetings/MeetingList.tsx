@@ -1,14 +1,19 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { Meeting } from "../../lib/api";
 import { groupByDay } from "./groupByDay";
+import type { SelectMode } from "./selection";
 
 interface MeetingListProps {
   meetings: Meeting[];
+  /** The open meeting. */
   selectedId: number | null;
+  /** Meetings selected for a bulk action, including the open one. */
+  selectedIds: number[];
   recordingMeetingId: number | null;
-  onSelect: (id: number) => void;
+  onSelect: (id: number, mode: SelectMode) => void;
   onCreate: () => void;
   creating: boolean;
+  footer?: ReactNode;
 }
 
 const timeFormat: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
@@ -16,11 +21,14 @@ const timeFormat: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-dig
 export function MeetingList({
   meetings,
   selectedId,
+  selectedIds,
   recordingMeetingId,
   onSelect,
   onCreate,
   creating,
+  footer,
 }: MeetingListProps) {
+  const multiSelect = selectedIds.length > 1;
   // Day labels are computed against the time the list mounted.
   const [now] = useState(() => Date.now());
   const groups = groupByDay(meetings, now);
@@ -38,27 +46,37 @@ export function MeetingList({
           <section key={group.label} className="day-group" aria-label={group.label}>
             <h2 className="pane-heading">{group.label}</h2>
             <ul className="meeting-list">
-              {group.meetings.map((meeting) => (
+              {group.meetings.map((meeting) => {
+                const meta =
+                  meeting.id === recordingMeetingId
+                    ? "Recording"
+                    : new Date(meeting.createdAt).toLocaleTimeString(undefined, timeFormat);
+                const inSelection = multiSelect && selectedIds.includes(meeting.id);
+                return (
                 <li key={meeting.id}>
                   <button
                     type="button"
-                    className="meeting-item"
+                    className={`meeting-item ${inSelection ? "is-selected" : ""}`}
+                    aria-label={`${meeting.title}, ${meta}${inSelection ? ", selected" : ""}`}
                     aria-current={meeting.id === selectedId ? "page" : undefined}
-                    onClick={() => onSelect(meeting.id)}
+                    onClick={(event) =>
+                      onSelect(
+                        meeting.id,
+                        event.shiftKey ? "range" : event.metaKey || event.ctrlKey ? "toggle" : "single",
+                      )
+                    }
                   >
                     <span className="meeting-title">{meeting.title}</span>
-                    <span className="meeting-meta">
-                      {meeting.id === recordingMeetingId
-                        ? "Recording"
-                        : new Date(meeting.createdAt).toLocaleTimeString(undefined, timeFormat)}
-                    </span>
+                    <span className="meeting-meta">{meta}</span>
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </section>
         ))
       )}
+      {footer}
     </nav>
   );
 }

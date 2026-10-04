@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod chunker;
 pub mod commands;
+pub mod export;
 pub mod models;
 pub mod recording;
 pub mod store;
@@ -74,6 +75,9 @@ pub fn run() {
             commands::models::available_models,
             commands::models::download_model,
             commands::models::cancel_download,
+            commands::export::export_file_name,
+            commands::export::export_meeting,
+            commands::export::export_meetings,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -1395,6 +1395,7 @@ dependencies = [
  "audioadapter-buffers",
  "cpal",
  "hound",
+ "jiff",
  "llama-cpp-2",
  "macos-audio",
  "minijinja",

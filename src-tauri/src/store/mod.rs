@@ -1,5 +1,6 @@
 //! SQLite persistence for meetings and notes.
 
+mod export;
 mod meetings;
 mod migrations;
 mod models;
@@ -12,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
+pub use export::ExportMeeting;
 pub use meetings::{Meeting, MeetingDetail};
 pub use models::{ModelRecord, ModelSource};
 pub use summaries::{NewSummary, Summary};

@@ -2,14 +2,14 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type { MeetingDetail, ModelRecord, Summary, TranscriptSegment } from "./lib/api";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(), save: vi.fn() }));
 
 type Args = Record<string, unknown>;
 
@@ -39,6 +39,9 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     partialBytes: 0,
     downloading: false,
     downloadCancelled: false,
+    exports: [] as { ids: number[] | null; folder: string }[],
+    exportFailures: [] as { title: string; message: string }[],
+    savedTo: null as string | null,
   };
 
   const handlers: Record<string, (args: Args) => unknown> = {
@@ -108,6 +111,17 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     ],
     download_model: () => {
       state.downloading = true;
+    },
+    export_file_name: ({ meetingId }) => `2026-10-03-meeting-${meetingId}.md`,
+    export_meeting: ({ path }) => {
+      state.savedTo = String(path);
+      return String(path);
+    },
+    export_meetings: ({ meetingIds, folder }) => {
+      const ids = (meetingIds as number[] | null) ?? [...meetings.keys()];
+      state.exports.push({ ids: meetingIds as number[] | null, folder: String(folder) });
+      const failed = state.exportFailures;
+      return { written: ids.slice(failed.length).map((id) => `${folder}/${id}.md`), failed };
     },
     cancel_download: () => {
       state.downloadCancelled = true;
@@ -653,6 +667,105 @@ describe("App", () => {
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
       expect(await screen.findByText(/0.3 GB of 3.1 GB \(10%\)/)).toBeInTheDocument();
+    });
+  });
+
+  describe("export", () => {
+    it("exports one meeting to the file the user picks", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Design sync")]);
+      vi.mocked(save).mockResolvedValue("/Users/me/Documents/design.md");
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
+
+      await user.click(await screen.findByRole("button", { name: "Export" }));
+
+      expect(vi.mocked(save)).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "2026-10-03-meeting-1.md" }));
+      expect(await screen.findByText("/Users/me/Documents/design.md")).toBeInTheDocument();
+      expect(backend.state.savedTo).toBe("/Users/me/Documents/design.md");
+    });
+
+    it("does nothing when the save dialog is cancelled", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Design sync")]);
+      vi.mocked(save).mockResolvedValue(null);
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
+
+      await user.click(await screen.findByRole("button", { name: "Export" }));
+
+      expect(backend.state.savedTo).toBeNull();
+      expect(screen.queryByText(/Saved to/)).not.toBeInTheDocument();
+    });
+
+    it("exports all meetings to a folder", async () => {
+      const backend = fakeBackend([seedMeeting(1, "One"), seedMeeting(2, "Two")]);
+      vi.mocked(open).mockResolvedValue("/Users/me/Exports");
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(await within(sidebar()).findByRole("button", { name: "Export all" }));
+
+      expect(await within(sidebar()).findByText(/Exported 2 meetings to/)).toBeInTheDocument();
+      expect(backend.state.exports).toEqual([{ ids: null, folder: "/Users/me/Exports" }]);
+    });
+
+    it("selects meetings with Cmd-click and exports the selection", async () => {
+      const backend = fakeBackend([seedMeeting(1, "One"), seedMeeting(2, "Two"), seedMeeting(3, "Three")]);
+      vi.mocked(open).mockResolvedValue("/tmp/out");
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /One/ }));
+
+      await user.keyboard("{Meta>}");
+      await user.click(within(sidebar()).getByRole("button", { name: /Three/ }));
+      await user.keyboard("{/Meta}");
+
+      expect(within(sidebar()).getByText("2 meetings selected")).toBeInTheDocument();
+      expect(within(sidebar()).getByRole("button", { name: /^One, .*, selected$/ })).toBeInTheDocument();
+      expect(within(sidebar()).getByRole("button", { name: /^Two, [^,]*$/ })).toBeInTheDocument();
+      await user.click(within(sidebar()).getByRole("button", { name: "Export selected" }));
+      expect(await within(sidebar()).findByText(/Exported 2 meetings/)).toBeInTheDocument();
+      expect(backend.state.exports[0].ids).toEqual([1, 3]);
+      // The open meeting doesn't change on a Cmd-click.
+      expect(screen.getByLabelText("Meeting title")).toHaveValue("One");
+    });
+
+    it("selects a range with Shift-click and clears it", async () => {
+      fakeBackend([seedMeeting(1, "One"), seedMeeting(2, "Two"), seedMeeting(3, "Three")]);
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /One/ }));
+
+      await user.keyboard("{Shift>}");
+      await user.click(within(sidebar()).getByRole("button", { name: /Three/ }));
+      await user.keyboard("{/Shift}");
+
+      expect(within(sidebar()).getByText("3 meetings selected")).toBeInTheDocument();
+      await user.click(within(sidebar()).getByRole("button", { name: "Clear" }));
+      expect(within(sidebar()).queryByText(/selected/)).not.toBeInTheDocument();
+    });
+
+    it("lists meetings that failed to export", async () => {
+      const backend = fakeBackend([seedMeeting(1, "One"), seedMeeting(2, "Two")]);
+      backend.state.exportFailures = [{ title: "Two", message: "permission denied" }];
+      vi.mocked(open).mockResolvedValue("/locked");
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(await within(sidebar()).findByRole("button", { name: "Export all" }));
+
+      expect(await within(sidebar()).findByText(/Exported 1 meeting to/)).toBeInTheDocument();
+      expect(within(sidebar()).getByText("Couldn't export 1 meeting:")).toBeInTheDocument();
+      expect(within(sidebar()).getByText("Two: permission denied")).toBeInTheDocument();
+    });
+
+    it("hides export when there are no meetings", async () => {
+      fakeBackend();
+      render(<App />);
+
+      await screen.findByRole("heading", { name: "Start your first meeting" });
+      expect(screen.queryByRole("button", { name: "Export all" })).not.toBeInTheDocument();
     });
   });
 });

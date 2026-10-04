@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage, type MeetingDetail } from "../../lib/api";
 import { Notepad } from "../notepad/Notepad";
+import { ExportMeetingButton } from "../export/ExportBar";
 import { RecordingControls } from "../recording/RecordingControls";
 import { SummarizeButton, SummaryPanel } from "../summary/SummaryPanel";
 import { useSummary } from "../summary/useSummary";
@@ -98,6 +99,7 @@ function LoadedMeeting({
     <article className="meeting-view">
       <header className="meeting-header">
         <TitleField meeting={meeting} onRenamed={onRenamed} />
+        <ExportMeetingButton meetingId={meeting.id} />
         <DeleteControl meetingId={meeting.id} onDeleted={onDeleted} />
       </header>
       <div role="tablist" aria-label="Meeting views" className="tabs">
