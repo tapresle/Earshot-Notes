@@ -42,6 +42,13 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     exports: [] as { ids: number[] | null; folder: string }[],
     exportFailures: [] as { title: string; message: string }[],
     savedTo: null as string | null,
+    devices: [
+      { id: "builtin", name: "MacBook Pro Microphone", isDefault: true },
+      { id: "usb", name: "USB Podcast Mic", isDefault: false },
+    ],
+    inputDevice: null as string | null,
+    installed: [] as ModelRecord[],
+    transcriptionError: null as unknown,
   };
 
   const handlers: Record<string, (args: Args) => unknown> = {
@@ -122,6 +129,19 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
       state.exports.push({ ids: meetingIds as number[] | null, folder: String(folder) });
       const failed = state.exportFailures;
       return { written: ids.slice(failed.length).map((id) => `${folder}/${id}.md`), failed };
+    },
+    transcription_model: () => {
+      if (state.transcriptionError) throw state.transcriptionError;
+      return { engine: "Whistle", path: "/Applications/Earshot.app/Contents/Resources/models/whistle.cact", bundled: true };
+    },
+    input_devices: () => state.devices,
+    input_device: () => state.inputDevice,
+    set_input_device: ({ deviceId }) => {
+      state.inputDevice = (deviceId as string | null) ?? null;
+    },
+    installed_models: () => ({ models: state.installed, selectedId: state.model?.id ?? null }),
+    select_summary_model: ({ modelId }) => {
+      state.model = state.installed.find((m) => m.id === modelId) ?? null;
     },
     cancel_download: () => {
       state.downloadCancelled = true;
@@ -766,6 +786,84 @@ describe("App", () => {
 
       await screen.findByRole("heading", { name: "Start your first meeting" });
       expect(screen.queryByRole("button", { name: "Export all" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("settings", () => {
+    async function openSettings(backendSeed: MeetingDetail[] = [seedMeeting(1, "Sync")]) {
+      const backend = fakeBackend(backendSeed);
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+      await screen.findByRole("heading", { level: 1, name: "Settings" });
+      return { backend, user };
+    }
+
+    it("opens from the sidebar and closes when a meeting is chosen", async () => {
+      const { user } = await openSettings();
+
+      await user.click(within(sidebar()).getByRole("button", { name: /Sync/ }));
+
+      expect(screen.queryByRole("heading", { level: 1, name: "Settings" })).not.toBeInTheDocument();
+      expect(await screen.findByLabelText("Meeting title")).toHaveValue("Sync");
+    });
+
+    it("chooses a microphone", async () => {
+      const { backend, user } = await openSettings();
+      const select = await screen.findByLabelText("Record from");
+
+      expect(within(select).getByRole("option", { name: "System default (MacBook Pro Microphone)" })).toBeInTheDocument();
+      await user.selectOptions(select, "USB Podcast Mic");
+
+      expect(await screen.findByText("Saved")).toBeInTheDocument();
+      expect(backend.state.inputDevice).toBe("usb");
+      await user.selectOptions(select, "System default (MacBook Pro Microphone)");
+      await waitFor(() => expect(backend.state.inputDevice).toBeNull());
+    });
+
+    it("warns when the chosen microphone isn't connected", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.inputDevice = "unplugged-headset";
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+
+      expect(await screen.findByLabelText("Record from")).toHaveValue("unplugged-headset");
+      expect(screen.getByText(/That microphone isn't connected/)).toBeInTheDocument();
+    });
+
+    it("switches the summary model", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      const gemma = testModel();
+      const other = { ...testModel("/models/other.gguf"), id: "local-abc", displayName: "My fine-tune", source: "import" as const };
+      backend.state.installed = [gemma, other];
+      backend.state.model = gemma;
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+
+      const gemmaChoice = await screen.findByRole("radio", { name: /Gemma 4 E2B/ });
+      expect(gemmaChoice).toBeChecked();
+      await user.click(screen.getByRole("radio", { name: /My fine-tune/ }));
+
+      await waitFor(() => expect(backend.state.model?.id).toBe("local-abc"));
+      expect(screen.getByRole("radio", { name: /My fine-tune/ })).toBeChecked();
+    });
+
+    it("shows which transcription model is running", async () => {
+      await openSettings();
+
+      expect(await screen.findByText("Whistle, bundled with the app. Runs on this Mac.")).toBeInTheDocument();
+    });
+
+    it("explains when transcription is unavailable", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.transcriptionError = { kind: "unavailable", message: "transcription is unavailable: no Whistle model found" };
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+
+      expect(await screen.findByText("Transcription is unavailable: no Whistle model found.")).toBeInTheDocument();
     });
   });
 });

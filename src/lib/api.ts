@@ -116,6 +116,24 @@ export interface ExportReport {
   failed: { title: string; message: string }[];
 }
 
+export interface TranscriptionModel {
+  engine: string;
+  path: string;
+  /** False when a model in the user's models folder replaced the bundled one. */
+  bundled: boolean;
+}
+
+export interface InputDevice {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
+export interface InstalledModels {
+  models: ModelRecord[];
+  selectedId: string | null;
+}
+
 export interface CommandError {
   kind: "notFound" | "conflict" | "unavailable" | "invalid" | "internal";
   message: string;
@@ -190,6 +208,12 @@ export const api = {
     const path = await open({ directory: true, multiple: false });
     return typeof path === "string" ? path : null;
   },
+  transcriptionModel: () => invoke<TranscriptionModel>("transcription_model"),
+  inputDevices: () => invoke<InputDevice[]>("input_devices"),
+  inputDevice: () => invoke<string | null>("input_device"),
+  setInputDevice: (deviceId: string | null) => invoke<void>("set_input_device", { deviceId }),
+  installedModels: () => invoke<InstalledModels>("installed_models"),
+  selectSummaryModel: (modelId: string) => invoke<void>("select_summary_model", { modelId }),
   onSummaryProgress: (handler: (event: SummaryProgress) => void): Promise<UnlistenFn> =>
     listen<SummaryProgress>("summary:progress", (event) => handler(event.payload)),
   onSummaryText: (handler: (event: SummaryText) => void): Promise<UnlistenFn> =>

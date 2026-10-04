@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use tauri::{App, Emitter, Manager, RunEvent};
 
-use commands::recording::Transcription;
+use commands::recording::{Transcription, TranscriptionModel};
 use recording::Recorder;
 use serde_json::json;
 use store::{NewSegment, Store};
@@ -41,11 +41,17 @@ pub fn run() {
             }
 
             // A model in the user's data folder (from a future update) wins over the bundled one.
-            let candidates = vec![
-                data_dir.join(WHISTLE_FILE),
-                app.path().resource_dir()?.join(WHISTLE_FILE),
-            ];
-            let worker = spawn_transcription(app, store.clone(), candidates);
+            let bundled_whistle = app.path().resource_dir()?.join(WHISTLE_FILE);
+            let candidates = vec![data_dir.join(WHISTLE_FILE), bundled_whistle.clone()];
+            let worker =
+                spawn_transcription(app, store.clone(), candidates).map(|(worker, path)| {
+                    let model = TranscriptionModel {
+                        engine: "Whistle",
+                        bundled: path == bundled_whistle,
+                        path: path.to_string_lossy().into_owned(),
+                    };
+                    (worker, model)
+                });
             let summarizer = spawn_summarizer(app, store.clone());
 
             app.manage(store);
@@ -78,6 +84,12 @@ pub fn run() {
             commands::export::export_file_name,
             commands::export::export_meeting,
             commands::export::export_meetings,
+            commands::settings::transcription_model,
+            commands::settings::input_devices,
+            commands::settings::input_device,
+            commands::settings::set_input_device,
+            commands::settings::installed_models,
+            commands::settings::select_summary_model,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -99,7 +111,7 @@ fn spawn_transcription(
     app: &App,
     store: Arc<Store>,
     candidates: Vec<PathBuf>,
-) -> Result<TranscriptionWorker, String> {
+) -> Result<(TranscriptionWorker, PathBuf), String> {
     let handle = app.handle().clone();
     TranscriptionWorker::spawn(candidates, move |job, transcription| {
         let saved = store.insert_segment(NewSegment {
@@ -124,7 +136,7 @@ fn spawn_transcription(
     })
     .map(|(worker, loaded)| {
         eprintln!("loaded Whistle from {}", loaded.path.display());
-        worker
+        (worker, loaded.path)
     })
     .map_err(|error| {
         eprintln!("transcription is unavailable: {error}");

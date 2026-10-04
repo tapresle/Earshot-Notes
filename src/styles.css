@@ -645,3 +645,83 @@ body {
   max-width: 260px;
   font-size: 12px;
 }
+
+.settings-button {
+  margin-top: 8px;
+  text-align: left;
+}
+
+.settings-button.pinned-bottom {
+  margin-top: auto;
+}
+
+.settings-button[aria-current="page"] {
+  background: var(--selected);
+  color: var(--text-primary);
+}
+
+.settings {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.settings h1 {
+  margin: 0 0 24px;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.settings-section {
+  padding: 16px 0 20px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-section h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.settings-help {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.settings-row select {
+  flex: 1;
+  padding: 4px 6px;
+  font: inherit;
+}
+
+.settings-saved {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.model-choices {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.model-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 14px;
+}
+
+.model-details {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+}

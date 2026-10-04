@@ -5,11 +5,22 @@ use tauri::{AppHandle, Emitter, State};
 use super::{CommandError, CommandResult, ErrorKind};
 use crate::audio::{Capture, mic, system};
 use crate::recording::{self, CaptureStarter, IssueSink, Recorder, SourceProblem, StartReport};
+use crate::store::settings::INPUT_DEVICE;
 use crate::store::{Source, Store, TranscriptSegment};
 use crate::transcribe::worker::TranscriptionWorker;
 
-/// The transcription worker, or why it couldn't start.
-pub struct Transcription(pub Result<TranscriptionWorker, String>);
+/// The transcription worker and the model it loaded, or why it couldn't start.
+pub struct Transcription(pub Result<(TranscriptionWorker, TranscriptionModel), String>);
+
+/// Which Whistle model is transcribing, for the settings page.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionModel {
+    pub engine: &'static str,
+    pub path: String,
+    /// False when a model in the user's models folder replaced the bundled one.
+    pub bundled: bool,
+}
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,6 +40,7 @@ pub async fn start_recording(
     transcription: State<'_, Arc<Transcription>>,
     meeting_id: i64,
 ) -> CommandResult<StartReport> {
+    let preferred_mic = store.setting(INPUT_DEVICE)?;
     let (store, recorder, transcription) = (
         Arc::clone(&store),
         Arc::clone(&recorder),
@@ -48,8 +60,9 @@ pub async fn start_recording(
     let sources: Vec<(Source, CaptureStarter)> = vec![
         (
             Source::Me,
-            Box::new(|frames, on_error| {
-                mic::start(frames, on_error).map(|(c, f)| (Box::new(c) as Box<dyn Capture>, f))
+            Box::new(move |frames, on_error| {
+                mic::start(frames, on_error, preferred_mic)
+                    .map(|(c, f)| (Box::new(c) as Box<dyn Capture>, f))
             }),
         ),
         (
@@ -64,7 +77,11 @@ pub async fn start_recording(
         recording::start_recording(
             &store,
             &recorder,
-            transcription.0.as_ref().map_err(String::as_str),
+            transcription
+                .0
+                .as_ref()
+                .map(|(worker, _)| worker)
+                .map_err(String::as_str),
             meeting_id,
             sources,
             on_issue,

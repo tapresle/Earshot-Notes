@@ -6,7 +6,8 @@ use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::thread::{self, JoinHandle};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{FromSample, SampleFormat, SizedSample};
+use cpal::{DeviceId, FromSample, SampleFormat, SizedSample};
+use serde::Serialize;
 
 use macos_audio::MicPermission;
 
@@ -29,13 +30,53 @@ impl Drop for MicCapture {
     }
 }
 
-/// Starts capturing from the default microphone, asking for permission first if
-/// needed (this blocks until the prompt is answered). Interleaved buffers go to
+/// A microphone the user can choose in settings.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InputDevice {
+    /// Stable across restarts and reconnects; stored in settings.
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+}
+
+/// The microphones connected now.
+pub fn input_devices() -> Result<Vec<InputDevice>, CaptureError> {
+    let host = cpal::default_host();
+    let default_id = host.default_input_device().and_then(|d| d.id().ok());
+    let devices = host
+        .input_devices()
+        .map_err(|e| CaptureError::Device(e.to_string()))?;
+    Ok(devices
+        .filter_map(|device| {
+            let id = device.id().ok()?;
+            let name = device
+                .description()
+                .map(|d| d.name().to_owned())
+                .unwrap_or_else(|_| id.to_string());
+            Some(InputDevice {
+                is_default: Some(&id) == default_id.as_ref(),
+                id: id.to_string(),
+                name,
+            })
+        })
+        .collect())
+}
+
+/// Shown when the microphone chosen in settings isn't connected.
+pub const MISSING_DEVICE: &str =
+    "your chosen microphone isn't connected, so the default microphone is being used";
+
+/// Starts capturing from `preferred` (a device id from settings) or the default
+/// microphone, asking for permission first if needed (this blocks until the
+/// prompt is answered). If the preferred device is missing, capture falls back
+/// to the default and says so through `on_error`. Interleaved buffers go to
 /// `frames`; when the pipeline falls behind, buffers are dropped rather than
 /// blocking the audio thread. Stream failures after start go to `on_error`.
 pub fn start(
     frames: SyncSender<Vec<f32>>,
     on_error: ErrorSink,
+    preferred: Option<String>,
 ) -> Result<(MicCapture, CaptureFormat), CaptureError> {
     ensure_permission()?;
     let (ready_tx, ready_rx) = mpsc::channel();
@@ -43,7 +84,7 @@ pub fn start(
 
     let thread = thread::Builder::new()
         .name("mic-capture".into())
-        .spawn(move || run(frames, on_error, ready_tx, stop_rx))
+        .spawn(move || run(frames, on_error, preferred, ready_tx, stop_rx))
         .map_err(|e| CaptureError::Device(e.to_string()))?;
 
     match ready_rx.recv() {
@@ -73,11 +114,12 @@ fn ensure_permission() -> Result<(), CaptureError> {
 fn run(
     frames: SyncSender<Vec<f32>>,
     on_error: ErrorSink,
+    preferred: Option<String>,
     ready: mpsc::Sender<Result<CaptureFormat, CaptureError>>,
     stop: Receiver<()>,
 ) {
     let dropped = Arc::new(AtomicU64::new(0));
-    let stream = match open(frames, on_error, dropped.clone()) {
+    let stream = match open(frames, on_error, preferred, dropped.clone()) {
         Ok((stream, format)) => {
             let _ = ready.send(Ok(format));
             stream
@@ -98,13 +140,39 @@ fn run(
     }
 }
 
+/// Picks the preferred device if it's connected, otherwise the default.
+fn resolve<D>(
+    preferred: Option<&str>,
+    find: impl FnOnce(&str) -> Option<D>,
+    default: impl FnOnce() -> Option<D>,
+    on_missing: impl FnOnce(),
+) -> Result<D, CaptureError> {
+    if let Some(id) = preferred {
+        match find(id) {
+            Some(device) => return Ok(device),
+            None => on_missing(),
+        }
+    }
+    default().ok_or(CaptureError::NoDevice)
+}
+
 fn open(
     frames: SyncSender<Vec<f32>>,
     on_error: ErrorSink,
+    preferred: Option<String>,
     dropped: Arc<AtomicU64>,
 ) -> Result<(cpal::Stream, CaptureFormat), CaptureError> {
     let host = cpal::default_host();
-    let device = host.default_input_device().ok_or(CaptureError::NoDevice)?;
+    let device = resolve(
+        preferred.as_deref(),
+        |id| {
+            id.parse::<DeviceId>()
+                .ok()
+                .and_then(|id| host.device_by_id(&id))
+        },
+        || host.default_input_device(),
+        || on_error(MISSING_DEVICE.into()),
+    )?;
     let config = device
         .default_input_config()
         .map_err(|e| CaptureError::Device(e.to_string()))?;
@@ -165,4 +233,62 @@ where
             cpal::ErrorKind::PermissionDenied => CaptureError::MicPermissionDenied,
             _ => CaptureError::Device(e.to_string()),
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn uses_the_preferred_device_when_connected() {
+        let warned = Cell::new(false);
+
+        let device = resolve(
+            Some("usb"),
+            |id| Some(id.to_owned()),
+            || Some("default".into()),
+            || warned.set(true),
+        );
+
+        assert_eq!(device.unwrap(), "usb");
+        assert!(!warned.get());
+    }
+
+    #[test]
+    fn falls_back_to_the_default_and_warns_when_the_preferred_device_is_missing() {
+        let warned = Cell::new(false);
+
+        let device = resolve(
+            Some("usb"),
+            |_| None::<String>,
+            || Some("default".into()),
+            || warned.set(true),
+        );
+
+        assert_eq!(device.unwrap(), "default");
+        assert!(warned.get());
+    }
+
+    #[test]
+    fn uses_the_default_without_a_warning_when_nothing_is_chosen() {
+        let warned = Cell::new(false);
+
+        let device = resolve(
+            None,
+            |_| Some("never".to_owned()),
+            || Some("default".into()),
+            || warned.set(true),
+        );
+
+        assert_eq!(device.unwrap(), "default");
+        assert!(!warned.get());
+    }
+
+    #[test]
+    fn reports_no_device_when_nothing_is_connected() {
+        let result = resolve(None, |_| None::<String>, || None, || {});
+
+        assert!(matches!(result, Err(CaptureError::NoDevice)));
+    }
 }

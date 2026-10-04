@@ -4,6 +4,7 @@ mod export;
 mod meetings;
 mod migrations;
 mod models;
+pub mod settings;
 mod summaries;
 mod transcript;
 
