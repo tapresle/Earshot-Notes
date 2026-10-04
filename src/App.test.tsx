@@ -39,6 +39,7 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     partialBytes: 0,
     downloading: false,
     downloadedId: null as string | null,
+    removeError: null as unknown,
     downloadCancelled: false,
     exports: [] as { ids: number[] | null; folder: string }[],
     exportFailures: [] as { title: string; message: string }[],
@@ -161,6 +162,11 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     installed_models: () => ({ models: state.installed, selectedId: state.model?.id ?? null }),
     select_summary_model: ({ modelId }) => {
       state.model = state.installed.find((m) => m.id === modelId) ?? null;
+    },
+    remove_summary_model: ({ modelId }) => {
+      if (state.removeError) throw state.removeError;
+      state.installed = state.installed.filter((m) => m.id !== modelId);
+      if (state.model?.id === modelId) state.model = state.installed[0] ?? null;
     },
     setup_complete: () => state.setupComplete,
     set_setup_complete: ({ complete }) => {
@@ -900,6 +906,104 @@ describe("App", () => {
 
       await waitFor(() => expect(backend.state.model?.id).toBe("local-abc"));
       expect(screen.getByRole("radio", { name: /My fine-tune/ })).toBeChecked();
+    });
+
+    it("removes a model after confirming, and can cancel", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      const gemma = testModel();
+      const other = { ...testModel("/models/other.gguf"), id: "local-abc", displayName: "My fine-tune" };
+      backend.state.installed = [gemma, other];
+      backend.state.model = gemma;
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+
+      await user.click(await screen.findByRole("button", { name: "Remove My fine-tune" }));
+      const confirm = screen.getByRole("group", { name: "Remove My fine-tune" });
+      expect(confirm).toHaveTextContent("Delete it and free 3.1 GB? You can import it again later.");
+      expect(within(confirm).getByRole("button", { name: "Cancel" })).toHaveFocus();
+      await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
+      expect(screen.getByRole("button", { name: "Remove My fine-tune" })).toHaveFocus();
+      expect(backend.state.installed).toHaveLength(2);
+
+      await user.click(screen.getByRole("button", { name: "Remove My fine-tune" }));
+      await user.click(within(screen.getByRole("group", { name: "Remove My fine-tune" })).getByRole("button", { name: "Remove" }));
+
+      await waitFor(() => expect(screen.queryByRole("radio", { name: /My fine-tune/ })).not.toBeInTheDocument());
+      expect(backend.state.installed).toEqual([gemma]);
+      expect(screen.getByRole("radio", { name: /Gemma 4 E2B/ })).toBeChecked();
+    });
+
+    it("switches to the remaining model when the selected one is removed", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      const gemma = testModel();
+      const other = { ...testModel("/models/other.gguf"), id: "local-abc", displayName: "My fine-tune" };
+      backend.state.installed = [gemma, other];
+      backend.state.model = gemma;
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+
+      await user.click(await screen.findByRole("button", { name: "Remove Gemma 4 E2B" }));
+      await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
+
+      expect(await screen.findByRole("radio", { name: /My fine-tune/ })).toBeChecked();
+      expect(screen.queryByRole("radio", { name: /Gemma 4 E2B/ })).not.toBeInTheDocument();
+    });
+
+    it("offers the download again after removing the last model", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      const gemma = { ...testModel(), source: "download" as const };
+      backend.state.installed = [gemma];
+      backend.state.model = gemma;
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+      const card = await screen.findByRole("group", { name: "Gemma 4 E2B" });
+      await waitFor(() => expect(within(card).getByText("Installed")).toBeInTheDocument());
+
+      await user.click(screen.getByRole("button", { name: "Remove Gemma 4 E2B" }));
+      expect(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).toHaveTextContent("You can download it again later.");
+      await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
+
+      await waitFor(() => expect(screen.queryByRole("radio")).not.toBeInTheDocument());
+      expect(
+        within(await screen.findByRole("group", { name: "Gemma 4 E2B" })).getByRole("button", { name: "Download (3.1 GB)" }),
+      ).toBeInTheDocument();
+    });
+
+    it("treats a model that's already gone as removed", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.installed = [testModel()];
+      backend.state.model = testModel();
+      backend.state.removeError = { kind: "notFound", message: "summary model gemma-4-e2b-it-q4_k_m doesn't exist" };
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+      await user.click(await screen.findByRole("button", { name: "Remove Gemma 4 E2B" }));
+      backend.state.installed = [];
+      backend.state.model = null;
+
+      await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
+
+      await waitFor(() => expect(screen.queryByRole("radio")).not.toBeInTheDocument());
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("explains why a model couldn't be removed", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.installed = [testModel()];
+      backend.state.model = testModel();
+      backend.state.removeError = { kind: "conflict", message: "a summary is already being written; wait for it or cancel it" };
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+
+      await user.click(await screen.findByRole("button", { name: "Remove Gemma 4 E2B" }));
+      await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("A summary is already being written");
+      expect(screen.getByRole("radio", { name: /Gemma 4 E2B/ })).toBeInTheDocument();
     });
 
     it("shows which transcription model is running", async () => {

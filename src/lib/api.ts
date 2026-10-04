@@ -145,7 +145,7 @@ export interface CommandError {
   message: string;
 }
 
-function isCommandError(error: unknown): error is CommandError {
+export function isCommandError(error: unknown): error is CommandError {
   return typeof error === "object" && error !== null && "kind" in error && "message" in error;
 }
 
@@ -220,6 +220,7 @@ export const api = {
   setInputDevice: (deviceId: string | null) => invoke<void>("set_input_device", { deviceId }),
   installedModels: () => invoke<InstalledModels>("installed_models"),
   selectSummaryModel: (modelId: string) => invoke<void>("select_summary_model", { modelId }),
+  removeSummaryModel: (modelId: string) => invoke<void>("remove_summary_model", { modelId }),
   micPermission: () => invoke<Permission>("mic_permission"),
   requestMicPermission: () => invoke<Permission>("request_mic_permission"),
   /** Null when macOS doesn't let the app check. */

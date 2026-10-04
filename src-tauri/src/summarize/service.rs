@@ -158,6 +158,16 @@ impl Summarizer {
         }
     }
 
+    /// Runs `f` only while no summary is running, and keeps one from starting
+    /// until it returns. Used to change models safely.
+    pub fn when_idle<T>(&self, f: impl FnOnce() -> T) -> Result<T, SummarizeError> {
+        let active = lock(&self.active);
+        if active.is_some() {
+            return Err(SummarizeError::Busy);
+        }
+        Ok(f())
+    }
+
     pub fn active_meeting(&self) -> Option<i64> {
         lock(&self.active).as_ref().map(|(id, _)| *id)
     }
@@ -387,6 +397,23 @@ mod tests {
         release.send(()).unwrap();
         while !matches!(next(&h.events), SummaryEvent::Done { .. }) {}
         assert!(h.summarizer.start(&h.store, h.meeting_id, true).is_ok());
+    }
+
+    #[test]
+    fn runs_work_only_while_idle() {
+        let (release, gate) = mpsc::channel();
+        let h = harness(Some(gate), true);
+        assert_eq!(h.summarizer.when_idle(|| 7).unwrap(), 7);
+        h.summarizer.start(&h.store, h.meeting_id, false).unwrap();
+
+        assert!(matches!(
+            h.summarizer.when_idle(|| unreachable!()),
+            Err(SummarizeError::Busy)
+        ));
+
+        release.send(()).unwrap();
+        while !matches!(next(&h.events), SummaryEvent::Done { .. }) {}
+        assert!(h.summarizer.when_idle(|| ()).is_ok());
     }
 
     #[test]

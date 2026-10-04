@@ -234,6 +234,39 @@ pub fn import(
     Ok(saved?)
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum RemoveError {
+    #[error("couldn't delete the model file: {0}")]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Store(#[from] StoreError),
+}
+
+/// Deletes an installed model's file and forgets the model. Only a file inside
+/// `models_dir` is deleted; a record that points anywhere else is just forgotten.
+pub fn remove(id: &str, models_dir: &Path, store: &Store) -> Result<ModelRecord, RemoveError> {
+    let model = store
+        .model_by_id(id)?
+        .ok_or_else(|| StoreError::ModelNotFound(id.to_owned()))?;
+    let path = Path::new(&model.file_path);
+    if is_inside(path, models_dir) {
+        match std::fs::remove_file(path) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.into()),
+            _ => {}
+        }
+    }
+    store.delete_model(id)?;
+    Ok(model)
+}
+
+/// Whether `path` resolves to a file under `dir`, following symlinks and `..`.
+fn is_inside(path: &Path, dir: &Path) -> bool {
+    match (path.canonicalize(), dir.canonicalize()) {
+        (Ok(path), Ok(dir)) => path.starts_with(dir),
+        _ => false,
+    }
+}
+
 fn has_gguf_header(path: &Path) -> io::Result<bool> {
     let mut magic = [0u8; 4];
     match File::open(path)?.read_exact(&mut magic) {
@@ -359,6 +392,76 @@ mod tests {
             "{}",
             second.file_path
         );
+    }
+
+    #[test]
+    fn removes_the_file_and_the_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let models = dir.path().join("models");
+        let source = fake_gguf(dir.path(), "m.gguf", b"weights");
+        let record = import(&source, &models, &store, &[]).unwrap();
+
+        let removed = remove(&record.id, &models, &store).unwrap();
+
+        assert_eq!(removed, record);
+        assert!(!Path::new(&record.file_path).exists());
+        assert!(source.exists(), "the original file is left alone");
+        assert!(store.list_models().unwrap().is_empty());
+        assert_eq!(store.summary_model().unwrap(), None);
+    }
+
+    #[test]
+    fn forgets_a_model_whose_file_is_already_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let models = dir.path().join("models");
+        let record = import(&fake_gguf(dir.path(), "m.gguf", b"w"), &models, &store, &[]).unwrap();
+        std::fs::remove_file(&record.file_path).unwrap();
+
+        remove(&record.id, &models, &store).unwrap();
+
+        assert!(store.list_models().unwrap().is_empty());
+    }
+
+    #[test]
+    fn never_deletes_a_file_outside_the_models_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let models = dir.path().join("models");
+        std::fs::create_dir_all(&models).unwrap();
+        let outside = fake_gguf(dir.path(), "outside.gguf", b"keep");
+        let sneaky = models.join("..").join("outside.gguf");
+        let record = store
+            .add_model(&ModelRecord {
+                id: "elsewhere".into(),
+                display_name: "Elsewhere".into(),
+                file_path: sneaky.to_string_lossy().into_owned(),
+                size_bytes: 8,
+                sha256: "e".repeat(64),
+                source: ModelSource::Import,
+                source_url: None,
+                version: None,
+                min_runtime: None,
+                added_at: 0,
+            })
+            .unwrap();
+
+        remove(&record.id, &models, &store).unwrap();
+
+        assert!(outside.exists());
+        assert!(store.list_models().unwrap().is_empty());
+    }
+
+    #[test]
+    fn refuses_to_remove_an_unknown_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+
+        assert!(matches!(
+            remove("ghost", dir.path(), &store),
+            Err(RemoveError::Store(StoreError::ModelNotFound(_)))
+        ));
     }
 
     #[test]

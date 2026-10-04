@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   errorMessage,
+  isCommandError,
   type InputDevice,
   type InstalledModels,
   type ModelRecord,
@@ -151,21 +152,14 @@ function SummaryModelSection() {
         <fieldset className="model-choices">
           <legend className="settings-help">Summaries use the selected model.</legend>
           {installed.models.map((model) => (
-            <label key={model.id} className="model-choice">
-              <input
-                type="radio"
-                name="summary-model"
-                checked={installed.selectedId === model.id}
-                onChange={() => void select(model)}
-              />
-              <span>
-                <strong>{model.displayName}</strong>
-                <span className="model-details">
-                  {gigabytes(model.sizeBytes)} · {model.source === "download" ? "Downloaded" : "Imported"}
-                  {model.version ? ` · ${model.version}` : ""}
-                </span>
-              </span>
-            </label>
+            <InstalledModel
+              key={model.id}
+              model={model}
+              selected={installed.selectedId === model.id}
+              onSelect={() => void select(model)}
+              onRemoved={load}
+              onError={setError}
+            />
           ))}
         </fieldset>
       )}
@@ -174,8 +168,101 @@ function SummaryModelSection() {
           {error}
         </p>
       )}
-      <ModelSetup onReady={load} />
+      {/* Remounts when the installed models change, so download cards show what's installed now. */}
+      <ModelSetup key={installed?.models.map((m) => m.id).join() ?? ""} onReady={load} />
     </section>
+  );
+}
+
+function InstalledModel({
+  model,
+  selected,
+  onSelect,
+  onRemoved,
+  onError,
+}: {
+  model: ModelRecord;
+  selected: boolean;
+  onSelect: () => void;
+  onRemoved: () => void;
+  onError: (message: string | null) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const removeRef = useRef<HTMLButtonElement>(null);
+  const opened = useRef(false);
+
+  // Focus Cancel when the confirmation opens, and return to Remove when it closes.
+  useEffect(() => {
+    if (confirming) {
+      opened.current = true;
+      cancelRef.current?.focus();
+    } else if (opened.current) {
+      removeRef.current?.focus();
+    }
+  }, [confirming]);
+
+  async function remove() {
+    onError(null);
+    setRemoving(true);
+    try {
+      await api.removeSummaryModel(model.id);
+      onRemoved();
+    } catch (e) {
+      if (isCommandError(e) && e.kind === "notFound") {
+        onRemoved(); // Already gone, so the list is just out of date.
+        return;
+      }
+      onError(errorMessage(e));
+      setRemoving(false);
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <div className="installed-model">
+      <label className="model-choice">
+        <input type="radio" name="summary-model" checked={selected} onChange={onSelect} />
+        <span>
+          <strong>{model.displayName}</strong>
+          <span className="model-details">
+            {gigabytes(model.sizeBytes)} · {model.source === "download" ? "Downloaded" : "Imported"}
+            {model.version ? ` · ${model.version}` : ""}
+          </span>
+        </span>
+      </label>
+      {confirming ? (
+        <div className="model-remove-confirm" role="group" aria-label={`Remove ${model.displayName}`}>
+          <span>
+            Delete it and free {gigabytes(model.sizeBytes)}? You can {model.source === "download" ? "download" : "import"}{" "}
+            it again later.
+          </span>
+          <button type="button" className="button danger" onClick={() => void remove()} disabled={removing}>
+            {removing ? "Removing…" : "Remove"}
+          </button>
+          <button
+            type="button"
+            className="button subtle"
+            ref={cancelRef}
+            onClick={() => setConfirming(false)}
+            disabled={removing}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="link-button"
+          ref={removeRef}
+          onClick={() => setConfirming(true)}
+          aria-label={`Remove ${model.displayName}`}
+        >
+          Remove
+        </button>
+      )}
+    </div>
   );
 }
 

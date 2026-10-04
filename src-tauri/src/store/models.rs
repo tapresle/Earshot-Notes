@@ -96,6 +96,33 @@ impl Store {
             .optional()?)
     }
 
+    pub fn model_by_id(&self, id: &str) -> Result<Option<ModelRecord>, StoreError> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM models WHERE id = ?1"),
+                [id],
+                from_row,
+            )
+            .optional()?)
+    }
+
+    /// Forgets a model, and the selection if it pointed at that model, so
+    /// summaries fall back to the newest remaining one.
+    pub fn delete_model(&self, id: &str) -> Result<(), StoreError> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        if tx.execute("DELETE FROM models WHERE id = ?1", [id])? == 0 {
+            return Err(StoreError::ModelNotFound(id.to_owned()));
+        }
+        tx.execute(
+            "DELETE FROM settings WHERE key = ?1 AND value = ?2",
+            params![SELECTED_SUMMARY_MODEL, id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Installed models, newest first.
     pub fn list_models(&self) -> Result<Vec<ModelRecord>, StoreError> {
         let conn = self.conn();
@@ -190,6 +217,43 @@ mod tests {
 
         store.select_summary_model("first").unwrap();
         assert_eq!(store.summary_model().unwrap().unwrap().id, "first");
+    }
+
+    #[test]
+    fn deleting_the_selected_model_falls_back_to_the_newest_remaining() {
+        let store = Store::open_in_memory().unwrap();
+        store.add_model(&record("first", "1")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store.add_model(&record("second", "2")).unwrap();
+        store.select_summary_model("first").unwrap();
+
+        store.delete_model("first").unwrap();
+
+        assert_eq!(store.model_by_id("first").unwrap(), None);
+        assert_eq!(store.summary_model().unwrap().unwrap().id, "second");
+        assert_eq!(store.setting(SELECTED_SUMMARY_MODEL).unwrap(), None);
+    }
+
+    #[test]
+    fn deleting_another_model_keeps_the_selection() {
+        let store = Store::open_in_memory().unwrap();
+        store.add_model(&record("first", "1")).unwrap();
+        store.add_model(&record("second", "2")).unwrap();
+        store.select_summary_model("first").unwrap();
+
+        store.delete_model("second").unwrap();
+
+        assert_eq!(store.summary_model().unwrap().unwrap().id, "first");
+    }
+
+    #[test]
+    fn refuses_to_delete_an_unknown_model() {
+        let store = Store::open_in_memory().unwrap();
+
+        assert!(matches!(
+            store.delete_model("ghost"),
+            Err(StoreError::ModelNotFound(_))
+        ));
     }
 
     #[test]

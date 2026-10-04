@@ -726,6 +726,30 @@ body {
   font-size: 14px;
 }
 
+.installed-model {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.installed-model .link-button {
+  padding-top: 6px;
+  font-size: 13px;
+}
+
+.model-remove-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 8px 24px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
 .model-details {
   display: block;
   font-size: 12px;

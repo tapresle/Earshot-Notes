@@ -90,6 +90,7 @@ pub fn run() {
             commands::settings::set_input_device,
             commands::settings::installed_models,
             commands::settings::select_summary_model,
+            commands::settings::remove_summary_model,
             commands::setup::mic_permission,
             commands::setup::request_mic_permission,
             commands::setup::system_audio_permission,

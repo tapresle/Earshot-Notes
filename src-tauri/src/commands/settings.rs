@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use super::recording::{Transcription, TranscriptionModel};
+use super::summaries::models_dir;
 use super::{CommandError, CommandResult, ErrorKind};
 use crate::audio::mic::{self, InputDevice};
+use crate::models::{self, RemoveError};
 use crate::store::settings::INPUT_DEVICE;
 use crate::store::{ModelRecord, Store};
+use crate::summarize::service::Summarizer;
 
 /// The transcription model in use, or why transcription is unavailable.
 #[tauri::command]
@@ -72,4 +75,31 @@ pub fn installed_models(store: State<'_, Arc<Store>>) -> CommandResult<Installed
 #[tauri::command]
 pub fn select_summary_model(store: State<'_, Arc<Store>>, model_id: String) -> CommandResult<()> {
     Ok(store.select_summary_model(&model_id)?)
+}
+
+impl From<RemoveError> for CommandError {
+    fn from(error: RemoveError) -> Self {
+        match error {
+            RemoveError::Store(store) => store.into(),
+            RemoveError::Io(_) => Self {
+                kind: ErrorKind::Unavailable,
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
+/// Deletes an installed summary model to free disk space. Refused while a
+/// summary is running. If it was the selected model, summaries switch to the
+/// newest remaining one.
+#[tauri::command]
+pub fn remove_summary_model(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    summarizer: State<'_, Summarizer>,
+    model_id: String,
+) -> CommandResult<()> {
+    let dir = models_dir(&app)?;
+    summarizer.when_idle(|| models::remove(&model_id, &dir, &store))??;
+    Ok(())
 }

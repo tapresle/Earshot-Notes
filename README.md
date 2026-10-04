@@ -64,7 +64,7 @@ If recording goes silent after you install a new build, open **System Settings**
 
 ## Summaries
 
-Summaries need a local model. In **Settings**, or on a meeting's **Summary** tab, download the recommended model (Gemma 4 E2B, 3.1 GB) or one of the alternatives (Qwen3 4B Instruct, Phi-4 mini, Gemma 4 E4B, Qwen3 8B, Ministral 3 8B, or Ministral 3 14B), or import any GGUF file you already have. Downloads resume if interrupted and are verified against a pinned SHA-256 checksum before use.
+Summaries need a local model. In **Settings**, or on a meeting's **Summary** tab, download the recommended model (Gemma 4 E2B, 3.1 GB) or one of the alternatives (Qwen3 4B Instruct, Phi-4 mini, Gemma 4 E4B, Qwen3 8B, Ministral 3 8B, or Ministral 3 14B), or import any GGUF file you already have. Downloads resume if interrupted and are verified against a pinned SHA-256 checksum before use. To free disk space, click **Remove** next to an installed model in **Settings**.
 
 ## Licenses
 
