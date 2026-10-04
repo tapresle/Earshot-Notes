@@ -376,4 +376,17 @@ describe("App", () => {
 
     await waitFor(() => expect(within(transcript).queryByText(/Not seeing the other side/)).not.toBeInTheDocument());
   });
+
+  it("suggests headphones before recording starts", async () => {
+    fakeBackend([seedMeeting(1, "Call")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Call/ }));
+
+    expect(await screen.findByText(/Use headphones for the best transcript/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Start recording" }));
+
+    await screen.findByRole("button", { name: "Stop recording" });
+    expect(screen.queryByText(/Use headphones/)).not.toBeInTheDocument();
+  });
 });

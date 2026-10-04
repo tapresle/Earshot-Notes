@@ -79,6 +79,11 @@ export function RecordingControls({ meetingId, recordingMeetingId, onRecordingCh
           {capturing.length > 0 ? `Recording ${capturing.join(" and ")}` : "Recording stopped working"}
         </span>
       )}
+      {!isRecording && !pending && (
+        <p className="recording-hint">
+          Use headphones for the best transcript. With speakers, your microphone also picks up the other side.
+        </p>
+      )}
       {isRecording &&
         problems.map((problem) => (
           <p key={problem.source} className="field-warning" role="alert">
