@@ -9,3 +9,4 @@
 # Native binaries fetched by scripts/fetch-native.sh
 /vendor/needle/*/libneedle.a
 /resources/models/*.cact
+/tests/models/*.gguf

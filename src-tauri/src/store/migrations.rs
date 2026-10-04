@@ -8,6 +8,7 @@ use super::StoreError;
 const MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0001_meetings_and_notes.sql"),
     include_str!("../../migrations/0002_transcript_segments.sql"),
+    include_str!("../../migrations/0003_summaries_and_models.sql"),
 ];
 
 pub fn apply(conn: &mut Connection) -> Result<(), StoreError> {

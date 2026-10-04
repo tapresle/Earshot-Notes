@@ -1,8 +1,10 @@
 pub mod audio;
 pub mod chunker;
 pub mod commands;
+pub mod models;
 pub mod recording;
 pub mod store;
+pub mod summarize;
 pub mod transcribe;
 
 use std::path::PathBuf;
@@ -12,7 +14,11 @@ use tauri::{App, Emitter, Manager, RunEvent};
 
 use commands::recording::Transcription;
 use recording::Recorder;
+use serde_json::json;
 use store::{NewSegment, Store};
+use summarize::llama::LlamaGenerator;
+use summarize::run::Generator;
+use summarize::service::{Summarizer, SummaryEvent};
 use transcribe::worker::TranscriptionWorker;
 
 const DATABASE_FILE: &str = "earshot.db";
@@ -21,6 +27,7 @@ const WHISTLE_FILE: &str = "models/whistle.cact";
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -38,10 +45,12 @@ pub fn run() {
                 app.path().resource_dir()?.join(WHISTLE_FILE),
             ];
             let worker = spawn_transcription(app, store.clone(), candidates);
+            let summarizer = spawn_summarizer(app, store.clone());
 
             app.manage(store);
             app.manage(Arc::new(Recorder::default()));
             app.manage(Arc::new(Transcription(worker)));
+            app.manage(summarizer);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -55,6 +64,13 @@ pub fn run() {
             commands::recording::stop_recording,
             commands::recording::active_recording,
             commands::recording::list_transcript,
+            commands::summaries::summarize_meeting,
+            commands::summaries::cancel_summary,
+            commands::summaries::active_summary,
+            commands::summaries::latest_summary,
+            commands::summaries::summary_model,
+            commands::summaries::recommended_model,
+            commands::summaries::import_model,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -106,5 +122,46 @@ fn spawn_transcription(
     .map_err(|error| {
         eprintln!("transcription is unavailable: {error}");
         error.to_string()
+    })
+}
+
+/// Starts the summarizer. Progress, streamed text, and results reach the UI as
+/// `summary:progress`, `summary:text`, `summary:done`, and `summary:failed` events.
+fn spawn_summarizer(app: &App, store: Arc<Store>) -> Summarizer {
+    let handle = app.handle().clone();
+    let load = Box::new(|model: &store::ModelRecord| {
+        LlamaGenerator::load(std::path::Path::new(&model.file_path))
+            .map(|generator| Box::new(generator) as Box<dyn Generator>)
+    });
+    Summarizer::spawn(store, load, move |event| {
+        let (name, payload) = match event {
+            SummaryEvent::Progress { meeting_id, stage } => {
+                let mut payload = serde_json::to_value(stage).unwrap_or_default();
+                payload["meetingId"] = json!(meeting_id);
+                ("summary:progress", payload)
+            }
+            SummaryEvent::Text { meeting_id, text } => (
+                "summary:text",
+                json!({ "meetingId": meeting_id, "text": text }),
+            ),
+            SummaryEvent::Done {
+                meeting_id,
+                summary,
+            } => (
+                "summary:done",
+                json!({ "meetingId": meeting_id, "summary": summary }),
+            ),
+            SummaryEvent::Failed {
+                meeting_id,
+                message,
+                cancelled,
+            } => (
+                "summary:failed",
+                json!({ "meetingId": meeting_id, "message": message, "cancelled": cancelled }),
+            ),
+        };
+        if let Err(error) = handle.emit(name, payload) {
+            eprintln!("couldn't send {name} to the UI: {error}");
+        }
     })
 }

@@ -2,12 +2,14 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import type { MeetingDetail, TranscriptSegment } from "./lib/api";
+import type { MeetingDetail, ModelRecord, Summary, TranscriptSegment } from "./lib/api";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 type Args = Record<string, unknown>;
 
@@ -28,6 +30,12 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     recording: null as number | null,
     startError: null as unknown,
     unavailable: [] as { source: "me" | "them"; message: string }[],
+    model: null as ModelRecord | null,
+    summaries: new Map<number, Summary>(),
+    summarizing: null as number | null,
+    summarizeError: null as unknown,
+    importError: null as unknown,
+    cancelled: false,
   };
 
   const handlers: Record<string, (args: Args) => unknown> = {
@@ -82,10 +90,51 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
       return stopped;
     },
     list_transcript: ({ meetingId }) => segments.filter((s) => s.meetingId === meetingId),
+    summary_model: () => state.model,
+    recommended_model: () => ({
+      displayName: "Gemma 4 E2B",
+      fileName: "gemma-4-E2B-it-Q4_K_M.gguf",
+      sizeBytes: 3_106_738_272,
+      url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/rev/gemma-4-E2B-it-Q4_K_M.gguf",
+    }),
+    import_model: ({ path }) => {
+      if (state.importError) throw state.importError;
+      state.model = testModel(String(path));
+      return state.model;
+    },
+    latest_summary: ({ meetingId }) => state.summaries.get(meetingId as number) ?? null,
+    active_summary: () => state.summarizing,
+    summarize_meeting: ({ meetingId }) => {
+      if (state.summarizeError) throw state.summarizeError;
+      state.summarizing = meetingId as number;
+    },
+    cancel_summary: () => {
+      state.cancelled = true;
+      return true;
+    },
   };
 
   vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => handlers[command]((args ?? {}) as Args));
   return Object.assign(meetings, { state });
+}
+
+function testModel(path = "/models/gemma.gguf"): ModelRecord {
+  return {
+    id: "gemma-4-e2b-it-q4_k_m",
+    displayName: "Gemma 4 E2B",
+    filePath: path,
+    sizeBytes: 3_106_738_272,
+    sha256: "abc",
+    source: "import",
+    sourceUrl: null,
+    version: null,
+    minRuntime: null,
+    addedAt: 0,
+  };
+}
+
+function savedSummary(meetingId: number, bodyMarkdown: string, isFinal = true): Summary {
+  return { id: 1, meetingId, uptoMs: 754_000, isFinal, bodyMarkdown, modelId: "gemma-4-e2b-it-q4_k_m", createdAt: 0 };
 }
 
 function segment(id: number, meetingId: number, source: "me" | "them", startMs: number, text: string): TranscriptSegment {
@@ -388,5 +437,140 @@ describe("App", () => {
 
     await screen.findByRole("button", { name: "Stop recording" });
     expect(screen.queryByText(/Use headphones/)).not.toBeInTheDocument();
+  });
+
+  describe("summaries", () => {
+    async function openMeeting(title: string) {
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: new RegExp(title) }));
+      await screen.findByRole("tab", { name: "My notes" });
+      return user;
+    }
+
+    it("explains how to add a model and imports one", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      vi.mocked(open).mockResolvedValue("/Users/me/Downloads/gemma-4-E2B-it-Q4_K_M.gguf");
+      const user = await openMeeting("Sync");
+
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+      expect(await screen.findByRole("heading", { name: "Add a summary model" })).toBeInTheDocument();
+      expect(screen.getByText(/Gemma 4 E2B \(3.1 GB\)/)).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Import model file" }));
+
+      expect(await screen.findByText(/No summary yet/)).toBeInTheDocument();
+      expect(backend.state.model?.filePath).toBe("/Users/me/Downloads/gemma-4-E2B-it-Q4_K_M.gguf");
+    });
+
+    it("leaves things unchanged when the file picker is cancelled", async () => {
+      fakeBackend([seedMeeting(1, "Sync")]);
+      vi.mocked(open).mockResolvedValue(null);
+      const user = await openMeeting("Sync");
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+
+      await user.click(await screen.findByRole("button", { name: "Import model file" }));
+
+      expect(screen.getByRole("heading", { name: "Add a summary model" })).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("explains a file that isn't a model", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.importError = { kind: "invalid", message: "that file isn't a GGUF model" };
+      vi.mocked(open).mockResolvedValue("/tmp/notes.gguf");
+      const user = await openMeeting("Sync");
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+
+      await user.click(await screen.findByRole("button", { name: "Import model file" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("That file isn't a GGUF model.");
+    });
+
+    it("streams a summary and then shows the saved notes", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.model = testModel();
+      const user = await openMeeting("Sync");
+
+      await user.click(screen.getByRole("button", { name: "Summarize" }));
+
+      expect(screen.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
+      expect(await screen.findByText("Loading the model…")).toBeInTheDocument();
+      emit("summary:progress", { meetingId: 1, stage: "reading", part: 1, parts: 3 });
+      expect(screen.getByText("Reading the transcript, part 1 of 3…")).toBeInTheDocument();
+      emit("summary:progress", { meetingId: 1, stage: "writing" });
+      emit("summary:text", { meetingId: 1, text: "## Decisions\n- Ship " });
+      emit("summary:text", { meetingId: 1, text: "Friday" });
+      expect(screen.getByRole("heading", { name: "Decisions" })).toBeInTheDocument();
+      expect(screen.getByText("Ship Friday")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Summarizing…" })).toBeDisabled();
+
+      emit("summary:done", { meetingId: 1, summary: savedSummary(1, "## Decisions\n- Ship Friday") });
+
+      expect(await screen.findByText("Summary of the whole meeting")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Summarize" })).toBeEnabled();
+    });
+
+    it("labels the button and the result as partial while recording", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Live")]);
+      backend.state.model = testModel();
+      backend.state.recording = 1;
+      backend.state.summaries.set(1, savedSummary(1, "- so far", false));
+      const user = await openMeeting("Live");
+
+      expect(screen.getByRole("button", { name: "Summarize so far" })).toBeInTheDocument();
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+
+      expect(await screen.findByText("Partial summary, up to 12:34 into the meeting")).toBeInTheDocument();
+    });
+
+    it("cancels a running summary", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.model = testModel();
+      const user = await openMeeting("Sync");
+      await user.click(screen.getByRole("button", { name: "Summarize" }));
+
+      await user.click(await screen.findByRole("button", { name: "Cancel" }));
+      emit("summary:failed", { meetingId: 1, message: "the summary was cancelled", cancelled: true });
+
+      expect(backend.state.cancelled).toBe(true);
+      expect(await screen.findByText("Summary cancelled.")).toBeInTheDocument();
+    });
+
+    it("shows why a summary couldn't start", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Empty")]);
+      backend.state.model = testModel();
+      backend.state.summarizeError = {
+        kind: "conflict",
+        message: "there's nothing to summarize yet. Record the meeting or write some notes first",
+      };
+      const user = await openMeeting("Empty");
+
+      await user.click(screen.getByRole("button", { name: "Summarize" }));
+
+      expect(await screen.findByText(/There's nothing to summarize yet/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Summarize" })).toBeEnabled();
+    });
+
+    it("keeps unsaved notes when switching tabs", async () => {
+      fakeBackend([seedMeeting(1, "Sync")]);
+      const user = await openMeeting("Sync");
+
+      await user.type(screen.getByLabelText("Meeting notes"), "draft idea");
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+      await user.click(screen.getByRole("tab", { name: "My notes" }));
+
+      expect(screen.getByLabelText("Meeting notes")).toHaveValue("draft idea");
+    });
+
+    it("resumes showing a summary that was already running", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.model = testModel();
+      backend.state.summarizing = 1;
+      const user = await openMeeting("Sync");
+
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+
+      expect(await screen.findByText("Loading the model…")).toBeInTheDocument();
+    });
   });
 });

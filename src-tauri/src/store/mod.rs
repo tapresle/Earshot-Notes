@@ -2,6 +2,8 @@
 
 mod meetings;
 mod migrations;
+mod models;
+mod summaries;
 mod transcript;
 
 use std::path::Path;
@@ -11,12 +13,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::Connection;
 
 pub use meetings::{Meeting, MeetingDetail};
+pub use models::{ModelRecord, ModelSource};
+pub use summaries::{NewSummary, Summary};
 pub use transcript::{NewSegment, Source, TranscriptSegment};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error("meeting {0} doesn't exist")]
     MeetingNotFound(i64),
+    #[error("model {0} doesn't exist")]
+    ModelNotFound(String),
     #[error(
         "the database was created by a newer version of the app (schema {found}, this build supports {supported})"
     )]

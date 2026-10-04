@@ -2,6 +2,7 @@
 
 pub mod meetings;
 pub mod recording;
+pub mod summaries;
 
 use serde::Serialize;
 
@@ -24,13 +25,15 @@ pub enum ErrorKind {
     Conflict,
     /// A device or model the action needs isn't available.
     Unavailable,
+    /// The input isn't acceptable, such as a file that isn't a model.
+    Invalid,
     Internal,
 }
 
 impl From<StoreError> for CommandError {
     fn from(error: StoreError) -> Self {
         let kind = match error {
-            StoreError::MeetingNotFound(_) => ErrorKind::NotFound,
+            StoreError::MeetingNotFound(_) | StoreError::ModelNotFound(_) => ErrorKind::NotFound,
             StoreError::SchemaTooNew { .. } | StoreError::Sqlite(_) => ErrorKind::Internal,
         };
         Self {

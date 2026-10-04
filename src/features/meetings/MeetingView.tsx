@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api, errorMessage, type MeetingDetail } from "../../lib/api";
 import { Notepad } from "../notepad/Notepad";
 import { RecordingControls } from "../recording/RecordingControls";
+import { SummarizeButton, SummaryPanel } from "../summary/SummaryPanel";
+import { useSummary } from "../summary/useSummary";
 
 interface MeetingViewProps {
   meetingId: number;
@@ -56,17 +58,75 @@ export function MeetingView({
   }
 
   return (
+    <LoadedMeeting
+      meeting={state.meeting}
+      recordingMeetingId={recordingMeetingId}
+      onRecordingChange={onRecordingChange}
+      onRenamed={onRenamed}
+      onDeleted={onDeleted}
+    />
+  );
+}
+
+type Tab = "notes" | "summary";
+
+function LoadedMeeting({
+  meeting,
+  recordingMeetingId,
+  onRecordingChange,
+  onRenamed,
+  onDeleted,
+}: Omit<MeetingViewProps, "meetingId"> & { meeting: MeetingDetail }) {
+  const [tab, setTab] = useState<Tab>("notes");
+  const summary = useSummary(meeting.id);
+
+  const tabButton = (id: Tab, label: string) => (
+    <button
+      type="button"
+      role="tab"
+      id={`tab-${id}`}
+      aria-selected={tab === id}
+      aria-controls={`panel-${id}`}
+      className="tab"
+      onClick={() => setTab(id)}
+    >
+      {label}
+    </button>
+  );
+
+  return (
     <article className="meeting-view">
       <header className="meeting-header">
-        <TitleField meeting={state.meeting} onRenamed={onRenamed} />
-        <DeleteControl meetingId={meetingId} onDeleted={onDeleted} />
+        <TitleField meeting={meeting} onRenamed={onRenamed} />
+        <DeleteControl meetingId={meeting.id} onDeleted={onDeleted} />
       </header>
-      <Notepad meetingId={meetingId} initialMarkdown={state.meeting.notesMarkdown} />
+      <div role="tablist" aria-label="Meeting views" className="tabs">
+        {tabButton("notes", "My notes")}
+        {tabButton("summary", "Summary")}
+      </div>
+      {/* Both panels stay mounted so unsaved notes survive switching tabs. */}
+      <div role="tabpanel" id="panel-notes" aria-labelledby="tab-notes" className="tab-panel" hidden={tab !== "notes"}>
+        <Notepad meetingId={meeting.id} initialMarkdown={meeting.notesMarkdown} />
+      </div>
+      <div
+        role="tabpanel"
+        id="panel-summary"
+        aria-labelledby="tab-summary"
+        className="tab-panel"
+        hidden={tab !== "summary"}
+      >
+        <SummaryPanel state={summary} />
+      </div>
       <footer className="meeting-footer">
         <RecordingControls
-          meetingId={meetingId}
+          meetingId={meeting.id}
           recordingMeetingId={recordingMeetingId}
           onRecordingChange={onRecordingChange}
+        />
+        <SummarizeButton
+          state={summary}
+          recording={recordingMeetingId === meeting.id}
+          onStarted={() => setTab("summary")}
         />
       </footer>
     </article>

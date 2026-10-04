@@ -9,7 +9,7 @@ macOS (Apple Silicon) is the first target. Windows and Linux follow.
 - **Shell:** Tauri 2. The Rust core lives in `src-tauri/`.
 - **UI:** React 19, TypeScript, and Vite in `src/`.
 - **Transcription:** Cactus Whistle through the prebuilt needle engine. `src-tauri/crates/needle-sys` holds the raw FFI, and `src-tauri/src/transcribe/whistle.rs` is the safe wrapper.
-- **Summaries:** llama.cpp embedded through `llama-cpp-2`. This is planned, not built yet.
+- **Summaries:** llama.cpp embedded through `llama-cpp-2` with Metal, in `src-tauri/src/summarize/`. Prompts are rendered with each model's own chat template through `minijinja`. Model files are managed in `src-tauri/src/models/`.
 - **Storage:** SQLite through `rusqlite`, in `src-tauri/src/store/`. The database lives in the app data directory as `earshot.db`.
 
 The decision records in `docs/decisions/` explain why each piece was chosen.
@@ -36,8 +36,8 @@ Before you hand off work, run the lint, typecheck, test, and format commands. Al
 ## Conventions
 
 - **UI features** live under `src/features/<feature>/`. Each feature keeps its components, hooks, and tests together.
-- **Rust modules** under `src-tauri/src/`: `audio` (microphone and system capture, downmix, resampling), `chunker` (speech segmentation), `transcribe` (Whistle and its worker thread), `recording` (start, stop, and the capture-to-worker pipeline), `store`, and `commands`. Planned: `summarize`, `models`, and `export`. Tauri command handlers in `commands` stay thin and call into the other modules.
-- **UI and core communication:** the UI calls Tauri commands for requests, and the core pushes live updates as Tauri events. Current events: `transcript:segment` and `recording:issue`. Planned: `summary:token` and `summary:done`.
+- **Rust modules** under `src-tauri/src/`: `audio` (microphone and system capture, downmix, resampling), `chunker` (speech segmentation), `transcribe` (Whistle and its worker thread), `recording` (start, stop, and the capture-to-worker pipeline), `summarize` (prompting, the llama.cpp generator, and the background summarizer), `models` (known models and GGUF import), `store`, and `commands`. Planned: `export`. Tauri command handlers in `commands` stay thin and call into the other modules.
+- **UI and core communication:** the UI calls Tauri commands for requests, and the core pushes live updates as Tauri events. Current events: `transcript:segment`, `recording:issue`, `summary:progress`, `summary:text`, `summary:done`, and `summary:failed`.
 - **Audio pipeline:** capture threads must never block. They drop buffers when the pipeline falls behind. Whistle receives 16 kHz mono segments of at most 28 s from `chunker`. Transcript times are offsets from `meetings.started_at`.
 - **Native macOS code:** `src-tauri/crates/macos-audio` holds the Objective-C system audio tap and microphone permission calls, compiled by its `build.rs` with `cc` under `-Wall -Wextra -Werror`. Keep its C interface in `native/audio_tap.h` and its Rust bindings in `src/lib.rs` in sync.
 - **Permissions:** the bundled app declares `NSMicrophoneUsageDescription` and `NSAudioCaptureUsageDescription` in `src-tauri/Info.plist`, and requires macOS 14.4. Under `npm run tauri dev`, macOS attributes both permissions to your terminal app instead.
@@ -46,6 +46,8 @@ Before you hand off work, run the lint, typecheck, test, and format commands. Al
 - **Markdown storage:** notes and summaries are stored as Markdown.
 - **Offline only:** the app must not make network requests at runtime. The CSP in `src-tauri/tauri.conf.json` enforces this for the UI. The only planned exception is an explicit, user-started model download.
 - **Styling** uses the CSS custom properties in `src/styles.css`. Every color needs a dark mode value.
+- **Summary tests:** `src-tauri/tests/summarize.rs` runs a tiny real model (SmolLM2 135M, fetched by `scripts/fetch-native.sh`) to test plumbing such as streaming, limits, and cancellation, not summary quality. Logic above the model is tested through the `Generator` trait with fakes.
+- **Rendering model output:** never render model output as HTML. Use `src/features/summary/Markdown.tsx`.
 - **Test data:** tests use synthetic audio and text fixtures only. Generate speech fixtures with macOS `say`, for example `say -o tests/fixtures/name.wav --data-format=LEI16@16000 "text"`.
 - **Native binaries:** `libneedle.a` and `.cact` model files aren't committed. `scripts/fetch-native.sh` pins their Hugging Face revisions and SHA-256 checksums. To change a version, update the pins and checksums there.
 - **needle engine:** the engine holds one process-global, non-thread-safe model, so only one `Whistle` can exist at a time and it must stay on a single owner thread.
