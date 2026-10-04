@@ -221,11 +221,19 @@ function InstalledModel({
   }
 
   return (
-    <div className="installed-model">
+    <div className={selected ? "installed-model selected" : "installed-model"}>
       <label className="model-choice">
-        <input type="radio" name="summary-model" checked={selected} onChange={onSelect} />
+        <input type="radio" name="summary-model" className="sr-only" checked={selected} onChange={onSelect} />
         <span>
-          <strong>{model.displayName}</strong>
+          <span className="model-choice-name">
+            <strong>{model.displayName}</strong>
+            {/* The radio already announces the selection; the badge is for sighted users. */}
+            {selected && (
+              <span className="badge" aria-hidden="true">
+                Selected
+              </span>
+            )}
+          </span>
           <span className="model-details">
             {gigabytes(model.sizeBytes)} · {model.source === "download" ? "Downloaded" : "Imported"}
             {model.version ? ` · ${model.version}` : ""}

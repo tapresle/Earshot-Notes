@@ -719,11 +719,15 @@ body {
 }
 
 .model-choice {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 6px 0;
+  flex: 1;
   font-size: 14px;
+  cursor: pointer;
+}
+
+.model-choice-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .installed-model {
@@ -732,10 +736,27 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 4px 12px;
+  margin: 8px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.installed-model:hover:not(.selected) {
+  border-color: var(--text-muted);
+}
+
+.installed-model.selected {
+  border-color: var(--accent);
+  background: var(--selected);
+}
+
+.installed-model:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .installed-model .link-button {
-  padding-top: 6px;
   font-size: 13px;
 }
 
@@ -745,7 +766,7 @@ body {
   align-items: center;
   gap: 8px;
   width: 100%;
-  margin: 0 0 8px 24px;
+  margin: 4px 0 0;
   font-size: 13px;
   color: var(--text-secondary);
 }

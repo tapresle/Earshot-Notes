@@ -902,10 +902,14 @@ describe("App", () => {
 
       const gemmaChoice = await screen.findByRole("radio", { name: /Gemma 4 E2B/ });
       expect(gemmaChoice).toBeChecked();
+      expect(screen.getAllByText("Selected")).toHaveLength(1);
+      expect(gemmaChoice.closest("label")).toHaveTextContent("Selected");
       await user.click(screen.getByRole("radio", { name: /My fine-tune/ }));
 
       await waitFor(() => expect(backend.state.model?.id).toBe("local-abc"));
       expect(screen.getByRole("radio", { name: /My fine-tune/ })).toBeChecked();
+      expect(screen.getAllByText("Selected")).toHaveLength(1);
+      expect(screen.getByRole("radio", { name: /My fine-tune/ }).closest("label")).toHaveTextContent("Selected");
     });
 
     it("removes a model after confirming, and can cancel", async () => {
