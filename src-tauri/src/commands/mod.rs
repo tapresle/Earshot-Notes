@@ -46,10 +46,10 @@ impl From<RecordingError> for CommandError {
         let kind = match error {
             RecordingError::Store(store) => return store.into(),
             RecordingError::AlreadyRecording(_) => ErrorKind::Conflict,
-            RecordingError::TranscriptionUnavailable(_) | RecordingError::Capture(_) => {
+            RecordingError::TranscriptionUnavailable(_) | RecordingError::NoAudio(_) => {
                 ErrorKind::Unavailable
             }
-            RecordingError::Resample(_) => ErrorKind::Internal,
+            RecordingError::Thread(_) => ErrorKind::Internal,
         };
         Self { kind, message }
     }

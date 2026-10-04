@@ -26,6 +26,22 @@ export interface TranscriptSegment {
   language: string | null;
 }
 
+export type Source = TranscriptSegment["source"];
+
+export interface SourceProblem {
+  source: Source;
+  message: string;
+}
+
+export interface StartReport {
+  /** Streams that couldn't start. Recording continues with the others. */
+  unavailable: SourceProblem[];
+}
+
+export interface RecordingIssue extends SourceProblem {
+  meetingId: number;
+}
+
 export interface CommandError {
   kind: "notFound" | "conflict" | "unavailable" | "internal";
   message: string;
@@ -57,10 +73,12 @@ export const api = {
   renameMeeting: (id: number, title: string) => invoke<string>("rename_meeting", { id, title }),
   updateNotes: (id: number, bodyMarkdown: string) => invoke<number>("update_notes", { id, bodyMarkdown }),
   deleteMeeting: (id: number) => invoke<void>("delete_meeting", { id }),
-  startRecording: (meetingId: number) => invoke<void>("start_recording", { meetingId }),
+  startRecording: (meetingId: number) => invoke<StartReport>("start_recording", { meetingId }),
   stopRecording: () => invoke<number | null>("stop_recording"),
   activeRecording: () => invoke<number | null>("active_recording"),
   listTranscript: (meetingId: number) => invoke<TranscriptSegment[]>("list_transcript", { meetingId }),
   onTranscriptSegment: (handler: (segment: TranscriptSegment) => void): Promise<UnlistenFn> =>
     listen<TranscriptSegment>("transcript:segment", (event) => handler(event.payload)),
+  onRecordingIssue: (handler: (issue: RecordingIssue) => void): Promise<UnlistenFn> =>
+    listen<RecordingIssue>("recording:issue", (event) => handler(event.payload)),
 };

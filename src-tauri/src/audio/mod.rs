@@ -2,6 +2,9 @@
 
 pub mod mic;
 pub mod resample;
+pub mod system;
+
+use std::sync::Arc;
 
 /// A running capture. Dropping it stops the capture and closes its sender.
 pub trait Capture: Send {}
@@ -13,12 +16,21 @@ pub struct CaptureFormat {
     pub channels: u16,
 }
 
+/// Receives user-facing descriptions of problems that happen after a capture started.
+pub type ErrorSink = Arc<dyn Fn(String) + Send + Sync>;
+
 #[derive(Debug, thiserror::Error)]
 pub enum CaptureError {
     #[error("no microphone is available")]
     NoDevice,
-    #[error("the audio device couldn't start: {0}")]
+    #[error(
+        "microphone access is off. Turn it on in System Settings > Privacy & Security > Microphone"
+    )]
+    MicPermissionDenied,
+    #[error("the microphone couldn't start: {0}")]
     Device(String),
+    #[error("system audio couldn't start: {0}")]
+    SystemAudio(String),
 }
 
 /// Averages interleaved frames into one mono channel.

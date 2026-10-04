@@ -35,6 +35,9 @@
     ],
     "resources": {
       "resources/models/whistle.cact": "models/whistle.cact"
+    },
+    "macOS": {
+      "minimumSystemVersion": "14.4"
     }
   }
 }

@@ -8,7 +8,9 @@ use std::thread::{self, JoinHandle};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample};
 
-use super::{Capture, CaptureError, CaptureFormat};
+use macos_audio::MicPermission;
+
+use super::{Capture, CaptureError, CaptureFormat, ErrorSink};
 
 /// Holds the capture thread. Dropping it stops the stream and closes the sender.
 pub struct MicCapture {
@@ -27,16 +29,21 @@ impl Drop for MicCapture {
     }
 }
 
-/// Starts capturing from the default microphone. Interleaved buffers go to
+/// Starts capturing from the default microphone, asking for permission first if
+/// needed (this blocks until the prompt is answered). Interleaved buffers go to
 /// `frames`; when the pipeline falls behind, buffers are dropped rather than
-/// blocking the audio thread.
-pub fn start(frames: SyncSender<Vec<f32>>) -> Result<(MicCapture, CaptureFormat), CaptureError> {
+/// blocking the audio thread. Stream failures after start go to `on_error`.
+pub fn start(
+    frames: SyncSender<Vec<f32>>,
+    on_error: ErrorSink,
+) -> Result<(MicCapture, CaptureFormat), CaptureError> {
+    ensure_permission()?;
     let (ready_tx, ready_rx) = mpsc::channel();
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
 
     let thread = thread::Builder::new()
         .name("mic-capture".into())
-        .spawn(move || run(frames, ready_tx, stop_rx))
+        .spawn(move || run(frames, on_error, ready_tx, stop_rx))
         .map_err(|e| CaptureError::Device(e.to_string()))?;
 
     match ready_rx.recv() {
@@ -55,13 +62,22 @@ pub fn start(frames: SyncSender<Vec<f32>>) -> Result<(MicCapture, CaptureFormat)
     }
 }
 
+fn ensure_permission() -> Result<(), CaptureError> {
+    match macos_audio::mic_permission() {
+        MicPermission::Authorized => Ok(()),
+        MicPermission::NotDetermined if macos_audio::request_mic_access() => Ok(()),
+        _ => Err(CaptureError::MicPermissionDenied),
+    }
+}
+
 fn run(
     frames: SyncSender<Vec<f32>>,
+    on_error: ErrorSink,
     ready: mpsc::Sender<Result<CaptureFormat, CaptureError>>,
     stop: Receiver<()>,
 ) {
     let dropped = Arc::new(AtomicU64::new(0));
-    let stream = match open(frames, dropped.clone()) {
+    let stream = match open(frames, on_error, dropped.clone()) {
         Ok((stream, format)) => {
             let _ = ready.send(Ok(format));
             stream
@@ -84,6 +100,7 @@ fn run(
 
 fn open(
     frames: SyncSender<Vec<f32>>,
+    on_error: ErrorSink,
     dropped: Arc<AtomicU64>,
 ) -> Result<(cpal::Stream, CaptureFormat), CaptureError> {
     let host = cpal::default_host();
@@ -97,10 +114,10 @@ fn open(
     };
 
     let stream = match config.sample_format() {
-        SampleFormat::F32 => build::<f32>(&device, config.into(), frames, dropped),
-        SampleFormat::I16 => build::<i16>(&device, config.into(), frames, dropped),
-        SampleFormat::I32 => build::<i32>(&device, config.into(), frames, dropped),
-        SampleFormat::U16 => build::<u16>(&device, config.into(), frames, dropped),
+        SampleFormat::F32 => build::<f32>(&device, config.into(), frames, on_error, dropped),
+        SampleFormat::I16 => build::<i16>(&device, config.into(), frames, on_error, dropped),
+        SampleFormat::I32 => build::<i32>(&device, config.into(), frames, on_error, dropped),
+        SampleFormat::U16 => build::<u16>(&device, config.into(), frames, on_error, dropped),
         other => {
             return Err(CaptureError::Device(format!(
                 "unsupported sample format {other}"
@@ -117,6 +134,7 @@ fn build<T>(
     device: &cpal::Device,
     config: cpal::StreamConfig,
     frames: SyncSender<Vec<f32>>,
+    on_error: ErrorSink,
     dropped: Arc<AtomicU64>,
 ) -> Result<cpal::Stream, CaptureError>
 where
@@ -132,8 +150,19 @@ where
                     dropped.fetch_add(1, Ordering::Relaxed);
                 }
             },
-            |error| eprintln!("microphone stream error: {error}"),
+            move |error: cpal::Error| {
+                eprintln!("microphone stream error: {error}");
+                // Overruns, automatic reroutes to a new default device, and a
+                // refused real-time priority leave the stream running.
+                use cpal::ErrorKind::{DeviceChanged, RealtimeDenied, Xrun};
+                if !matches!(error.kind(), Xrun | DeviceChanged | RealtimeDenied) {
+                    on_error(format!("the microphone stopped: {error}"));
+                }
+            },
             None,
         )
-        .map_err(|e| CaptureError::Device(e.to_string()))
+        .map_err(|e| match e.kind() {
+            cpal::ErrorKind::PermissionDenied => CaptureError::MicPermissionDenied,
+            _ => CaptureError::Device(e.to_string()),
+        })
 }

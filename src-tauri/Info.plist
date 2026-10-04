@@ -4,5 +4,7 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>Earshot transcribes your meetings on this Mac. Audio never leaves your computer.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Earshot transcribes the other people in your calls from your Mac's audio output. Audio never leaves your computer.</string>
 </dict>
 </plist>

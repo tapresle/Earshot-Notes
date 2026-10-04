@@ -14,6 +14,7 @@
   --on-accent: #ffffff;
   --danger: #a32d2d;
   --danger-bg: #fcebeb;
+  --warning: #854f0b;
 
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
@@ -40,6 +41,7 @@
     --on-accent: #ffffff;
     --danger: #f09595;
     --danger-bg: #3a1c1c;
+    --warning: #fac775;
   }
 }
 
@@ -387,4 +389,16 @@ body {
 .segment-time {
   font-weight: 400;
   color: var(--text-muted);
+}
+
+.field-warning {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+  color: var(--warning);
+}
+
+.transcript-hint {
+  margin-top: 16px;
+  font-size: 12px;
 }

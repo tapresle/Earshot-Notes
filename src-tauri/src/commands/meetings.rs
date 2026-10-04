@@ -42,7 +42,7 @@ pub fn update_notes(
 #[tauri::command]
 pub fn delete_meeting(
     store: State<'_, Arc<Store>>,
-    recorder: State<'_, Recorder>,
+    recorder: State<'_, Arc<Recorder>>,
     id: i64,
 ) -> CommandResult<()> {
     if recorder.active_meeting() == Some(id) {

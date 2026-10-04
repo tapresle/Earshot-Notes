@@ -40,8 +40,8 @@ pub fn run() {
             let worker = spawn_transcription(app, store.clone(), candidates);
 
             app.manage(store);
-            app.manage(Recorder::default());
-            app.manage(Transcription(worker));
+            app.manage(Arc::new(Recorder::default()));
+            app.manage(Arc::new(Transcription(worker)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -61,7 +61,8 @@ pub fn run() {
         .run(|app, event| {
             if let RunEvent::Exit = event {
                 let store = app.state::<Arc<Store>>();
-                if let Err(error) = recording::stop_recording(&store, &app.state::<Recorder>()) {
+                if let Err(error) = recording::stop_recording(&store, &app.state::<Arc<Recorder>>())
+                {
                     eprintln!("couldn't stop the recording on exit: {error}");
                 }
             }

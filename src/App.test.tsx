@@ -24,7 +24,11 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
   const meetings = new Map(seed.map((m) => [m.id, { ...m }]));
   let nextId = Math.max(0, ...seed.map((m) => m.id)) + 1;
   const notFound = { kind: "notFound", message: "missing" };
-  const state = { recording: null as number | null, startError: null as unknown };
+  const state = {
+    recording: null as number | null,
+    startError: null as unknown,
+    unavailable: [] as { source: "me" | "them"; message: string }[],
+  };
 
   const handlers: Record<string, (args: Args) => unknown> = {
     list_meetings: () =>
@@ -70,6 +74,7 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
       if (state.startError) throw state.startError;
       if (state.recording !== null) throw { kind: "conflict", message: "another meeting is already recording; stop it first" };
       state.recording = meetingId as number;
+      return { unavailable: state.unavailable };
     },
     stop_recording: () => {
       const stopped = state.recording;
@@ -316,5 +321,59 @@ describe("App", () => {
 
     expect(await screen.findByText("Stop recording before deleting this meeting.")).toBeInTheDocument();
     expect(backend.has(1)).toBe(true);
+  });
+
+  it("names both sources while recording", async () => {
+    fakeBackend([seedMeeting(1, "Call")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Call/ }));
+
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+
+    expect(await screen.findByText("Recording your microphone and system audio")).toBeInTheDocument();
+  });
+
+  it("keeps recording and explains when one source is unavailable", async () => {
+    const backend = fakeBackend([seedMeeting(1, "Call")]);
+    backend.state.unavailable = [{ source: "them", message: "system audio couldn't start: tap failed" }];
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Call/ }));
+
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+
+    expect(await screen.findByText("Recording your microphone")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("System audio couldn't start: tap failed.");
+  });
+
+  it("shows a problem reported during the recording", async () => {
+    fakeBackend([seedMeeting(1, "Call")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Call/ }));
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+    await screen.findByRole("button", { name: "Stop recording" });
+
+    emit("recording:issue", { meetingId: 2, source: "me", message: "not this meeting" });
+    emit("recording:issue", { meetingId: 1, source: "me", message: "the microphone stopped: device unplugged" });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The microphone stopped: device unplugged.");
+    expect(screen.getByText("Recording system audio")).toBeInTheDocument();
+    expect(screen.queryByText(/not this meeting/i)).not.toBeInTheDocument();
+  });
+
+  it("hints at the system audio permission until the other side is heard", async () => {
+    fakeBackend([seedMeeting(1, "Call")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Call/ }));
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+    const transcript = screen.getByRole("complementary", { name: "Transcript" });
+
+    expect(await within(transcript).findByText(/Not seeing the other side/)).toBeInTheDocument();
+    emit("transcript:segment", segment(5, 1, "them", 1000, "Can you hear me?"));
+
+    await waitFor(() => expect(within(transcript).queryByText(/Not seeing the other side/)).not.toBeInTheDocument());
   });
 });
