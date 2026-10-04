@@ -242,4 +242,89 @@ mod pipeline {
             jobs[0].start_ms
         );
     }
+    #[test]
+    fn keeps_transcribing_across_multiple_chunks_past_thirty_seconds() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let sentence = speech_fixture();
+        let pause = |ms: usize| vec![0.0; SAMPLE_RATE as usize * ms / 1000];
+        let mut audio = pause(1000);
+        // Three sentences with clear pauses: one segment each.
+        for _ in 0..3 {
+            audio.extend(&sentence);
+            audio.extend(pause(1000));
+        }
+        // Then about 35 s of near-continuous speech, longer than one Whistle pass.
+        for _ in 0..8 {
+            audio.extend(&sentence);
+            audio.extend(pause(100));
+        }
+        audio.extend(pause(1000));
+        let total_ms = audio.len() as i64 * 1000 / SAMPLE_RATE as i64;
+        assert!(total_ms >= 45_000, "{total_ms}");
+
+        let (tx, rx) = sync_channel(16_384);
+        for buffer in as_48k_stereo(&audio).chunks(960) {
+            tx.send(buffer.to_vec()).unwrap();
+        }
+        drop(tx);
+        let mut jobs = Vec::new();
+        run_pipeline(
+            rx,
+            CaptureFormat {
+                sample_rate: 48_000,
+                channels: 2,
+            },
+            To16k::new(48_000).unwrap(),
+            Source::Me,
+            1,
+            0,
+            |job| jobs.push(job),
+        );
+
+        let mut whistle = Whistle::load(Path::new(MODEL)).unwrap();
+        let segments: Vec<(i64, i64, String)> = jobs
+            .iter()
+            .map(|job| {
+                let text = whistle.transcribe(&job.samples).unwrap().text;
+                (job.start_ms, job.end_ms, normalize(&text))
+            })
+            .collect();
+        let summary = format!("{segments:#?}");
+
+        // Several chunks, each within the engine's limit, in timeline order.
+        assert!(segments.len() >= 5, "{summary}");
+        for (start, end, _) in &segments {
+            assert!(end - start <= 28_000, "{summary}");
+        }
+        assert!(segments.windows(2).all(|w| w[0].1 <= w[1].0), "{summary}");
+
+        // Every sentence was transcribed, including those after the 30 s mark.
+        let all_text = segments
+            .iter()
+            .map(|(_, _, text)| text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(
+            all_text.matches("quarterly planning meeting").count(),
+            11,
+            "{summary}"
+        );
+        assert_eq!(all_text.matches("budget report").count(), 11, "{summary}");
+        let late: Vec<_> = segments
+            .iter()
+            .filter(|(start, _, _)| *start >= 30_000)
+            .collect();
+        assert!(!late.is_empty(), "{summary}");
+        assert!(
+            late.iter().all(|(_, _, text)| !text.is_empty()),
+            "{summary}"
+        );
+
+        // The last segment ends where the audio's speech ends, so timestamps didn't drift.
+        let last_end = segments.last().unwrap().1;
+        assert!(
+            (total_ms - 1200..=total_ms).contains(&last_end),
+            "{last_end} vs {total_ms}"
+        );
+    }
 }
