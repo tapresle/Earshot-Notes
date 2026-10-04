@@ -1,16 +1,25 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage, type MeetingDetail } from "../../lib/api";
 import { Notepad } from "../notepad/Notepad";
+import { RecordingControls } from "../recording/RecordingControls";
 
 interface MeetingViewProps {
   meetingId: number;
+  recordingMeetingId: number | null;
+  onRecordingChange: (meetingId: number | null) => void;
   onRenamed: (id: number, title: string) => void;
   onDeleted: (id: number) => void;
 }
 
 type LoadState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; meeting: MeetingDetail };
 
-export function MeetingView({ meetingId, onRenamed, onDeleted }: MeetingViewProps) {
+export function MeetingView({
+  meetingId,
+  recordingMeetingId,
+  onRecordingChange,
+  onRenamed,
+  onDeleted,
+}: MeetingViewProps) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -53,6 +62,13 @@ export function MeetingView({ meetingId, onRenamed, onDeleted }: MeetingViewProp
         <DeleteControl meetingId={meetingId} onDeleted={onDeleted} />
       </header>
       <Notepad meetingId={meetingId} initialMarkdown={state.meeting.notesMarkdown} />
+      <footer className="meeting-footer">
+        <RecordingControls
+          meetingId={meetingId}
+          recordingMeetingId={recordingMeetingId}
+          onRecordingChange={onRecordingChange}
+        />
+      </footer>
     </article>
   );
 }

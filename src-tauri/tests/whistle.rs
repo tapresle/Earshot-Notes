@@ -117,3 +117,129 @@ fn rejects_a_file_that_is_not_a_model() {
         Err(WhistleError::Load(_))
     ));
 }
+
+mod worker {
+    use super::*;
+    use earshot_lib::store::Source;
+    use earshot_lib::transcribe::worker::{Job, TranscriptionWorker, load_first};
+    use std::path::PathBuf;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn prefers_the_first_candidate_and_falls_back_past_bad_ones() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let candidates = vec![
+            PathBuf::from("resources/models/missing.cact"),
+            PathBuf::from("tests/fixtures/speech-en.wav"), // exists but isn't a model
+            PathBuf::from(MODEL),
+        ];
+
+        let (_whistle, path) = load_first(&candidates).unwrap();
+
+        assert_eq!(path, PathBuf::from(MODEL));
+    }
+
+    #[test]
+    fn explains_when_no_candidate_exists() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+
+        let error = load_first(&[PathBuf::from("nowhere/whistle.cact")])
+            .err()
+            .unwrap();
+
+        assert!(error.to_string().contains("nowhere/whistle.cact"));
+    }
+
+    #[test]
+    fn transcribes_jobs_in_order_and_skips_silence() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let (results_tx, results) = mpsc::channel();
+        let (worker, loaded) =
+            TranscriptionWorker::spawn(vec![PathBuf::from(MODEL)], move |job, t| {
+                results_tx.send((job.start_ms, t.text)).unwrap();
+            })
+            .unwrap();
+        assert_eq!(loaded.path, PathBuf::from(MODEL));
+        let job = |start_ms, samples| Job {
+            meeting_id: 1,
+            source: Source::Me,
+            start_ms,
+            end_ms: start_ms + 5000,
+            samples,
+        };
+
+        worker.submit(job(0, vec![0.0; 16_000])).unwrap();
+        worker.submit(job(5000, speech_fixture())).unwrap();
+        drop(worker); // closes the queue; the thread drains it, then releases the model
+
+        let (start_ms, text) = results.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(start_ms, 5000);
+        assert!(normalize(&text).contains("quarterly planning meeting"));
+        assert!(results.recv_timeout(Duration::from_secs(2)).is_err());
+    }
+}
+
+mod pipeline {
+    use super::*;
+    use earshot_lib::audio::CaptureFormat;
+    use earshot_lib::audio::resample::To16k;
+    use earshot_lib::recording::run_pipeline;
+    use earshot_lib::store::Source;
+    use std::sync::mpsc::sync_channel;
+
+    /// Linear interpolation to 48 kHz stereo, standing in for a typical device.
+    fn as_48k_stereo(samples_16k: &[f32]) -> Vec<f32> {
+        let mut out = Vec::with_capacity(samples_16k.len() * 6);
+        for pair in samples_16k.windows(2) {
+            for step in 0..3 {
+                let s = pair[0] + (pair[1] - pair[0]) * step as f32 / 3.0;
+                out.extend([s, s]);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn transcribes_speech_captured_at_48k_stereo() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let mut audio = vec![0.0; SAMPLE_RATE as usize];
+        audio.extend(speech_fixture());
+        audio.extend(vec![0.0; SAMPLE_RATE as usize]);
+        let device_audio = as_48k_stereo(&audio);
+        let (tx, rx) = sync_channel(4096);
+        for buffer in device_audio.chunks(960) {
+            tx.send(buffer.to_vec()).unwrap();
+        }
+        drop(tx);
+        let mut jobs = Vec::new();
+
+        run_pipeline(
+            rx,
+            CaptureFormat {
+                sample_rate: 48_000,
+                channels: 2,
+            },
+            To16k::new(48_000).unwrap(),
+            Source::Me,
+            1,
+            0,
+            |job| jobs.push(job),
+        );
+
+        let mut whistle = Whistle::load(Path::new(MODEL)).unwrap();
+        let text: Vec<String> = jobs
+            .iter()
+            .map(|job| whistle.transcribe(&job.samples).unwrap().text)
+            .collect();
+        assert_eq!(
+            normalize(&text.join(" ")),
+            "the quarterly planning meeting starts at 10 please bring the budget report"
+        );
+        assert!(
+            (700..=900).contains(&jobs[0].start_ms),
+            "{}",
+            jobs[0].start_ms
+        );
+    }
+}

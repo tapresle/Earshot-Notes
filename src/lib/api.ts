@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export interface Meeting {
   id: number;
@@ -14,8 +15,19 @@ export interface MeetingDetail extends Meeting {
   notesUpdatedAt: number;
 }
 
+export interface TranscriptSegment {
+  id: number;
+  meetingId: number;
+  source: "me" | "them";
+  /** Milliseconds from the start of the meeting. */
+  startMs: number;
+  endMs: number;
+  text: string;
+  language: string | null;
+}
+
 export interface CommandError {
-  kind: "notFound" | "internal";
+  kind: "notFound" | "conflict" | "unavailable" | "internal";
   message: string;
 }
 
@@ -25,10 +37,17 @@ function isCommandError(error: unknown): error is CommandError {
 
 /** A user-facing message for any error thrown by a command. */
 export function errorMessage(error: unknown): string {
-  if (isCommandError(error)) {
-    return error.kind === "notFound" ? "That meeting no longer exists." : "The app couldn't read or write your meetings.";
+  if (!isCommandError(error)) return "Something went wrong.";
+  switch (error.kind) {
+    case "notFound":
+      return "That meeting no longer exists.";
+    case "conflict":
+    case "unavailable":
+      // These messages are written for people and explain what to do.
+      return `${error.message.charAt(0).toUpperCase()}${error.message.slice(1)}.`;
+    case "internal":
+      return "The app couldn't read or write your meetings.";
   }
-  return "Something went wrong.";
 }
 
 export const api = {
@@ -38,4 +57,10 @@ export const api = {
   renameMeeting: (id: number, title: string) => invoke<string>("rename_meeting", { id, title }),
   updateNotes: (id: number, bodyMarkdown: string) => invoke<number>("update_notes", { id, bodyMarkdown }),
   deleteMeeting: (id: number) => invoke<void>("delete_meeting", { id }),
+  startRecording: (meetingId: number) => invoke<void>("start_recording", { meetingId }),
+  stopRecording: () => invoke<number | null>("stop_recording"),
+  activeRecording: () => invoke<number | null>("active_recording"),
+  listTranscript: (meetingId: number) => invoke<TranscriptSegment[]>("list_transcript", { meetingId }),
+  onTranscriptSegment: (handler: (segment: TranscriptSegment) => void): Promise<UnlistenFn> =>
+    listen<TranscriptSegment>("transcript:segment", (event) => handler(event.payload)),
 };

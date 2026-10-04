@@ -5,7 +5,10 @@ use rusqlite::Connection;
 use super::StoreError;
 
 /// Never edit or reorder an entry once it has shipped. Append new migrations.
-const MIGRATIONS: &[&str] = &[include_str!("../../migrations/0001_meetings_and_notes.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../../migrations/0001_meetings_and_notes.sql"),
+    include_str!("../../migrations/0002_transcript_segments.sql"),
+];
 
 pub fn apply(conn: &mut Connection) -> Result<(), StoreError> {
     let current: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;

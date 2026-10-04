@@ -5,6 +5,7 @@ import { groupByDay } from "./groupByDay";
 interface MeetingListProps {
   meetings: Meeting[];
   selectedId: number | null;
+  recordingMeetingId: number | null;
   onSelect: (id: number) => void;
   onCreate: () => void;
   creating: boolean;
@@ -12,7 +13,14 @@ interface MeetingListProps {
 
 const timeFormat: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
 
-export function MeetingList({ meetings, selectedId, onSelect, onCreate, creating }: MeetingListProps) {
+export function MeetingList({
+  meetings,
+  selectedId,
+  recordingMeetingId,
+  onSelect,
+  onCreate,
+  creating,
+}: MeetingListProps) {
   // Day labels are computed against the time the list mounted.
   const [now] = useState(() => Date.now());
   const groups = groupByDay(meetings, now);
@@ -40,7 +48,9 @@ export function MeetingList({ meetings, selectedId, onSelect, onCreate, creating
                   >
                     <span className="meeting-title">{meeting.title}</span>
                     <span className="meeting-meta">
-                      {new Date(meeting.createdAt).toLocaleTimeString(undefined, timeFormat)}
+                      {meeting.id === recordingMeetingId
+                        ? "Recording"
+                        : new Date(meeting.createdAt).toLocaleTimeString(undefined, timeFormat)}
                     </span>
                   </button>
                 </li>

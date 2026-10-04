@@ -2,6 +2,7 @@
 
 mod meetings;
 mod migrations;
+mod transcript;
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
@@ -10,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::Connection;
 
 pub use meetings::{Meeting, MeetingDetail};
+pub use transcript::{NewSegment, Source, TranscriptSegment};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {

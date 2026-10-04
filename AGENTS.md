@@ -36,8 +36,10 @@ Before you hand off work, run the lint, typecheck, test, and format commands. Al
 ## Conventions
 
 - **UI features** live under `src/features/<feature>/`. Each feature keeps its components, hooks, and tests together.
-- **Rust modules** under `src-tauri/src/` follow the plan's boundaries: `audio`, `chunker`, `transcribe`, `summarize`, `store`, `models`, `export`, and `commands`. Tauri command handlers in `commands` stay thin and call into the other modules.
-- **UI and core communication:** the UI calls Tauri commands for requests, and the core pushes live updates as Tauri events (`transcript:segment`, `summary:token`, `summary:done`, `recording:state`).
+- **Rust modules** under `src-tauri/src/`: `audio` (capture, downmix, resampling), `chunker` (speech segmentation), `transcribe` (Whistle and its worker thread), `recording` (start, stop, and the capture-to-worker pipeline), `store`, and `commands`. Planned: `summarize`, `models`, and `export`. Tauri command handlers in `commands` stay thin and call into the other modules.
+- **UI and core communication:** the UI calls Tauri commands for requests, and the core pushes live updates as Tauri events. Current events: `transcript:segment`. Planned: `summary:token` and `summary:done`.
+- **Audio pipeline:** capture threads must never block. They drop buffers when the pipeline falls behind. Whistle receives 16 kHz mono segments of at most 28 s from `chunker`. Transcript times are offsets from `meetings.started_at`.
+- **Microphone permission:** the bundled app declares `NSMicrophoneUsageDescription` in `src-tauri/Info.plist`. Under `npm run tauri dev`, macOS attributes the microphone to your terminal app instead.
 - **Migrations:** schema changes are numbered SQL files in `src-tauri/migrations/`, applied in order through `PRAGMA user_version`. Never edit a shipped migration; add a new one and register it in `src-tauri/src/store/migrations.rs`.
 - **Frontend data access:** call commands only through `src/lib/api.ts`. Tests mock `@tauri-apps/api/core` with an in-memory fake backend (see `src/App.test.tsx`).
 - **Markdown storage:** notes and summaries are stored as Markdown.

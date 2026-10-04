@@ -313,3 +313,78 @@ body {
 .inline-error p {
   margin: 0 0 8px;
 }
+
+.meeting-footer {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.recording-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.recording-controls .field-error {
+  flex-basis: 100%;
+}
+
+.recording-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.recording-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .recording-dot {
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.transcript-segment {
+  margin-bottom: 12px;
+}
+
+.transcript-segment p {
+  margin: 2px 0 0;
+}
+
+.speaker {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.speaker-me {
+  color: var(--accent);
+}
+
+.speaker-them {
+  color: var(--text-secondary);
+}
+
+.segment-time {
+  font-weight: 400;
+  color: var(--text-muted);
+}

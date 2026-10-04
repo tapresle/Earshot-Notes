@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage, type Meeting } from "./lib/api";
 import { MeetingList } from "./features/meetings/MeetingList";
 import { MeetingView } from "./features/meetings/MeetingView";
+import { TranscriptPanel } from "./features/transcript/TranscriptPanel";
 import "./styles.css";
 
 type ListState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; meetings: Meeting[] };
@@ -11,6 +12,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [recordingMeetingId, setRecordingMeetingId] = useState<number | null>(null);
 
   const load = useCallback(() => {
     api
@@ -20,6 +22,13 @@ export default function App() {
   }, []);
 
   useEffect(load, [load]);
+
+  useEffect(() => {
+    api
+      .activeRecording()
+      .then((id) => setRecordingMeetingId(id ?? null))
+      .catch(() => setRecordingMeetingId(null));
+  }, []);
 
   async function createMeeting() {
     setCreating(true);
@@ -46,6 +55,7 @@ export default function App() {
       <MeetingList
         meetings={meetings}
         selectedId={selectedId}
+        recordingMeetingId={recordingMeetingId}
         onSelect={setSelectedId}
         onCreate={() => void createMeeting()}
         creating={creating}
@@ -83,6 +93,8 @@ export default function App() {
             <MeetingView
               key={selectedId}
               meetingId={selectedId}
+              recordingMeetingId={recordingMeetingId}
+              onRecordingChange={setRecordingMeetingId}
               onRenamed={(id, title) => updateMeetings((all) => all.map((m) => (m.id === id ? { ...m, title } : m)))}
               onDeleted={(id) => {
                 updateMeetings((all) => all.filter((m) => m.id !== id));
@@ -92,10 +104,7 @@ export default function App() {
           ))}
       </main>
 
-      <aside className="transcript-panel" aria-label="Transcript">
-        <h2 className="pane-heading">Transcript</h2>
-        <p className="empty-hint">The live transcript appears here while you record.</p>
-      </aside>
+      <TranscriptPanel meetingId={selectedId} recording={selectedId !== null && selectedId === recordingMeetingId} />
     </div>
   );
 }

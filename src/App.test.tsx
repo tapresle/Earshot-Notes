@@ -1,19 +1,30 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import type { MeetingDetail } from "./lib/api";
+import type { MeetingDetail, TranscriptSegment } from "./lib/api";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
 type Args = Record<string, unknown>;
 
+type Listener = (event: { payload: unknown }) => void;
+const listeners = new Map<string, Set<Listener>>();
+
+/** Delivers a backend event to the UI, like the Rust side's `emit`. */
+function emit(event: string, payload: unknown) {
+  act(() => listeners.get(event)?.forEach((listener) => listener({ payload })));
+}
+
 /** An in-memory stand-in for the Rust commands. */
-function fakeBackend(seed: MeetingDetail[] = []) {
+function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] = []) {
   const meetings = new Map(seed.map((m) => [m.id, { ...m }]));
   let nextId = Math.max(0, ...seed.map((m) => m.id)) + 1;
   const notFound = { kind: "notFound", message: "missing" };
+  const state = { recording: null as number | null, startError: null as unknown };
 
   const handlers: Record<string, (args: Args) => unknown> = {
     list_meetings: () =>
@@ -51,12 +62,29 @@ function fakeBackend(seed: MeetingDetail[] = []) {
       return Date.now();
     },
     delete_meeting: ({ id }) => {
+      if (state.recording === id) throw { kind: "conflict", message: "stop recording before deleting this meeting" };
       if (!meetings.delete(id as number)) throw notFound;
     },
+    active_recording: () => state.recording,
+    start_recording: ({ meetingId }) => {
+      if (state.startError) throw state.startError;
+      if (state.recording !== null) throw { kind: "conflict", message: "another meeting is already recording; stop it first" };
+      state.recording = meetingId as number;
+    },
+    stop_recording: () => {
+      const stopped = state.recording;
+      state.recording = null;
+      return stopped;
+    },
+    list_transcript: ({ meetingId }) => segments.filter((s) => s.meetingId === meetingId),
   };
 
   vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => handlers[command]((args ?? {}) as Args));
-  return meetings;
+  return Object.assign(meetings, { state });
+}
+
+function segment(id: number, meetingId: number, source: "me" | "them", startMs: number, text: string): TranscriptSegment {
+  return { id, meetingId, source, startMs, endMs: startMs + 2000, text, language: "en" };
 }
 
 function seedMeeting(id: number, title: string, notesMarkdown = ""): MeetingDetail {
@@ -70,6 +98,15 @@ function sidebar() {
 
 beforeEach(() => {
   vi.mocked(invoke).mockReset();
+  listeners.clear();
+  vi.mocked(listen).mockImplementation(async (event, handler) => {
+    const set = listeners.get(event) ?? new Set<Listener>();
+    set.add(handler as Listener);
+    listeners.set(event, set);
+    return () => {
+      set.delete(handler as Listener);
+    };
+  });
 });
 
 describe("App", () => {
@@ -179,5 +216,105 @@ describe("App", () => {
     await user.click(item);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("That meeting no longer exists.");
+  });
+
+  it("starts and stops recording, and marks the meeting in the sidebar", async () => {
+    const backend = fakeBackend([seedMeeting(1, "Design sync")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
+
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+
+    expect(await screen.findByRole("button", { name: "Stop recording" })).toBeInTheDocument();
+    expect(within(sidebar()).getByRole("button", { name: /Design sync/ })).toHaveTextContent("Recording");
+    expect(backend.state.recording).toBe(1);
+
+    await user.click(screen.getByRole("button", { name: "Stop recording" }));
+
+    expect(await screen.findByRole("button", { name: "Start recording" })).toBeInTheDocument();
+    expect(backend.state.recording).toBeNull();
+  });
+
+  it("explains why recording couldn't start", async () => {
+    const backend = fakeBackend([seedMeeting(1, "Design sync")]);
+    backend.state.startError = { kind: "unavailable", message: "no microphone is available" };
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
+
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("No microphone is available.");
+    expect(screen.getByRole("button", { name: "Start recording" })).toBeInTheDocument();
+  });
+
+  it("shows the saved transcript with speakers and times", async () => {
+    fakeBackend(
+      [seedMeeting(1, "Design sync")],
+      [segment(2, 1, "them", 65_000, "Agreed, ship it."), segment(1, 1, "me", 3_000, "Let's lock the copy.")],
+    );
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
+
+    const transcript = screen.getByRole("complementary", { name: "Transcript" });
+    const items = await within(transcript).findAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual(["Me 0:03Let's lock the copy.", "Them 1:05Agreed, ship it."]);
+  });
+
+  it("adds live segments for the open meeting only", async () => {
+    fakeBackend([seedMeeting(1, "Open"), seedMeeting(2, "Other")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Open/ }));
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+    const transcript = screen.getByRole("complementary", { name: "Transcript" });
+    await within(transcript).findByText(/Listening/);
+
+    emit("transcript:segment", segment(10, 2, "me", 0, "Not for this meeting"));
+    emit("transcript:segment", segment(11, 1, "me", 1000, "Hello everyone"));
+
+    expect(await within(transcript).findByText("Hello everyone")).toBeInTheDocument();
+    expect(within(transcript).queryByText("Not for this meeting")).not.toBeInTheDocument();
+  });
+
+  it("shows transcript empty states", async () => {
+    fakeBackend([seedMeeting(1, "Quiet")]);
+    const user = userEvent.setup();
+    render(<App />);
+    const transcript = screen.getByRole("complementary", { name: "Transcript" });
+
+    expect(within(transcript).getByText("Open a meeting to see its transcript.")).toBeInTheDocument();
+    await user.click(await within(sidebar()).findByRole("button", { name: /Quiet/ }));
+
+    expect(await within(transcript).findByText(/Start recording to transcribe/)).toBeInTheDocument();
+  });
+
+  it("restores the recording state when the window reloads", async () => {
+    const backend = fakeBackend([seedMeeting(1, "Still going")]);
+    backend.state.recording = 1;
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await within(sidebar()).findByRole("button", { name: /Still going/ }));
+
+    expect(await screen.findByRole("button", { name: "Stop recording" })).toBeInTheDocument();
+  });
+
+  it("won't delete a meeting that is recording", async () => {
+    const backend = fakeBackend([seedMeeting(1, "Live")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Live/ }));
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+    await screen.findByRole("button", { name: "Stop recording" });
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await user.click(screen.getByRole("button", { name: "Delete meeting" }));
+
+    expect(await screen.findByText("Stop recording before deleting this meeting.")).toBeInTheDocument();
+    expect(backend.has(1)).toBe(true);
   });
 });

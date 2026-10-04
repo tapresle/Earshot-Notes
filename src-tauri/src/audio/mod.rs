@@ -1,0 +1,56 @@
+//! Audio capture and conversion to Whistle's input format (16 kHz mono f32).
+
+pub mod mic;
+pub mod resample;
+
+/// A running capture. Dropping it stops the capture and closes its sender.
+pub trait Capture: Send {}
+
+/// The layout of the interleaved buffers a capture sends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CaptureFormat {
+    pub sample_rate: u32,
+    pub channels: u16,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CaptureError {
+    #[error("no microphone is available")]
+    NoDevice,
+    #[error("the audio device couldn't start: {0}")]
+    Device(String),
+}
+
+/// Averages interleaved frames into one mono channel.
+pub fn downmix(interleaved: &[f32], channels: usize) -> Vec<f32> {
+    if channels <= 1 {
+        return interleaved.to_vec();
+    }
+    interleaved
+        .chunks_exact(channels)
+        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn passes_mono_through() {
+        assert_eq!(downmix(&[0.1, 0.2], 1), vec![0.1, 0.2]);
+    }
+
+    #[test]
+    fn averages_stereo_frames() {
+        assert_eq!(
+            downmix(&[1.0, 0.0, 0.5, 0.5, -1.0, 1.0], 2),
+            vec![0.5, 0.5, 0.0]
+        );
+    }
+
+    #[test]
+    fn drops_an_incomplete_trailing_frame() {
+        assert_eq!(downmix(&[1.0, 1.0, 1.0], 2), vec![1.0]);
+    }
+}
