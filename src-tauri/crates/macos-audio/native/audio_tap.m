@@ -41,9 +41,7 @@ static void destroy(gc_tap *t) {
         AudioDeviceDestroyIOProcID(t->aggregate, t->proc);
     }
     if (t->aggregate != kAudioObjectUnknown) AudioHardwareDestroyAggregateDevice(t->aggregate);
-    if (t->tap != kAudioObjectUnknown) {
-        if (@available(macOS 14.2, *)) AudioHardwareDestroyProcessTap(t->tap);
-    }
+    if (t->tap != kAudioObjectUnknown) AudioHardwareDestroyProcessTap(t->tap);
     free(t->scratch);
     t->queue = nil;
     free(t);
@@ -70,8 +68,8 @@ static NSArray<NSNumber *> *own_process(void) {
     return @[ @(process) ];
 }
 
-static void *start_tap(gc_audio_callback callback, void *context, gc_audio_format *format,
-                       char *error, size_t error_len) API_AVAILABLE(macos(14.2)) {
+void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_format *format,
+                            char *error, size_t error_len) {
     gc_tap *t = calloc(1, sizeof(gc_tap));
     t->tap = kAudioObjectUnknown;
     t->aggregate = kAudioObjectUnknown;
@@ -190,15 +188,6 @@ static void *start_tap(gc_audio_callback callback, void *context, gc_audio_forma
         format->channels = t->channels;
     }
     return t;
-}
-
-void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_format *format,
-                            char *error, size_t error_len) {
-    if (@available(macOS 14.2, *)) {
-        return start_tap(callback, context, format, error, error_len);
-    }
-    set_error(error, error_len, @"System audio capture needs macOS 14.2 or later", 0);
-    return NULL;
 }
 
 void gc_system_audio_stop(void *handle) {

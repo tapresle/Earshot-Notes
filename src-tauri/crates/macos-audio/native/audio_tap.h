@@ -15,7 +15,7 @@ typedef struct {
 } gc_audio_format;
 
 // Starts capturing everything the system plays, except this process. Returns an
-// opaque handle, or NULL with a message in `error` on failure. Requires macOS 14.2.
+// opaque handle, or NULL with a message in `error` on failure.
 void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_format *format,
                             char *error, size_t error_len);
 

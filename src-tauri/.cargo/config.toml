@@ -1,0 +1,5 @@
+[env]
+# The app's minimum macOS version, set for every build (including `cargo test`)
+# so test builds match the bundled app. Keep it equal to
+# `bundle.macOS.minimumSystemVersion` in tauri.conf.json.
+MACOSX_DEPLOYMENT_TARGET = "26.0"

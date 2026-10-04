@@ -4,7 +4,7 @@ A meeting notes app that runs entirely on your Mac. It transcribes your micropho
 
 ## Requirements
 
-- A Mac with Apple Silicon running macOS 14.4 or later
+- A Mac with Apple Silicon running macOS 26 or later
 - Xcode, Rust, Node.js, and CMake to build
 
 ## Build and install

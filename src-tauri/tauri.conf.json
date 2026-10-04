@@ -43,7 +43,7 @@
       "resources/licenses/llama.cpp-LICENSE.txt": "licenses/llama.cpp-LICENSE.txt"
     },
     "macOS": {
-      "minimumSystemVersion": "14.4",
+      "minimumSystemVersion": "26.0",
       "signingIdentity": "-",
       "hardenedRuntime": true,
       "entitlements": "./Entitlements.plist"
