@@ -10,7 +10,7 @@ macOS (Apple Silicon) is the first target. Windows and Linux follow.
 - **UI:** React 19, TypeScript, and Vite in `src/`.
 - **Transcription:** Cactus Whistle through the prebuilt needle engine. `src-tauri/crates/needle-sys` holds the raw FFI, and `src-tauri/src/transcribe/whistle.rs` is the safe wrapper.
 - **Summaries:** llama.cpp embedded through `llama-cpp-2`. This is planned, not built yet.
-- **Storage:** SQLite through `rusqlite`. This is planned, not built yet.
+- **Storage:** SQLite through `rusqlite`, in `src-tauri/src/store/`. The database lives in the app data directory as `earshot.db`.
 
 The decision records in `docs/decisions/` explain why each piece was chosen.
 
@@ -38,6 +38,8 @@ Before you hand off work, run the lint, typecheck, test, and format commands. Al
 - **UI features** live under `src/features/<feature>/`. Each feature keeps its components, hooks, and tests together.
 - **Rust modules** under `src-tauri/src/` follow the plan's boundaries: `audio`, `chunker`, `transcribe`, `summarize`, `store`, `models`, `export`, and `commands`. Tauri command handlers in `commands` stay thin and call into the other modules.
 - **UI and core communication:** the UI calls Tauri commands for requests, and the core pushes live updates as Tauri events (`transcript:segment`, `summary:token`, `summary:done`, `recording:state`).
+- **Migrations:** schema changes are numbered SQL files in `src-tauri/migrations/`, applied in order through `PRAGMA user_version`. Never edit a shipped migration; add a new one and register it in `src-tauri/src/store/migrations.rs`.
+- **Frontend data access:** call commands only through `src/lib/api.ts`. Tests mock `@tauri-apps/api/core` with an in-memory fake backend (see `src/App.test.tsx`).
 - **Markdown storage:** notes and summaries are stored as Markdown.
 - **Offline only:** the app must not make network requests at runtime. The CSP in `src-tauri/tauri.conf.json` enforces this for the UI. The only planned exception is an explicit, user-started model download.
 - **Styling** uses the CSS custom properties in `src/styles.css`. Every color needs a dark mode value.
