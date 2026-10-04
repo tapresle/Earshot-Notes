@@ -751,6 +751,16 @@ body {
   background: var(--selected);
 }
 
+/* The tint lowers contrast: muted text drops to about 3:1, and a tinted
+   badge on a tinted card falls below 4.5:1 in dark mode. */
+.installed-model.selected .model-details {
+  color: var(--text-secondary);
+}
+
+.installed-model.selected .badge {
+  background: var(--surface-2);
+}
+
 .installed-model:has(input:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
