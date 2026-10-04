@@ -156,8 +156,11 @@ fn spawn_transcription(
 fn spawn_summarizer(app: &App, store: Arc<Store>) -> Summarizer {
     let handle = app.handle().clone();
     let load = Box::new(|model: &store::ModelRecord| {
-        LlamaGenerator::load(std::path::Path::new(&model.file_path))
-            .map(|generator| Box::new(generator) as Box<dyn Generator>)
+        LlamaGenerator::load_with_context_limit(
+            std::path::Path::new(&model.file_path),
+            models::context_limit(&model.sha256),
+        )
+        .map(|generator| Box::new(generator) as Box<dyn Generator>)
     });
     Summarizer::spawn(store, load, move |event| {
         let (name, payload) = match event {

@@ -18,7 +18,7 @@ use super::run::{Generator, SummaryError};
 use super::template::{self, Message, SpecialTokens};
 
 /// Cap on the context window: enough for a couple of hours of meeting in one
-/// pass while keeping the key-value cache to a few hundred megabytes.
+/// pass. Models with a large key-value cache set a lower limit in the registry.
 pub const MAX_CONTEXT: usize = 32_768;
 const BATCH: usize = 2048;
 
@@ -48,7 +48,8 @@ impl LlamaGenerator {
         Self::load_with_context_limit(path, MAX_CONTEXT)
     }
 
-    /// Loads with the context capped below `MAX_CONTEXT`, for tests and small machines.
+    /// Loads with the context capped below `MAX_CONTEXT`, for tests and for models
+    /// whose key-value cache would otherwise outgrow the GPU's memory.
     pub fn load_with_context_limit(
         path: &Path,
         context_limit: usize,

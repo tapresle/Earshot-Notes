@@ -181,6 +181,8 @@ mod tests {
             size_bytes: data.len() as u64,
             version: "v1",
             min_runtime: "0.1.158",
+            description: "Test model.",
+            context_limit: 4096,
         }))
     }
 

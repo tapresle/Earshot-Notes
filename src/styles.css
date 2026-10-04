@@ -548,6 +548,12 @@ body {
   font-size: 11px;
 }
 
+.model-description {
+  margin: -4px 0 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
 .model-size {
   margin-left: auto;
   font-size: 12px;

@@ -73,6 +73,8 @@ export type DownloadPhase = { phase: "downloading"; received: number; total: num
 export interface AvailableModel {
   id: string;
   displayName: string;
+  /** One line that helps someone choose between models. */
+  description: string;
   fileName: string;
   sizeBytes: number;
   recommended: boolean;

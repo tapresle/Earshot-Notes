@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::store::{ModelRecord, ModelSource, Store, StoreError};
+use crate::summarize::llama::MAX_CONTEXT;
 
 /// The llama-cpp-2 version this build runs, recorded as the minimum runtime of
 /// models known to work with it. Must match Cargo.toml.
@@ -27,6 +28,12 @@ pub struct KnownModel {
     pub size_bytes: u64,
     pub version: &'static str,
     pub min_runtime: &'static str,
+    /// One line that helps someone choose between models.
+    pub description: &'static str,
+    /// Largest context, in tokens, to run the model with. Keeps the key-value
+    /// cache of larger models inside the memory Metal can use on a 16 GB Mac;
+    /// longer meetings are condensed in parts instead.
+    pub context_limit: usize,
 }
 
 impl KnownModel {
@@ -49,9 +56,114 @@ pub const GEMMA_4_E2B: KnownModel = KnownModel {
     size_bytes: 3_106_738_272,
     version: "gemma-4-E2B-it Q4_K_M (unsloth 0314792)",
     min_runtime: "0.1.158",
+    description: "Fast and light. A good fit for most meetings.",
+    context_limit: MAX_CONTEXT,
 };
 
-pub const KNOWN_MODELS: &[KnownModel] = &[GEMMA_4_E2B];
+pub const QWEN_3_4B_2507: KnownModel = KnownModel {
+    id: "qwen3-4b-instruct-2507-q4_k_m",
+    display_name: "Qwen3 4B Instruct",
+    file_name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    repo: "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    revision: "a06e946bb6b655725eafa393f4a9745d460374c9",
+    sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+    size_bytes: 2_497_281_120,
+    version: "Qwen3-4B-Instruct-2507 Q4_K_M (unsloth a06e946)",
+    min_runtime: "0.1.158",
+    description: "Small, with detailed summaries for its size.",
+    context_limit: MAX_CONTEXT,
+};
+
+pub const PHI_4_MINI: KnownModel = KnownModel {
+    id: "phi-4-mini-instruct-q4_k_m",
+    display_name: "Phi-4 mini",
+    file_name: "Phi-4-mini-instruct-Q4_K_M.gguf",
+    repo: "unsloth/Phi-4-mini-instruct-GGUF",
+    revision: "78eb92a46fc37e6b524df991ed9aca9bc6aa7b80",
+    sha256: "88c00229914083cd112853aab84ed51b87bdf6b9ce42f532d8c85c7c63b1730a",
+    size_bytes: 2_491_874_272,
+    version: "Phi-4-mini-instruct Q4_K_M (unsloth 78eb92a)",
+    min_runtime: "0.1.158",
+    description: "Small and fast, with shorter summaries.",
+    context_limit: MAX_CONTEXT,
+};
+
+pub const GEMMA_4_E4B: KnownModel = KnownModel {
+    id: "gemma-4-e4b-it-q4_k_m",
+    display_name: "Gemma 4 E4B",
+    file_name: "gemma-4-E4B-it-Q4_K_M.gguf",
+    repo: "unsloth/gemma-4-E4B-it-GGUF",
+    revision: "bfc15c382204943c3a8fff0c750b94ae2364d7a3",
+    sha256: "85a896a047553e842f25297ee5b031d64ff30147d9c4af17b1e4b394cd1fab87",
+    size_bytes: 4_977_171_584,
+    version: "gemma-4-E4B-it Q4_K_M (unsloth bfc15c3)",
+    min_runtime: "0.1.158",
+    description: "Better summaries than E2B, a little slower.",
+    context_limit: MAX_CONTEXT,
+};
+
+pub const QWEN_3_8B: KnownModel = KnownModel {
+    id: "qwen3-8b-q4_k_m",
+    display_name: "Qwen3 8B",
+    file_name: "Qwen3-8B-Q4_K_M.gguf",
+    repo: "unsloth/Qwen3-8B-GGUF",
+    revision: "a6adef130ffb23ddaf1a62fec9dced968c9bc482",
+    sha256: "120307ba529eb2439d6c430d94104dabd578497bc7bfe7e322b5d9933b449bd4",
+    size_bytes: 5_027_784_512,
+    version: "Qwen3-8B Q4_K_M (unsloth a6adef1)",
+    min_runtime: "0.1.158",
+    description: "High-quality summaries. Slower, and uses more memory.",
+    context_limit: 16_384,
+};
+
+pub const MINISTRAL_3_8B: KnownModel = KnownModel {
+    id: "ministral-3-8b-instruct-2512-q4_k_m",
+    display_name: "Ministral 3 8B",
+    file_name: "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
+    repo: "unsloth/Ministral-3-8B-Instruct-2512-GGUF",
+    revision: "3731507ec3e867db16d620f73e14d689125758f4",
+    sha256: "5dbc3647eb563b9f8d3c70ec3d906cce84b86bb35c5e0b8a36e7df3937ab7174",
+    size_bytes: 5_198_386_720,
+    version: "Ministral-3-8B-Instruct-2512 Q4_K_M (unsloth 3731507)",
+    min_runtime: "0.1.158",
+    description: "High-quality summaries. Slower, and uses more memory.",
+    context_limit: 16_384,
+};
+
+pub const MINISTRAL_3_14B: KnownModel = KnownModel {
+    id: "ministral-3-14b-instruct-2512-q4_k_m",
+    display_name: "Ministral 3 14B",
+    file_name: "Ministral-3-14B-Instruct-2512-Q4_K_M.gguf",
+    repo: "unsloth/Ministral-3-14B-Instruct-2512-GGUF",
+    revision: "9b948841b705cc11285ff274b84ba6c885908b19",
+    sha256: "76ce697c065f2e40f1e8e958118b02cab38e2c10a6015f7d7908036a292dc8c8",
+    size_bytes: 8_239_067_840,
+    version: "Ministral-3-14B-Instruct-2512 Q4_K_M (unsloth 9b94884)",
+    min_runtime: "0.1.158",
+    description: "The most capable option. Needs 16 GB of memory with little else open.",
+    context_limit: 8_192,
+};
+
+/// Every downloadable model, in the order the app lists them: the recommended
+/// model first, then by size.
+pub const KNOWN_MODELS: &[KnownModel] = &[
+    GEMMA_4_E2B,
+    QWEN_3_4B_2507,
+    PHI_4_MINI,
+    GEMMA_4_E4B,
+    QWEN_3_8B,
+    MINISTRAL_3_8B,
+    MINISTRAL_3_14B,
+];
+
+/// The context limit for an installed model: its registry limit when it's a
+/// known model, or the app-wide cap for anything imported.
+pub fn context_limit(sha256: &str) -> usize {
+    KNOWN_MODELS
+        .iter()
+        .find(|k| k.sha256 == sha256)
+        .map_or(MAX_CONTEXT, |k| k.context_limit)
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ImportError {
@@ -273,6 +385,44 @@ mod tests {
             sha256_file(&path).unwrap(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[test]
+    fn known_models_are_pinned_and_distinct() {
+        let mut ids = std::collections::HashSet::new();
+        let mut files = std::collections::HashSet::new();
+        for model in KNOWN_MODELS {
+            assert!(ids.insert(model.id), "duplicate id {}", model.id);
+            assert!(
+                files.insert(model.file_name),
+                "duplicate file {}",
+                model.file_name
+            );
+            assert_eq!(model.revision.len(), 40, "{} must pin a commit", model.id);
+            assert_eq!(model.sha256.len(), 64, "{} needs a sha256", model.id);
+            assert!(
+                model
+                    .sha256
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            );
+            assert_eq!(model.min_runtime, RUNTIME_VERSION);
+            assert!(
+                (1..=MAX_CONTEXT).contains(&model.context_limit),
+                "{}",
+                model.id
+            );
+            assert!(!model.description.is_empty());
+        }
+        assert_eq!(KNOWN_MODELS[0], GEMMA_4_E2B);
+    }
+
+    #[test]
+    fn context_limit_uses_the_registry_and_falls_back_for_imports() {
+        assert_eq!(context_limit(MINISTRAL_3_14B.sha256), 8_192);
+        assert_eq!(context_limit(QWEN_3_8B.sha256), 16_384);
+        assert_eq!(context_limit(GEMMA_4_E2B.sha256), MAX_CONTEXT);
+        assert_eq!(context_limit("0".repeat(64).as_str()), MAX_CONTEXT);
     }
 
     #[test]

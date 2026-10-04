@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { api, errorMessage, type AvailableModel, type ModelRecord } from "../../lib/api";
 
 function gigabytes(bytes: number): string {
@@ -116,13 +116,15 @@ function ModelCard({
   onCancel: () => void;
 }) {
   const { download } = model;
+  const nameId = useId();
   return (
-    <div className="model-card">
+    <div className="model-card" role="group" aria-labelledby={nameId}>
       <div className="model-card-header">
-        <strong>{model.displayName}</strong>
+        <strong id={nameId}>{model.displayName}</strong>
         {model.recommended && <span className="badge">Recommended</span>}
         <span className="model-size">{gigabytes(model.sizeBytes)}</span>
       </div>
+      <p className="model-description">{model.description}</p>
       {download?.phase === "downloading" ? (
         <div className="download-progress">
           <progress

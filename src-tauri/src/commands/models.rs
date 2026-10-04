@@ -17,6 +17,7 @@ use crate::store::Store;
 pub struct AvailableModel {
     id: &'static str,
     display_name: &'static str,
+    description: &'static str,
     file_name: &'static str,
     size_bytes: u64,
     recommended: bool,
@@ -54,6 +55,7 @@ pub fn available_models(
             Ok(AvailableModel {
                 id: model.id,
                 display_name: model.display_name,
+                description: model.description,
                 file_name: model.file_name,
                 size_bytes: model.size_bytes,
                 recommended: model.id == GEMMA_4_E2B.id,

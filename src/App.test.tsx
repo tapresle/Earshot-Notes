@@ -38,6 +38,7 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     cancelled: false,
     partialBytes: 0,
     downloading: false,
+    downloadedId: null as string | null,
     downloadCancelled: false,
     exports: [] as { ids: number[] | null; folder: string }[],
     exportFailures: [] as { title: string; message: string }[],
@@ -113,6 +114,7 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
       {
         id: "gemma-4-e2b-it-q4_k_m",
         displayName: "Gemma 4 E2B",
+        description: "Fast and light. A good fit for most meetings.",
         fileName: "gemma-4-E2B-it-Q4_K_M.gguf",
         sizeBytes: 3_106_738_272,
         recommended: true,
@@ -120,9 +122,21 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
         partialBytes: state.partialBytes,
         download: state.downloading ? { phase: "downloading", received: state.partialBytes, total: 3_106_738_272 } : null,
       },
+      {
+        id: "qwen3-8b-q4_k_m",
+        displayName: "Qwen3 8B",
+        description: "High-quality summaries. Slower, and uses more memory.",
+        fileName: "Qwen3-8B-Q4_K_M.gguf",
+        sizeBytes: 5_027_784_512,
+        recommended: false,
+        installed: false,
+        partialBytes: 0,
+        download: null,
+      },
     ],
-    download_model: () => {
+    download_model: ({ modelId }) => {
       state.downloading = true;
+      state.downloadedId = String(modelId);
     },
     export_file_name: ({ meetingId }) => `2026-10-03-meeting-${meetingId}.md`,
     export_meeting: ({ path }) => {
@@ -651,7 +665,7 @@ describe("App", () => {
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
       expect(await screen.findByText("Recommended")).toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "Download (3.1 GB)" }));
+      await user.click(within(screen.getByRole("group", { name: "Gemma 4 E2B" })).getByRole("button", { name: "Download (3.1 GB)" }));
 
       expect(backend.state.downloading).toBe(true);
       emit("model:download-progress", {
@@ -670,6 +684,21 @@ describe("App", () => {
       expect(await screen.findByText(/No summary yet/)).toBeInTheDocument();
     });
 
+    it("lists every model with a description and recommends only Gemma 4 E2B", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      const user = await openMeeting("Sync");
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+
+      expect(await screen.findByText("High-quality summaries. Slower, and uses more memory.")).toBeInTheDocument();
+      expect(screen.getByText("Fast and light. A good fit for most meetings.")).toBeInTheDocument();
+      expect(screen.getAllByText("Recommended")).toHaveLength(1);
+      const qwen = screen.getByRole("group", { name: "Qwen3 8B" });
+
+      await user.click(within(qwen).getByRole("button", { name: "Download (5.0 GB)" }));
+
+      expect(backend.state.downloadedId).toBe("qwen3-8b-q4_k_m");
+    });
+
     it("offers to resume a partial download", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       backend.state.partialBytes = 1_200_000_000;
@@ -683,7 +712,7 @@ describe("App", () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       const user = await openMeeting("Sync");
       await user.click(screen.getByRole("tab", { name: "Summary" }));
-      await user.click(await screen.findByRole("button", { name: "Download (3.1 GB)" }));
+      await user.click(within(await screen.findByRole("group", { name: "Gemma 4 E2B" })).getByRole("button", { name: "Download (3.1 GB)" }));
 
       await user.click(await screen.findByRole("button", { name: "Cancel" }));
       expect(backend.state.downloadCancelled).toBe(true);
