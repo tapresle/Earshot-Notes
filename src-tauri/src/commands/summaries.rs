@@ -1,11 +1,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
 use super::{CommandError, CommandResult, ErrorKind};
-use crate::models::{self, GEMMA_4_E2B, ImportError, KNOWN_MODELS};
+use crate::models::{self, ImportError, KNOWN_MODELS};
 use crate::recording::Recorder;
 use crate::store::{ModelRecord, Store, Summary};
 use crate::summarize::service::{SummarizeError, Summarizer};
@@ -79,25 +78,6 @@ pub fn latest_summary(
 #[tauri::command]
 pub fn summary_model(store: State<'_, Arc<Store>>) -> CommandResult<Option<ModelRecord>> {
     Ok(store.summary_model()?)
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RecommendedModel {
-    display_name: &'static str,
-    file_name: &'static str,
-    size_bytes: u64,
-    url: String,
-}
-
-#[tauri::command]
-pub fn recommended_model() -> RecommendedModel {
-    RecommendedModel {
-        display_name: GEMMA_4_E2B.display_name,
-        file_name: GEMMA_4_E2B.file_name,
-        size_bytes: GEMMA_4_E2B.size_bytes,
-        url: GEMMA_4_E2B.url(),
-    }
 }
 
 /// Copies a GGUF file the user picked into the models folder and selects it.

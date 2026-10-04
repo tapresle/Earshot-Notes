@@ -33,6 +33,7 @@ minijinja = { version = "2", features = ["loop_controls", "json"] }
 minijinja-contrib = { version = "2", features = ["pycompat"] }
 sha2 = "0.11.0"
 tauri-plugin-dialog = "2"
+ureq = "3"
 
 [dev-dependencies]
 hound = "3"

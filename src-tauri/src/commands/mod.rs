@@ -1,6 +1,7 @@
 //! Tauri command handlers. Keep them thin: validate, call into a module, map errors.
 
 pub mod meetings;
+pub mod models;
 pub mod recording;
 pub mod summaries;
 

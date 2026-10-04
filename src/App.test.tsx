@@ -36,6 +36,9 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     summarizeError: null as unknown,
     importError: null as unknown,
     cancelled: false,
+    partialBytes: 0,
+    downloading: false,
+    downloadCancelled: false,
   };
 
   const handlers: Record<string, (args: Args) => unknown> = {
@@ -91,12 +94,25 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     },
     list_transcript: ({ meetingId }) => segments.filter((s) => s.meetingId === meetingId),
     summary_model: () => state.model,
-    recommended_model: () => ({
-      displayName: "Gemma 4 E2B",
-      fileName: "gemma-4-E2B-it-Q4_K_M.gguf",
-      sizeBytes: 3_106_738_272,
-      url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/rev/gemma-4-E2B-it-Q4_K_M.gguf",
-    }),
+    available_models: () => [
+      {
+        id: "gemma-4-e2b-it-q4_k_m",
+        displayName: "Gemma 4 E2B",
+        fileName: "gemma-4-E2B-it-Q4_K_M.gguf",
+        sizeBytes: 3_106_738_272,
+        recommended: true,
+        installed: state.model !== null,
+        partialBytes: state.partialBytes,
+        download: state.downloading ? { phase: "downloading", received: state.partialBytes, total: 3_106_738_272 } : null,
+      },
+    ],
+    download_model: () => {
+      state.downloading = true;
+    },
+    cancel_download: () => {
+      state.downloadCancelled = true;
+      return true;
+    },
     import_model: ({ path }) => {
       if (state.importError) throw state.importError;
       state.model = testModel(String(path));
@@ -455,8 +471,7 @@ describe("App", () => {
 
       await user.click(screen.getByRole("tab", { name: "Summary" }));
       expect(await screen.findByRole("heading", { name: "Add a summary model" })).toBeInTheDocument();
-      expect(screen.getByText(/Gemma 4 E2B \(3.1 GB\)/)).toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "Import model file" }));
+      await user.click(await screen.findByRole("button", { name: "Import model file" }));
 
       expect(await screen.findByText(/No summary yet/)).toBeInTheDocument();
       expect(backend.state.model?.filePath).toBe("/Users/me/Downloads/gemma-4-E2B-it-Q4_K_M.gguf");
@@ -571,6 +586,73 @@ describe("App", () => {
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
       expect(await screen.findByText("Loading the model…")).toBeInTheDocument();
+    });
+
+    it("downloads the recommended model with progress", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      const user = await openMeeting("Sync");
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+
+      expect(await screen.findByText("Recommended")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Download (3.1 GB)" }));
+
+      expect(backend.state.downloading).toBe(true);
+      emit("model:download-progress", {
+        modelId: "gemma-4-e2b-it-q4_k_m",
+        phase: "downloading",
+        received: 1_553_369_136,
+        total: 3_106_738_272,
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("1.6 GB of 3.1 GB (50%)");
+      expect(screen.getByRole("progressbar", { name: "Downloading Gemma 4 E2B" })).toHaveAttribute("value", "1553369136");
+      emit("model:download-progress", { modelId: "gemma-4-e2b-it-q4_k_m", phase: "verifying" });
+      expect(screen.getByText("Verifying the download…")).toBeInTheDocument();
+
+      emit("model:download-done", { model: testModel() });
+
+      expect(await screen.findByText(/No summary yet/)).toBeInTheDocument();
+    });
+
+    it("offers to resume a partial download", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.partialBytes = 1_200_000_000;
+      const user = await openMeeting("Sync");
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+
+      expect(await screen.findByRole("button", { name: "Resume download (1.2 of 3.1 GB)" })).toBeInTheDocument();
+    });
+
+    it("cancels a download and explains a failed one", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      const user = await openMeeting("Sync");
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+      await user.click(await screen.findByRole("button", { name: "Download (3.1 GB)" }));
+
+      await user.click(await screen.findByRole("button", { name: "Cancel" }));
+      expect(backend.state.downloadCancelled).toBe(true);
+      backend.state.downloading = false;
+      backend.state.partialBytes = 400_000_000;
+      emit("model:download-failed", { modelId: "gemma-4-e2b-it-q4_k_m", message: "the download was cancelled", cancelled: true });
+      expect(await screen.findByRole("button", { name: "Resume download (0.4 of 3.1 GB)" })).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+      emit("model:download-failed", {
+        modelId: "gemma-4-e2b-it-q4_k_m",
+        message: "there isn't enough free disk space for this model",
+        cancelled: false,
+      });
+      expect(await screen.findByRole("alert")).toHaveTextContent("There isn't enough free disk space for this model.");
+    });
+
+    it("picks up a download already in progress", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.downloading = true;
+      backend.state.partialBytes = 310_673_828;
+      const user = await openMeeting("Sync");
+
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+
+      expect(await screen.findByText(/0.3 GB of 3.1 GB \(10%\)/)).toBeInTheDocument();
     });
   });
 });

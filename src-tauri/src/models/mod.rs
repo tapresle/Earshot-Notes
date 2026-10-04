@@ -1,4 +1,7 @@
-//! Local LLM files: the recommended models and importing a GGUF from disk.
+//! Local LLM files: the recommended models, downloading them, and importing a GGUF from disk.
+
+pub mod download;
+pub mod manager;
 
 use std::fs::File;
 use std::io::{self, Read};

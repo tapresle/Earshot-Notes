@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { api, errorMessage, type RecommendedModel, type SummaryStage } from "../../lib/api";
+import { useState } from "react";
+import type { SummaryStage } from "../../lib/api";
 import { formatOffset } from "../transcript/formatOffset";
 import { Markdown } from "./Markdown";
+import { ModelSetup } from "./ModelSetup";
 import type { SummaryState } from "./useSummary";
 
 const stageText = (stage: SummaryStage): string => {
@@ -52,7 +53,7 @@ export function SummaryPanel({ state }: { state: SummaryState }) {
         </p>
       )}
       {!model ? (
-        <ModelSetup onImported={state.setModel} />
+        <ModelSetup onReady={state.setModel} />
       ) : summary ? (
         <>
           <p className="summary-meta">
@@ -68,60 +69,6 @@ export function SummaryPanel({ state }: { state: SummaryState }) {
         </p>
       )}
     </section>
-  );
-}
-
-function formatSize(bytes: number): string {
-  return `${(bytes / 1e9).toFixed(1)} GB`;
-}
-
-/** Shown until a summary model is installed. */
-function ModelSetup({ onImported }: { onImported: SummaryState["setModel"] }) {
-  const [recommended, setRecommended] = useState<RecommendedModel | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .recommendedModel()
-      .then(setRecommended)
-      .catch((e) => console.error("couldn't load the recommended model", e));
-  }, []);
-
-  async function importFile() {
-    setError(null);
-    try {
-      const path = await api.pickModelFile();
-      if (!path) return;
-      setImporting(true);
-      onImported(await api.importModel(path));
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  return (
-    <div className="model-setup">
-      <h2>Add a summary model</h2>
-      <p>Summaries run on this Mac with a local language model, so nothing leaves your computer.</p>
-      {recommended && (
-        <p>
-          The recommended model is {recommended.displayName} ({formatSize(recommended.sizeBytes)}). Download{" "}
-          <code>{recommended.fileName}</code> from <span className="selectable">{recommended.url}</span>, then import
-          it here. In-app downloads are coming soon.
-        </p>
-      )}
-      <button type="button" className="button primary" onClick={() => void importFile()} disabled={importing}>
-        {importing ? "Importing… this can take a minute" : "Import model file"}
-      </button>
-      {error && (
-        <p className="field-error" role="alert">
-          {error}
-        </p>
-      )}
-    </div>
   );
 }
 

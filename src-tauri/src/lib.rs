@@ -51,6 +51,7 @@ pub fn run() {
             app.manage(Arc::new(Recorder::default()));
             app.manage(Arc::new(Transcription(worker)));
             app.manage(summarizer);
+            app.manage(models::manager::Downloads::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -69,8 +70,10 @@ pub fn run() {
             commands::summaries::active_summary,
             commands::summaries::latest_summary,
             commands::summaries::summary_model,
-            commands::summaries::recommended_model,
             commands::summaries::import_model,
+            commands::models::available_models,
+            commands::models::download_model,
+            commands::models::cancel_download,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

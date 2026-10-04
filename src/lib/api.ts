@@ -68,11 +68,27 @@ export interface ModelRecord {
   addedAt: number;
 }
 
-export interface RecommendedModel {
+export type DownloadPhase = { phase: "downloading"; received: number; total: number } | { phase: "verifying" };
+
+export interface AvailableModel {
+  id: string;
   displayName: string;
   fileName: string;
   sizeBytes: number;
-  url: string;
+  recommended: boolean;
+  installed: boolean;
+  /** Bytes saved by an earlier, unfinished download. */
+  partialBytes: number;
+  /** Progress, while this model is downloading. */
+  download: DownloadPhase | null;
+}
+
+export type DownloadProgress = DownloadPhase & { modelId: string };
+
+export interface DownloadFailed {
+  modelId: string;
+  message: string;
+  cancelled: boolean;
 }
 
 export type SummaryStage = { stage: "loading" } | { stage: "reading"; part: number; parts: number } | { stage: "writing" };
@@ -141,7 +157,15 @@ export const api = {
   activeSummary: () => invoke<number | null>("active_summary"),
   latestSummary: (meetingId: number) => invoke<Summary | null>("latest_summary", { meetingId }),
   summaryModel: () => invoke<ModelRecord | null>("summary_model"),
-  recommendedModel: () => invoke<RecommendedModel>("recommended_model"),
+  availableModels: () => invoke<AvailableModel[]>("available_models"),
+  downloadModel: (modelId: string) => invoke<void>("download_model", { modelId }),
+  cancelDownload: () => invoke<boolean>("cancel_download"),
+  onDownloadProgress: (handler: (event: DownloadProgress) => void): Promise<UnlistenFn> =>
+    listen<DownloadProgress>("model:download-progress", (event) => handler(event.payload)),
+  onDownloadDone: (handler: (event: { model: ModelRecord }) => void): Promise<UnlistenFn> =>
+    listen<{ model: ModelRecord }>("model:download-done", (event) => handler(event.payload)),
+  onDownloadFailed: (handler: (event: DownloadFailed) => void): Promise<UnlistenFn> =>
+    listen<DownloadFailed>("model:download-failed", (event) => handler(event.payload)),
   importModel: (path: string) => invoke<ModelRecord>("import_model", { path }),
   /** Asks the user for a .gguf file. Resolves to null if they cancel. */
   pickModelFile: async (): Promise<string | null> => {
