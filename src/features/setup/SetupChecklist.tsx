@@ -4,6 +4,9 @@ import { api, errorMessage, type ModelRecord, type Permission, type PrivacyPane 
 /** Shown on first launch: permissions, a summary model, and a headphones tip. */
 export function SetupChecklist({ onOpenSettings, onFinish }: { onOpenSettings: () => void; onFinish: () => void }) {
   const [mic, setMic] = useState<Permission | null>(null);
+  // undefined while loading; null when macOS doesn't let the app check.
+  const [systemAudio, setSystemAudio] = useState<Permission | null | undefined>(undefined);
+  const [askedSystemAudio, setAskedSystemAudio] = useState(false);
   const [model, setModel] = useState<ModelRecord | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
@@ -11,6 +14,10 @@ export function SetupChecklist({ onOpenSettings, onFinish }: { onOpenSettings: (
     api
       .micPermission()
       .then(setMic)
+      .catch((e) => setError(errorMessage(e)));
+    api
+      .systemAudioPermission()
+      .then(setSystemAudio)
       .catch((e) => setError(errorMessage(e)));
     api
       .summaryModel()
@@ -62,13 +69,46 @@ export function SetupChecklist({ onOpenSettings, onFinish }: { onOpenSettings: (
         </li>
         <li>
           <h2>The other side of your calls</h2>
-          <p>
-            macOS asks the first time you record. If you decline, the other side won't be transcribed until you allow
-            Earshot in Privacy &amp; Security &gt; Screen &amp; System Audio Recording.
-          </p>
-          <button type="button" className="button" onClick={openSettings("systemAudio")}>
-            Open audio recording settings
-          </button>
+          {systemAudio === "authorized" && <p className="check-done">Allowed</p>}
+          {(systemAudio === "notDetermined" || (systemAudio === null && !askedSystemAudio)) && (
+            <>
+              <p>Needed to transcribe the other people in your calls from your Mac's audio.</p>
+              <button
+                type="button"
+                className="button primary"
+                onClick={() =>
+                  void run(async () => {
+                    setSystemAudio(await api.requestSystemAudioPermission());
+                    setAskedSystemAudio(true);
+                  })
+                }
+              >
+                Allow system audio
+              </button>
+            </>
+          )}
+          {(systemAudio === "denied" || systemAudio === "restricted") && (
+            <>
+              <p className="field-warning">
+                System audio recording is off. Turn on Earshot in Privacy &amp; Security &gt; Screen &amp; System Audio
+                Recording.
+              </p>
+              <button type="button" className="button" onClick={openSettings("systemAudio")}>
+                Open audio recording settings
+              </button>
+            </>
+          )}
+          {systemAudio === null && askedSystemAudio && (
+            <>
+              <p>
+                macOS asked for permission. If you declined, turn on Earshot in Privacy &amp; Security &gt; Screen
+                &amp; System Audio Recording.
+              </p>
+              <button type="button" className="button" onClick={openSettings("systemAudio")}>
+                Open audio recording settings
+              </button>
+            </>
+          )}
         </li>
         <li>
           <h2>Summaries</h2>

@@ -51,6 +51,8 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     transcriptionError: null as unknown,
     setupComplete: true,
     micPermission: "authorized" as string,
+    systemAudioPermission: "authorized" as string | null,
+    systemAudioAnswer: "authorized" as string | null,
     openedPanes: [] as string[],
   };
 
@@ -154,6 +156,11 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     request_mic_permission: () => {
       state.micPermission = "authorized";
       return state.micPermission;
+    },
+    system_audio_permission: () => state.systemAudioPermission,
+    request_system_audio_permission: () => {
+      state.systemAudioPermission = state.systemAudioAnswer;
+      return state.systemAudioPermission;
     },
     open_privacy_settings: ({ pane }) => {
       state.openedPanes.push(String(pane));
@@ -478,7 +485,8 @@ describe("App", () => {
   });
 
   it("hints at the system audio permission until the other side is heard", async () => {
-    fakeBackend([seedMeeting(1, "Call")]);
+    const backend = fakeBackend([seedMeeting(1, "Call")]);
+    backend.state.systemAudioPermission = null;
     const user = userEvent.setup();
     render(<App />);
     await user.click(await within(sidebar()).findByRole("button", { name: /Call/ }));
@@ -905,6 +913,7 @@ describe("App", () => {
     it("asks for the microphone when macOS hasn't asked yet", async () => {
       const { user } = firstRun((state) => {
         state.micPermission = "notDetermined";
+        state.systemAudioPermission = "notDetermined";
       });
 
       await user.click(await screen.findByRole("button", { name: "Allow microphone" }));
@@ -918,9 +927,44 @@ describe("App", () => {
       });
 
       await user.click(await screen.findByRole("button", { name: "Open Microphone settings" }));
+
+      expect(backend.state.openedPanes).toEqual(["microphone"]);
+    });
+
+    it("asks for system audio when macOS hasn't asked yet", async () => {
+      const { user } = firstRun((state) => {
+        state.systemAudioPermission = "notDetermined";
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Allow system audio" }));
+
+      const items = within(screen.getByRole("list"));
+      expect(await items.findAllByText("Allowed")).toHaveLength(2);
+    });
+
+    it("links to Privacy settings when system audio is blocked", async () => {
+      const { backend, user } = firstRun((state) => {
+        state.systemAudioPermission = "notDetermined";
+        state.systemAudioAnswer = "denied";
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Allow system audio" }));
+      expect(await screen.findByText(/System audio recording is off/)).toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "Open audio recording settings" }));
 
-      expect(backend.state.openedPanes).toEqual(["microphone", "systemAudio"]);
+      expect(backend.state.openedPanes).toEqual(["systemAudio"]);
+    });
+
+    it("falls back to prompting without a status when macOS can't report it", async () => {
+      const { user } = firstRun((state) => {
+        state.systemAudioPermission = null;
+        state.systemAudioAnswer = null;
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Allow system audio" }));
+
+      expect(await screen.findByText(/macOS asked for permission/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Allow system audio" })).not.toBeInTheDocument();
     });
 
     it("sends you to settings to add a summary model", async () => {
@@ -949,6 +993,18 @@ describe("App", () => {
 
       expect(await screen.findByRole("heading", { level: 1, name: "Get set up" })).toBeInTheDocument();
       expect(backend.state.setupComplete).toBe(false);
+    });
+
+    it("skips the system audio hint when permission is known to be granted", async () => {
+      fakeBackend([seedMeeting(1, "Call")]);
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Call/ }));
+      await user.click(await screen.findByRole("button", { name: "Start recording" }));
+      const transcript = screen.getByRole("complementary", { name: "Transcript" });
+
+      expect(await within(transcript).findByText(/Listening/)).toBeInTheDocument();
+      expect(within(transcript).queryByText(/Not seeing the other side/)).not.toBeInTheDocument();
     });
   });
 });

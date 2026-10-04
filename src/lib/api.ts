@@ -220,6 +220,10 @@ export const api = {
   selectSummaryModel: (modelId: string) => invoke<void>("select_summary_model", { modelId }),
   micPermission: () => invoke<Permission>("mic_permission"),
   requestMicPermission: () => invoke<Permission>("request_mic_permission"),
+  /** Null when macOS doesn't let the app check. */
+  systemAudioPermission: () => invoke<Permission | null>("system_audio_permission"),
+  /** Shows the macOS prompt. Null when the answer can't be read. */
+  requestSystemAudioPermission: () => invoke<Permission | null>("request_system_audio_permission"),
   openPrivacySettings: (pane: PrivacyPane) => invoke<void>("open_privacy_settings", { pane }),
   setupComplete: () => invoke<boolean>("setup_complete"),
   setSetupComplete: (complete: boolean) => invoke<void>("set_setup_complete", { complete }),

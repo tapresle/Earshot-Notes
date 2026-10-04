@@ -31,6 +31,10 @@ pub enum CaptureError {
     Device(String),
     #[error("system audio couldn't start: {0}")]
     SystemAudio(String),
+    #[error(
+        "system audio recording is off, so only your side is transcribed. Turn on Earshot in System Settings > Privacy & Security > Screen & System Audio Recording"
+    )]
+    SystemAudioPermissionDenied,
 }
 
 /// Averages interleaved frames into one mono channel.

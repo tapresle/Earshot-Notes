@@ -58,7 +58,7 @@ Notarization needs a paid Apple Developer account and a **Developer ID Applicati
 On first launch, a checklist walks you through these:
 
 - **Microphone:** needed for your side of the conversation.
-- **Screen & System Audio Recording:** macOS asks the first time you record. It's needed for the other side of your calls. If you decline, macOS records silence rather than reporting an error, so the transcript panel reminds you where to allow it.
+- **Screen & System Audio Recording:** needed for the other side of your calls. The checklist asks for it up front. If you decline, recording continues with only your microphone and says how to turn it on.
 
 If recording goes silent after you install a new build, open **System Settings** > **Privacy & Security**, and turn **Earshot** off and on again under **Microphone** and **Screen & System Audio Recording**.
 

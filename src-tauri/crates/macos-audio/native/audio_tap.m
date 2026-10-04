@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dlfcn.h>
 #include <unistd.h>
 
 typedef struct {
@@ -210,6 +211,45 @@ int32_t gc_mic_request_access(void) {
                                  granted = ok;
                                  dispatch_semaphore_signal(done);
                              }];
+    dispatch_semaphore_wait(done, DISPATCH_TIME_FOREVER);
+    return granted ? 1 : 0;
+}
+
+// The private TCC framework has the only API that checks and requests system
+// audio recording permission. It's resolved at runtime so a future macOS that
+// changes it degrades to "unknown" instead of failing to launch.
+static CFStringRef const kAudioCaptureService = CFSTR("kTCCServiceAudioCapture");
+typedef long (*tcc_preflight_fn)(CFStringRef service, CFDictionaryRef options);
+typedef void (*tcc_request_fn)(CFStringRef service, CFDictionaryRef options, void (^callback)(BOOL granted));
+
+static void *tcc_symbol(const char *name) {
+    static void *handle;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        handle = dlopen("/System/Library/PrivateFrameworks/TCC.framework/Versions/A/TCC", RTLD_NOW);
+    });
+    return handle ? dlsym(handle, name) : NULL;
+}
+
+int32_t gc_system_audio_authorization_status(void) {
+    tcc_preflight_fn preflight = (tcc_preflight_fn)tcc_symbol("TCCAccessPreflight");
+    if (!preflight) return -1;
+    switch (preflight(kAudioCaptureService, NULL)) {
+        case 0: return 3;  // authorized
+        case 1: return 2;  // denied
+        default: return 0; // not determined
+    }
+}
+
+int32_t gc_system_audio_request_access(void) {
+    tcc_request_fn request = (tcc_request_fn)tcc_symbol("TCCAccessRequest");
+    if (!request) return -1;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    __block BOOL granted = NO;
+    request(kAudioCaptureService, NULL, ^(BOOL ok) {
+        granted = ok;
+        dispatch_semaphore_signal(done);
+    });
     dispatch_semaphore_wait(done, DISPATCH_TIME_FOREVER);
     return granted ? 1 : 0;
 }

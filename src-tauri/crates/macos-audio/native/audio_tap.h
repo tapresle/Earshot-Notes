@@ -30,4 +30,14 @@ int32_t gc_mic_authorization_status(void);
 // Returns 1 if access is granted. Do not call on the main thread.
 int32_t gc_mic_request_access(void);
 
+// System audio recording permission (kTCCServiceAudioCapture), through the
+// private TCC framework loaded at runtime. Returns 0 not determined,
+// 2 denied, 3 authorized, or -1 when the framework isn't available.
+int32_t gc_system_audio_authorization_status(void);
+
+// Shows the system audio prompt if needed and blocks until it is answered.
+// Returns 1 if granted, 0 if denied, or -1 when the framework isn't
+// available. Do not call on the main thread.
+int32_t gc_system_audio_request_access(void);
+
 #endif

@@ -9,7 +9,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{DeviceId, FromSample, SampleFormat, SizedSample};
 use serde::Serialize;
 
-use macos_audio::MicPermission;
+use macos_audio::Permission as MacPermission;
 
 use super::{Capture, CaptureError, CaptureFormat, ErrorSink};
 
@@ -105,8 +105,8 @@ pub fn start(
 
 fn ensure_permission() -> Result<(), CaptureError> {
     match macos_audio::mic_permission() {
-        MicPermission::Authorized => Ok(()),
-        MicPermission::NotDetermined if macos_audio::request_mic_access() => Ok(()),
+        MacPermission::Authorized => Ok(()),
+        MacPermission::NotDetermined if macos_audio::request_mic_access() => Ok(()),
         _ => Err(CaptureError::MicPermissionDenied),
     }
 }

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use macos_audio::MicPermission;
+use macos_audio::{Permission as MacPermission, SystemAudioTap};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -20,13 +20,13 @@ pub enum Permission {
     Authorized,
 }
 
-impl From<MicPermission> for Permission {
-    fn from(value: MicPermission) -> Self {
+impl From<MacPermission> for Permission {
+    fn from(value: MacPermission) -> Self {
         match value {
-            MicPermission::NotDetermined => Permission::NotDetermined,
-            MicPermission::Restricted => Permission::Restricted,
-            MicPermission::Denied => Permission::Denied,
-            MicPermission::Authorized => Permission::Authorized,
+            MacPermission::NotDetermined => Permission::NotDetermined,
+            MacPermission::Restricted => Permission::Restricted,
+            MacPermission::Denied => Permission::Denied,
+            MacPermission::Authorized => Permission::Authorized,
         }
     }
 }
@@ -43,6 +43,35 @@ pub async fn request_mic_permission() -> CommandResult<Permission> {
     tauri::async_runtime::spawn_blocking(|| {
         macos_audio::request_mic_access();
         Permission::from(macos_audio::mic_permission())
+    })
+    .await
+    .map_err(|e| CommandError {
+        kind: ErrorKind::Internal,
+        message: e.to_string(),
+    })
+}
+
+/// System audio recording permission, or null when macOS doesn't let the app check.
+#[tauri::command]
+pub fn system_audio_permission() -> Option<Permission> {
+    macos_audio::system_audio_permission().map(Permission::from)
+}
+
+/// Shows the macOS system audio recording prompt if it hasn't been answered,
+/// and returns the result. When macOS doesn't let the app ask directly, this
+/// briefly starts the system audio tap instead, which makes macOS show the
+/// prompt, and returns null because the answer can't be read.
+#[tauri::command]
+pub async fn request_system_audio_permission() -> CommandResult<Option<Permission>> {
+    tauri::async_runtime::spawn_blocking(|| {
+        if macos_audio::request_system_audio_access().is_some() {
+            return macos_audio::system_audio_permission().map(Permission::from);
+        }
+        if let Ok((tap, _)) = SystemAudioTap::start(|_| {}) {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            drop(tap);
+        }
+        None
     })
     .await
     .map_err(|e| CommandError {

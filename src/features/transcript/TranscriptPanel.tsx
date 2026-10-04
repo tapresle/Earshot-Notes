@@ -33,6 +33,7 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const [systemAudioAllowed, setSystemAudioAllowed] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -58,6 +59,13 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
       unlisten?.();
     };
   }, [meetingId, attempt]);
+
+  useEffect(() => {
+    api
+      .systemAudioPermission()
+      .then((permission) => setSystemAudioAllowed(permission === "authorized"))
+      .catch(() => setSystemAudioAllowed(false));
+  }, [recording]);
 
   useEffect(() => {
     if (recording) endRef.current?.scrollIntoView?.({ block: "end" });
@@ -102,7 +110,7 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
           </li>
         ))}
       </ol>
-      {recording && !segments.some((s) => s.source === "them") && (
+      {recording && !systemAudioAllowed && !segments.some((s) => s.source === "them") && (
         <p className="empty-hint transcript-hint">
           Not seeing the other side? macOS may be blocking system audio. Allow Earshot in System Settings &gt;
           Privacy &amp; Security &gt; Screen &amp; System Audio Recording.

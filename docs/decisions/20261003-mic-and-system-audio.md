@@ -24,5 +24,5 @@ Capture the microphone and the system audio output as two independent streams. L
 
 - You get speaker labels without a model, but everyone on the far side shares one "Them" label.
 - The app requires macOS 26 overall (see the needle ADR), which covers process taps.
-- The app needs both microphone and audio capture permissions. A denied microphone permission is detected before recording starts. A denied system audio permission can't be detected: macOS delivers silence instead of an error. The transcript panel shows where to allow it until the other side is heard.
+- The app needs both microphone and audio capture permissions. A denied microphone permission is detected before recording starts. macOS has no public API for system audio permission, so the app checks and requests it through the private TCC framework (`TCCAccessPreflight` and `TCCAccessRequest` for `kTCCServiceAudioCapture`), loaded at runtime in `crates/macos-audio`. A denied permission is then detected before recording, which continues with the microphone and a warning. If a future macOS removes those functions, the app falls back to starting the tap, which makes macOS prompt, and the transcript panel explains where to allow it.
 - Each stream starts independently. If one fails, recording continues with the other and the UI names the missing source.

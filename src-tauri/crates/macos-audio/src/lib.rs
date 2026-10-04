@@ -1,15 +1,28 @@
-//! macOS system audio capture (Core Audio process taps) and microphone permission.
+//! macOS system audio capture (Core Audio process taps), and microphone and
+//! system audio recording permissions.
 //!
 //! On other platforms every function reports that the feature is unsupported.
 
 use std::ffi::{c_char, c_void};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MicPermission {
+pub enum Permission {
     NotDetermined,
     Restricted,
     Denied,
     Authorized,
+}
+
+impl Permission {
+    /// Decodes the native status codes, which follow `AVAuthorizationStatus`.
+    fn from_code(code: i32) -> Self {
+        match code {
+            1 => Permission::Restricted,
+            2 => Permission::Denied,
+            3 => Permission::Authorized,
+            _ => Permission::NotDetermined,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -49,7 +62,7 @@ impl Drop for SystemAudioTap {
     }
 }
 
-pub fn mic_permission() -> MicPermission {
+pub fn mic_permission() -> Permission {
     imp::mic_permission()
 }
 
@@ -57,6 +70,19 @@ pub fn mic_permission() -> MicPermission {
 /// Blocks, so never call it on the UI thread.
 pub fn request_mic_access() -> bool {
     imp::request_mic_access()
+}
+
+/// System audio recording permission, or `None` when macOS doesn't let the app
+/// check (the private API it relies on is unavailable).
+pub fn system_audio_permission() -> Option<Permission> {
+    imp::system_audio_permission()
+}
+
+/// Prompts for system audio recording access if needed and waits for the
+/// answer. Returns `None` when macOS doesn't let the app ask directly. Blocks,
+/// so never call it on the UI thread.
+pub fn request_system_audio_access() -> Option<bool> {
+    imp::request_system_audio_access()
 }
 
 #[cfg(target_os = "macos")]
@@ -82,6 +108,8 @@ mod imp {
         fn gc_system_audio_stop(handle: *mut c_void);
         fn gc_mic_authorization_status() -> i32;
         fn gc_mic_request_access() -> i32;
+        fn gc_system_audio_authorization_status() -> i32;
+        fn gc_system_audio_request_access() -> i32;
     }
 
     unsafe extern "C" fn trampoline(
@@ -136,17 +164,26 @@ mod imp {
         unsafe { gc_system_audio_stop(handle) };
     }
 
-    pub fn mic_permission() -> MicPermission {
-        match unsafe { gc_mic_authorization_status() } {
-            1 => MicPermission::Restricted,
-            2 => MicPermission::Denied,
-            3 => MicPermission::Authorized,
-            _ => MicPermission::NotDetermined,
-        }
+    pub fn mic_permission() -> Permission {
+        Permission::from_code(unsafe { gc_mic_authorization_status() })
     }
 
     pub fn request_mic_access() -> bool {
         unsafe { gc_mic_request_access() == 1 }
+    }
+
+    pub fn system_audio_permission() -> Option<Permission> {
+        match unsafe { gc_system_audio_authorization_status() } {
+            -1 => None,
+            code => Some(Permission::from_code(code)),
+        }
+    }
+
+    pub fn request_system_audio_access() -> Option<bool> {
+        match unsafe { gc_system_audio_request_access() } {
+            -1 => None,
+            granted => Some(granted == 1),
+        }
     }
 }
 
@@ -160,12 +197,20 @@ mod imp {
 
     pub fn stop(_handle: *mut c_void) {}
 
-    pub fn mic_permission() -> MicPermission {
-        MicPermission::Authorized
+    pub fn mic_permission() -> Permission {
+        Permission::Authorized
     }
 
     pub fn request_mic_access() -> bool {
         true
+    }
+
+    pub fn system_audio_permission() -> Option<Permission> {
+        None
+    }
+
+    pub fn request_system_audio_access() -> Option<bool> {
+        None
     }
 }
 
@@ -176,13 +221,25 @@ mod tests {
     #[test]
     fn reads_microphone_permission_without_prompting() {
         // Any status is valid; this proves the native library links and runs.
-        let status = mic_permission();
-        assert!(matches!(
-            status,
-            MicPermission::NotDetermined
-                | MicPermission::Restricted
-                | MicPermission::Denied
-                | MicPermission::Authorized
-        ));
+        let _ = mic_permission();
+    }
+
+    #[test]
+    fn reads_system_audio_permission_without_prompting() {
+        // On current macOS the private TCC API resolves, so a status comes back.
+        // Any status is valid; this proves the lookup links and doesn't crash.
+        assert!(
+            system_audio_permission().is_some(),
+            "TCC preflight is unavailable"
+        );
+    }
+
+    #[test]
+    fn decodes_native_status_codes() {
+        assert_eq!(Permission::from_code(0), Permission::NotDetermined);
+        assert_eq!(Permission::from_code(1), Permission::Restricted);
+        assert_eq!(Permission::from_code(2), Permission::Denied);
+        assert_eq!(Permission::from_code(3), Permission::Authorized);
+        assert_eq!(Permission::from_code(99), Permission::NotDetermined);
     }
 }
