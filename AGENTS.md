@@ -8,7 +8,7 @@ macOS (Apple Silicon) is the first target. Windows and Linux follow.
 
 - **Shell:** Tauri 2. The Rust core lives in `src-tauri/`.
 - **UI:** React 19, TypeScript, and Vite in `src/`.
-- **Transcription:** Cactus Whistle through the needle C API (`needle.h`). This is planned, not built yet.
+- **Transcription:** Cactus Whistle through the prebuilt needle engine. `src-tauri/crates/needle-sys` holds the raw FFI, and `src-tauri/src/transcribe/whistle.rs` is the safe wrapper.
 - **Summaries:** llama.cpp embedded through `llama-cpp-2`. This is planned, not built yet.
 - **Storage:** SQLite through `rusqlite`. This is planned, not built yet.
 
@@ -20,15 +20,16 @@ Run all commands from the repository root unless noted.
 
 | Task | Command |
 | --- | --- |
+| Fetch the native engine and models (after cloning, or when a pin changes) | `./scripts/fetch-native.sh` |
 | Install JS dependencies | `npm install` |
 | Run the app in development | `npm run tauri dev` |
 | Build the app bundle | `npm run tauri build` |
 | Frontend lint | `npm run lint` |
 | Frontend typecheck | `npm run typecheck` |
 | Frontend tests | `npm test` |
-| Rust lint | `cargo clippy --all-targets -- -D warnings` (in `src-tauri/`) |
+| Rust lint | `cargo clippy --workspace --all-targets -- -D warnings` (in `src-tauri/`) |
 | Rust format check | `cargo fmt --check` (in `src-tauri/`) |
-| Rust tests | `cargo test` (in `src-tauri/`) |
+| Rust tests | `cargo test --workspace` (in `src-tauri/`) |
 
 Before you hand off work, run the lint, typecheck, test, and format commands. All of them must pass.
 
@@ -40,4 +41,6 @@ Before you hand off work, run the lint, typecheck, test, and format commands. Al
 - **Markdown storage:** notes and summaries are stored as Markdown.
 - **Offline only:** the app must not make network requests at runtime. The CSP in `src-tauri/tauri.conf.json` enforces this for the UI. The only planned exception is an explicit, user-started model download.
 - **Styling** uses the CSS custom properties in `src/styles.css`. Every color needs a dark mode value.
-- **Test data:** tests use synthetic audio and text fixtures only.
+- **Test data:** tests use synthetic audio and text fixtures only. Generate speech fixtures with macOS `say`, for example `say -o tests/fixtures/name.wav --data-format=LEI16@16000 "text"`.
+- **Native binaries:** `libneedle.a` and `.cact` model files aren't committed. `scripts/fetch-native.sh` pins their Hugging Face revisions and SHA-256 checksums. To change a version, update the pins and checksums there.
+- **needle engine:** the engine holds one process-global, non-thread-safe model, so only one `Whistle` can exist at a time and it must stay on a single owner thread.
