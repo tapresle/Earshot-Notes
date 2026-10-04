@@ -90,6 +90,11 @@ pub fn run() {
             commands::settings::set_input_device,
             commands::settings::installed_models,
             commands::settings::select_summary_model,
+            commands::setup::mic_permission,
+            commands::setup::request_mic_permission,
+            commands::setup::open_privacy_settings,
+            commands::setup::setup_complete,
+            commands::setup::set_setup_complete,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

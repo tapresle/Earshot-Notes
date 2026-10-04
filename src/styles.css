@@ -725,3 +725,44 @@ body {
   font-size: 12px;
   color: var(--text-muted);
 }
+
+.setup {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.setup h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.checklist {
+  margin: 0 0 20px;
+  padding-left: 20px;
+}
+
+.checklist li {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.checklist h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.checklist p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.checklist .check-done {
+  color: var(--text-primary);
+}
+
+.checklist .check-done::before {
+  content: "\2713  ";
+  color: var(--accent);
+}

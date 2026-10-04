@@ -49,6 +49,9 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     inputDevice: null as string | null,
     installed: [] as ModelRecord[],
     transcriptionError: null as unknown,
+    setupComplete: true,
+    micPermission: "authorized" as string,
+    openedPanes: [] as string[],
   };
 
   const handlers: Record<string, (args: Args) => unknown> = {
@@ -142,6 +145,18 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     installed_models: () => ({ models: state.installed, selectedId: state.model?.id ?? null }),
     select_summary_model: ({ modelId }) => {
       state.model = state.installed.find((m) => m.id === modelId) ?? null;
+    },
+    setup_complete: () => state.setupComplete,
+    set_setup_complete: ({ complete }) => {
+      state.setupComplete = Boolean(complete);
+    },
+    mic_permission: () => state.micPermission,
+    request_mic_permission: () => {
+      state.micPermission = "authorized";
+      return state.micPermission;
+    },
+    open_privacy_settings: ({ pane }) => {
+      state.openedPanes.push(String(pane));
     },
     cancel_download: () => {
       state.downloadCancelled = true;
@@ -864,6 +879,76 @@ describe("App", () => {
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
       expect(await screen.findByText("Transcription is unavailable: no Whistle model found.")).toBeInTheDocument();
+    });
+  });
+
+  describe("first-run setup", () => {
+    function firstRun(configure: (state: ReturnType<typeof fakeBackend>["state"]) => void = () => {}) {
+      const backend = fakeBackend();
+      backend.state.setupComplete = false;
+      configure(backend.state);
+      const user = userEvent.setup();
+      render(<App />);
+      return { backend, user };
+    }
+
+    it("shows the checklist until setup is finished", async () => {
+      const { backend, user } = firstRun();
+
+      expect(await screen.findByRole("heading", { level: 1, name: "Get set up" })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Finish setup" }));
+
+      expect(await screen.findByRole("heading", { name: "Start your first meeting" })).toBeInTheDocument();
+      expect(backend.state.setupComplete).toBe(true);
+    });
+
+    it("asks for the microphone when macOS hasn't asked yet", async () => {
+      const { user } = firstRun((state) => {
+        state.micPermission = "notDetermined";
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Allow microphone" }));
+
+      expect(await screen.findByText("Allowed")).toBeInTheDocument();
+    });
+
+    it("links to Privacy settings when the microphone is blocked", async () => {
+      const { backend, user } = firstRun((state) => {
+        state.micPermission = "denied";
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Open Microphone settings" }));
+      await user.click(screen.getByRole("button", { name: "Open audio recording settings" }));
+
+      expect(backend.state.openedPanes).toEqual(["microphone", "systemAudio"]);
+    });
+
+    it("sends you to settings to add a summary model", async () => {
+      const { user } = firstRun();
+
+      await user.click(await screen.findByRole("button", { name: "Set up summaries" }));
+
+      expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+    });
+
+    it("shows the summary model when one is installed", async () => {
+      firstRun((state) => {
+        state.model = testModel();
+      });
+
+      expect(await screen.findByText("Ready, using Gemma 4 E2B")).toBeInTheDocument();
+    });
+
+    it("can be shown again from settings", async () => {
+      const backend = fakeBackend();
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+
+      await user.click(await screen.findByRole("button", { name: "Show the setup checklist again" }));
+
+      expect(await screen.findByRole("heading", { level: 1, name: "Get set up" })).toBeInTheDocument();
+      expect(backend.state.setupComplete).toBe(false);
     });
   });
 });

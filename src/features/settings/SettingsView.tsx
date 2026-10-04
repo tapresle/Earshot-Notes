@@ -9,13 +9,34 @@ import {
 } from "../../lib/api";
 import { ModelSetup } from "../summary/ModelSetup";
 
-export function SettingsView() {
+export function SettingsView({ onShowSetup }: { onShowSetup: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+
+  async function showSetup() {
+    try {
+      await api.setSetupComplete(false);
+      onShowSetup();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
   return (
     <article className="settings">
       <h1>Settings</h1>
       <MicrophoneSection />
       <SummaryModelSection />
       <TranscriptionSection />
+      <section className="settings-section">
+        <button type="button" className="link-button" onClick={() => void showSetup()}>
+          Show the setup checklist again
+        </button>
+        {error && (
+          <p className="field-error" role="alert">
+            {error}
+          </p>
+        )}
+      </section>
     </article>
   );
 }

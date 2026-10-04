@@ -25,7 +25,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -34,10 +37,18 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "resources/models/whistle.cact": "models/whistle.cact"
+      "resources/models/whistle.cact": "models/whistle.cact",
+      "resources/licenses/needle-LICENSE.txt": "licenses/needle-LICENSE.txt",
+      "resources/licenses/whistle-LICENSE.txt": "licenses/whistle-LICENSE.txt",
+      "resources/licenses/llama.cpp-LICENSE.txt": "licenses/llama.cpp-LICENSE.txt"
     },
     "macOS": {
-      "minimumSystemVersion": "14.4"
-    }
+      "minimumSystemVersion": "14.4",
+      "signingIdentity": "-",
+      "hardenedRuntime": true,
+      "entitlements": "./Entitlements.plist"
+    },
+    "category": "Productivity",
+    "shortDescription": "Meeting notes with on-device transcription and summaries"
   }
 }

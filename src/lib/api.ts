@@ -134,6 +134,10 @@ export interface InstalledModels {
   selectedId: string | null;
 }
 
+export type Permission = "notDetermined" | "restricted" | "denied" | "authorized";
+
+export type PrivacyPane = "microphone" | "systemAudio";
+
 export interface CommandError {
   kind: "notFound" | "conflict" | "unavailable" | "invalid" | "internal";
   message: string;
@@ -214,6 +218,11 @@ export const api = {
   setInputDevice: (deviceId: string | null) => invoke<void>("set_input_device", { deviceId }),
   installedModels: () => invoke<InstalledModels>("installed_models"),
   selectSummaryModel: (modelId: string) => invoke<void>("select_summary_model", { modelId }),
+  micPermission: () => invoke<Permission>("mic_permission"),
+  requestMicPermission: () => invoke<Permission>("request_mic_permission"),
+  openPrivacySettings: (pane: PrivacyPane) => invoke<void>("open_privacy_settings", { pane }),
+  setupComplete: () => invoke<boolean>("setup_complete"),
+  setSetupComplete: (complete: boolean) => invoke<void>("set_setup_complete", { complete }),
   onSummaryProgress: (handler: (event: SummaryProgress) => void): Promise<UnlistenFn> =>
     listen<SummaryProgress>("summary:progress", (event) => handler(event.payload)),
   onSummaryText: (handler: (event: SummaryText) => void): Promise<UnlistenFn> =>

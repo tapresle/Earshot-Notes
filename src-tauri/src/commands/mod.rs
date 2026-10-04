@@ -5,6 +5,7 @@ pub mod meetings;
 pub mod models;
 pub mod recording;
 pub mod settings;
+pub mod setup;
 pub mod summaries;
 
 use serde::Serialize;

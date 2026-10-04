@@ -22,4 +22,5 @@ The plan assumed you would build needle from source and generate bindings with `
 ## Consequences
 
 - You can't patch or audit the engine source. Static linking with pinned checksums keeps the binary reproducible.
+- The macos-arm64 `libneedle.a` (engine 3.1.0) was compiled for macOS 26. The linker warns that it targets a newer macOS than the app's 14.4 minimum. It runs on macOS 26 and later; on macOS 14 and 15 it may fail at runtime. This needs testing, or the minimum raised, before the app runs on older Macs.
 - Upgrading means changing the pins in `scripts/fetch-native.sh`. The planned update feature builds on this.

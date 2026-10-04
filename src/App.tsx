@@ -5,8 +5,11 @@ import { MeetingView } from "./features/meetings/MeetingView";
 import { TranscriptPanel } from "./features/transcript/TranscriptPanel";
 import { ExportBar } from "./features/export/ExportBar";
 import { SettingsView } from "./features/settings/SettingsView";
+import { SetupChecklist } from "./features/setup/SetupChecklist";
 import { select, type Selection } from "./features/meetings/selection";
 import "./styles.css";
+
+type View = "meetings" | "settings" | "setup";
 
 type ListState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; meetings: Meeting[] };
 
@@ -17,7 +20,7 @@ export default function App() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [recordingMeetingId, setRecordingMeetingId] = useState<number | null>(null);
   const [selection, setSelection] = useState<Selection>({ ids: [], anchor: null });
-  const [showSettings, setShowSettings] = useState(false);
+  const [view, setView] = useState<View>("meetings");
 
   const load = useCallback(() => {
     api
@@ -27,6 +30,13 @@ export default function App() {
   }, []);
 
   useEffect(load, [load]);
+
+  useEffect(() => {
+    api
+      .setupComplete()
+      .then((complete) => !complete && setView("setup"))
+      .catch((error) => console.error("couldn't read the setup state", error));
+  }, []);
 
   useEffect(() => {
     api
@@ -43,7 +53,7 @@ export default function App() {
       setList((current) => (current.kind === "ready" ? { kind: "ready", meetings: [meeting, ...current.meetings] } : current));
       setSelectedId(meeting.id);
       setSelection({ ids: [meeting.id], anchor: meeting.id });
-      setShowSettings(false);
+      setView("meetings");
     } catch (error) {
       setCreateError(errorMessage(error));
     } finally {
@@ -70,7 +80,7 @@ export default function App() {
           setSelection(select(meetings.map((m) => m.id), current, id, mode));
           if (mode === "single") {
             setSelectedId(id);
-            setShowSettings(false);
+            setView("meetings");
           }
         }}
         onCreate={() => void createMeeting()}
@@ -85,8 +95,8 @@ export default function App() {
             <button
               type="button"
               className={`button subtle settings-button ${meetings.length === 0 ? "pinned-bottom" : ""}`}
-              aria-current={showSettings ? "page" : undefined}
-              onClick={() => setShowSettings(true)}
+              aria-current={view === "settings" ? "page" : undefined}
+              onClick={() => setView("settings")}
             >
               Settings
             </button>
@@ -100,9 +110,12 @@ export default function App() {
             Couldn't create the meeting. {createError}
           </p>
         )}
-        {showSettings && <SettingsView />}
-        {!showSettings && list.kind === "loading" && <p className="empty-hint">Loading meetings…</p>}
-        {!showSettings && list.kind === "error" && (
+        {view === "settings" && <SettingsView onShowSetup={() => setView("setup")} />}
+        {view === "setup" && (
+          <SetupChecklist onOpenSettings={() => setView("settings")} onFinish={() => setView("meetings")} />
+        )}
+        {view === "meetings" && list.kind === "loading" && <p className="empty-hint">Loading meetings…</p>}
+        {view === "meetings" && list.kind === "error" && (
           <div className="inline-error" role="alert">
             <p>{list.message}</p>
             <button
@@ -117,7 +130,7 @@ export default function App() {
             </button>
           </div>
         )}
-        {!showSettings &&
+        {view === "meetings" &&
           list.kind === "ready" &&
           (selectedId === null ? (
             <div className="empty-state">

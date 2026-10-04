@@ -23,7 +23,7 @@ Run all commands from the repository root unless noted.
 | Fetch the native engine and models (after cloning, or when a pin changes) | `./scripts/fetch-native.sh` |
 | Install JS dependencies | `npm install` |
 | Run the app in development | `npm run tauri dev` |
-| Build the app bundle | `npm run tauri build` |
+| Build the signed app and disk image | `./scripts/build-macos.sh` |
 | Frontend lint | `npm run lint` |
 | Frontend typecheck | `npm run typecheck` |
 | Frontend tests | `npm test` |
@@ -39,6 +39,7 @@ Before you hand off work, run the lint, typecheck, test, and format commands. Al
 - **Rust modules** under `src-tauri/src/`: `audio` (microphone and system capture, downmix, resampling), `chunker` (speech segmentation), `transcribe` (Whistle and its worker thread), `recording` (start, stop, and the capture-to-worker pipeline), `summarize` (prompting, the llama.cpp generator, and the background summarizer), `models` (known models, download, and GGUF import), `export` (Markdown rendering and file writing), `store`, and `commands`. Tauri command handlers in `commands` stay thin and call into the other modules.
 - **UI and core communication:** the UI calls Tauri commands for requests, and the core pushes live updates as Tauri events. Current events: `transcript:segment`, `recording:issue`, `summary:progress`, `summary:text`, `summary:done`, `summary:failed`, `model:download-progress`, `model:download-done`, and `model:download-failed`.
 - **Audio pipeline:** capture threads must never block. They drop buffers when the pipeline falls behind. Whistle receives 16 kHz mono segments of at most 28 s from `chunker`. Transcript times are offsets from `meetings.started_at`.
+- **Packaging:** `scripts/build-macos.sh` signs with `APPLE_SIGNING_IDENTITY`, else the first Developer ID or Apple Development certificate in the keychain, else ad-hoc. The build uses the hardened runtime, so `src-tauri/Entitlements.plist` must keep `com.apple.security.device.audio-input`, or microphone input is silently denied. `src-tauri/build.rs` links clang's runtime (`libclang_rt.osx.a`) because Objective-C `@available` checks need it at the 14.4 deployment target. Bundled license texts live in `src-tauri/resources/licenses/`.
 - **Native macOS code:** `src-tauri/crates/macos-audio` holds the Objective-C system audio tap and microphone permission calls, compiled by its `build.rs` with `cc` under `-Wall -Wextra -Werror`. Keep its C interface in `native/audio_tap.h` and its Rust bindings in `src/lib.rs` in sync.
 - **Permissions:** the bundled app declares `NSMicrophoneUsageDescription` and `NSAudioCaptureUsageDescription` in `src-tauri/Info.plist`, and requires macOS 14.4. Under `npm run tauri dev`, macOS attributes both permissions to your terminal app instead.
 - **Migrations:** schema changes are numbered SQL files in `src-tauri/migrations/`, applied in order through `PRAGMA user_version`. Never edit a shipped migration; add a new one and register it in `src-tauri/src/store/migrations.rs`.
