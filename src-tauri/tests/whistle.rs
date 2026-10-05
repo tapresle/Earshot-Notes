@@ -11,7 +11,11 @@ const MODEL: &str = "resources/models/whistle.cact";
 static ENGINE: Mutex<()> = Mutex::new(());
 
 fn speech_fixture() -> Vec<f32> {
-    let mut reader = hound::WavReader::open("tests/fixtures/speech-en.wav").unwrap();
+    read_fixture("tests/fixtures/speech-en.wav")
+}
+
+fn read_fixture(path: &str) -> Vec<f32> {
+    let mut reader = hound::WavReader::open(path).unwrap();
     assert_eq!(reader.spec().sample_rate, SAMPLE_RATE);
     assert_eq!(reader.spec().channels, 1);
     reader
@@ -38,6 +42,18 @@ fn transcribes_english_speech() {
         normalize(&result.text),
         "the quarterly planning meeting starts at 10 please bring the budget report"
     );
+    assert_eq!(result.language.as_deref(), Some("en"));
+}
+
+#[test]
+fn transcribes_as_english_without_detecting_the_language() {
+    let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut whistle = Whistle::load(Path::new(MODEL)).unwrap();
+
+    let result = whistle
+        .transcribe(&read_fixture("tests/fixtures/speech-es.wav"))
+        .unwrap();
+
     assert_eq!(result.language.as_deref(), Some("en"));
 }
 

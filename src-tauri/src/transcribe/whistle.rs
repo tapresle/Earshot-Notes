@@ -20,6 +20,9 @@ pub const MAX_SAMPLES: usize = 30 * SAMPLE_RATE as usize;
 
 const INITIAL_OUTPUT_CAPACITY: usize = 64 * 1024;
 const MAX_OUTPUT_CAPACITY: usize = 1024 * 1024;
+/// Detecting the language per clip misreads short or quiet call audio as other
+/// languages, so every clip is transcribed as English.
+const LANGUAGE: &CStr = c"en";
 
 static LOADED: AtomicBool = AtomicBool::new(false);
 
@@ -80,7 +83,7 @@ impl Whistle {
         Ok(guard)
     }
 
-    /// Transcribes up to 30 seconds of 16 kHz mono PCM with automatic language detection.
+    /// Transcribes up to 30 seconds of 16 kHz mono PCM as English.
     pub fn transcribe(&mut self, pcm: &[f32]) -> Result<Transcription, WhistleError> {
         self.transcribe_with_capacity(pcm, INITIAL_OUTPUT_CAPACITY)
     }
@@ -101,7 +104,7 @@ impl Whistle {
                 needle_sys::needle_transcribe(
                     pcm.as_ptr(),
                     pcm.len() as c_int,
-                    std::ptr::null(),
+                    LANGUAGE.as_ptr(),
                     std::ptr::null(),
                     0,
                     out.as_mut_ptr().cast::<c_char>(),
