@@ -89,7 +89,7 @@ pub fn run() {
             app.manage(store);
             app.manage(Arc::new(Recorder::default()));
             app.manage(Arc::new(Transcription(worker)));
-            app.manage(summarizer);
+            app.manage(Arc::new(summarizer));
             app.manage(models::manager::Downloads::default());
             Ok(())
         })

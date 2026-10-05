@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, State};
 
-use super::{CommandError, CommandResult, ErrorKind};
+use super::{CommandResult, blocking};
 use crate::audio::{Capture, mic, system};
 use crate::recording::{self, CaptureStarter, IssueSink, Recorder, SourceProblem, StartReport};
 use crate::store::settings::INPUT_DEVICE;
@@ -40,7 +40,6 @@ pub async fn start_recording(
     transcription: State<'_, Arc<Transcription>>,
     meeting_id: i64,
 ) -> CommandResult<StartReport> {
-    let preferred_mic = store.setting(INPUT_DEVICE)?;
     let (store, recorder, transcription) = (
         Arc::clone(&store),
         Arc::clone(&recorder),
@@ -57,24 +56,26 @@ pub async fn start_recording(
             log::warn!("couldn't send a recording issue to the UI: {error}");
         }
     });
-    let sources: Vec<(Source, CaptureStarter)> = vec![
-        (
-            Source::Me,
-            Box::new(move |frames, on_error| {
-                mic::start(frames, on_error, preferred_mic)
-                    .map(|(c, f)| (Box::new(c) as Box<dyn Capture>, f))
-            }),
-        ),
-        (
-            Source::Them,
-            Box::new(|frames, on_error| {
-                system::start(frames, on_error).map(|(c, f)| (Box::new(c) as Box<dyn Capture>, f))
-            }),
-        ),
-    ];
 
-    tauri::async_runtime::spawn_blocking(move || {
-        recording::start_recording(
+    blocking(move || {
+        let preferred_mic = store.setting(INPUT_DEVICE)?;
+        let sources: Vec<(Source, CaptureStarter)> = vec![
+            (
+                Source::Me,
+                Box::new(move |frames, on_error| {
+                    mic::start(frames, on_error, preferred_mic)
+                        .map(|(c, f)| (Box::new(c) as Box<dyn Capture>, f))
+                }),
+            ),
+            (
+                Source::Them,
+                Box::new(|frames, on_error| {
+                    system::start(frames, on_error)
+                        .map(|(c, f)| (Box::new(c) as Box<dyn Capture>, f))
+                }),
+            ),
+        ];
+        Ok(recording::start_recording(
             &store,
             &recorder,
             transcription
@@ -85,22 +86,20 @@ pub async fn start_recording(
             meeting_id,
             sources,
             on_issue,
-        )
+        )?)
     })
     .await
-    .map_err(|error| CommandError {
-        kind: ErrorKind::Internal,
-        message: format!("the recording task failed: {error}"),
-    })?
-    .map_err(Into::into)
 }
 
+/// Stops the recording. Waits for the audio pipelines to finish, so it runs
+/// off the main thread.
 #[tauri::command]
-pub fn stop_recording(
+pub async fn stop_recording(
     store: State<'_, Arc<Store>>,
     recorder: State<'_, Arc<Recorder>>,
 ) -> CommandResult<Option<i64>> {
-    Ok(recording::stop_recording(&store, &recorder)?)
+    let (store, recorder) = (Arc::clone(&store), Arc::clone(&recorder));
+    blocking(move || Ok(recording::stop_recording(&store, &recorder)?)).await
 }
 
 #[tauri::command]
@@ -109,9 +108,10 @@ pub fn active_recording(recorder: State<'_, Arc<Recorder>>) -> Option<i64> {
 }
 
 #[tauri::command]
-pub fn list_transcript(
+pub async fn list_transcript(
     store: State<'_, Arc<Store>>,
     meeting_id: i64,
 ) -> CommandResult<Vec<TranscriptSegment>> {
-    Ok(store.list_segments(meeting_id)?)
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.list_segments(meeting_id)?)).await
 }

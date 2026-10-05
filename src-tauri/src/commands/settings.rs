@@ -6,7 +6,7 @@ use tauri::{AppHandle, State};
 use super::models::HuggingFaceSource;
 use super::recording::{Transcription, TranscriptionModel};
 use super::summaries::models_dir;
-use super::{CommandError, CommandResult, ErrorKind};
+use super::{CommandError, CommandResult, ErrorKind, blocking};
 use crate::audio::mic::{self, InputDevice};
 use crate::models::{self, RemoveError};
 use crate::store::settings::INPUT_DEVICE;
@@ -44,17 +44,19 @@ pub async fn input_devices() -> CommandResult<Vec<InputDevice>> {
 
 /// The chosen microphone's id, or null for the system default.
 #[tauri::command]
-pub fn input_device(store: State<'_, Arc<Store>>) -> CommandResult<Option<String>> {
-    Ok(store.setting(INPUT_DEVICE)?)
+pub async fn input_device(store: State<'_, Arc<Store>>) -> CommandResult<Option<String>> {
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.setting(INPUT_DEVICE)?)).await
 }
 
 /// Chooses the microphone for future recordings; null means the system default.
 #[tauri::command]
-pub fn set_input_device(
+pub async fn set_input_device(
     store: State<'_, Arc<Store>>,
     device_id: Option<String>,
 ) -> CommandResult<()> {
-    Ok(store.set_setting(INPUT_DEVICE, device_id.as_deref())?)
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.set_setting(INPUT_DEVICE, device_id.as_deref())?)).await
 }
 
 #[derive(Serialize)]
@@ -75,7 +77,12 @@ pub struct InstalledModels {
 }
 
 #[tauri::command]
-pub fn installed_models(store: State<'_, Arc<Store>>) -> CommandResult<InstalledModels> {
+pub async fn installed_models(store: State<'_, Arc<Store>>) -> CommandResult<InstalledModels> {
+    let store = Arc::clone(&store);
+    blocking(move || installed(&store)).await
+}
+
+fn installed(store: &Store) -> CommandResult<InstalledModels> {
     let mut models = store.list_models()?;
     models::sort_for_display(&mut models);
     Ok(InstalledModels {
@@ -91,8 +98,12 @@ pub fn installed_models(store: State<'_, Arc<Store>>) -> CommandResult<Installed
 }
 
 #[tauri::command]
-pub fn select_summary_model(store: State<'_, Arc<Store>>, model_id: String) -> CommandResult<()> {
-    Ok(store.select_summary_model(&model_id)?)
+pub async fn select_summary_model(
+    store: State<'_, Arc<Store>>,
+    model_id: String,
+) -> CommandResult<()> {
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.select_summary_model(&model_id)?)).await
 }
 
 impl From<RemoveError> for CommandError {
@@ -111,15 +122,19 @@ impl From<RemoveError> for CommandError {
 /// summary is running. If it was the selected model, summaries switch to the
 /// newest remaining one.
 #[tauri::command]
-pub fn remove_summary_model(
+pub async fn remove_summary_model(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
-    summarizer: State<'_, Summarizer>,
+    summarizer: State<'_, Arc<Summarizer>>,
     model_id: String,
 ) -> CommandResult<()> {
     let dir = models_dir(&app)?;
-    summarizer.when_idle(|| models::remove(&model_id, &dir, &store))??;
-    Ok(())
+    let (store, summarizer) = (Arc::clone(&store), Arc::clone(&summarizer));
+    blocking(move || {
+        summarizer.when_idle(|| models::remove(&model_id, &dir, &store))??;
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(test)]
