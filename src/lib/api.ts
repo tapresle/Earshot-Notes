@@ -157,6 +157,8 @@ export type PrivacyPane = "microphone" | "systemAudio";
 export interface CommandError {
   kind: "notFound" | "conflict" | "unavailable" | "invalid" | "internal";
   message: string;
+  /** What a `notFound` error couldn't find. */
+  missing?: "meeting" | "model";
 }
 
 export function isCommandError(error: unknown): error is CommandError {
@@ -168,15 +170,26 @@ export function errorMessage(error: unknown): string {
   if (!isCommandError(error)) return "Something went wrong.";
   switch (error.kind) {
     case "notFound":
-      return "That meeting no longer exists.";
+      switch (error.missing) {
+        case "meeting":
+          return "That meeting no longer exists.";
+        case "model":
+          return "That summary model is no longer installed.";
+        default:
+          return sentence(error.message);
+      }
     case "conflict":
     case "unavailable":
     case "invalid":
       // These messages are written for people and explain what to do.
-      return `${error.message.charAt(0).toUpperCase()}${error.message.slice(1)}.`;
+      return sentence(error.message);
     case "internal":
       return "The app couldn't read or write your meetings.";
   }
+}
+
+function sentence(message: string): string {
+  return `${message.charAt(0).toUpperCase()}${message.slice(1)}.`;
 }
 
 export const api = {

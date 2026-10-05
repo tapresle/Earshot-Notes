@@ -25,7 +25,7 @@ function emit(event: string, payload: unknown) {
 function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] = []) {
   const meetings = new Map(seed.map((m) => [m.id, { ...m }]));
   let nextId = Math.max(0, ...seed.map((m) => m.id)) + 1;
-  const notFound = { kind: "notFound", message: "missing" };
+  const notFound = { kind: "notFound", missing: "meeting", message: "meeting doesn't exist" };
   const state = {
     recording: null as number | null,
     startError: null as unknown,
@@ -176,7 +176,9 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
       state.openedModelPage = String(modelId);
     },
     select_summary_model: ({ modelId }) => {
-      state.model = state.installed.find((m) => m.id === modelId) ?? null;
+      const model = state.installed.find((m) => m.id === modelId);
+      if (!model) throw { kind: "notFound", missing: "model", message: `model ${String(modelId)} doesn't exist` };
+      state.model = model;
     },
     remove_summary_model: ({ modelId }) => {
       if (state.removeError) throw state.removeError;
@@ -1043,7 +1045,7 @@ describe("App", () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       backend.state.installed = [testModel()];
       backend.state.model = testModel();
-      backend.state.removeError = { kind: "notFound", message: "summary model gemma-4-e2b-it-q4_k_m doesn't exist" };
+      backend.state.removeError = { kind: "notFound", missing: "model", message: "model gemma-4-e2b-it-q4_k_m doesn't exist" };
       const user = userEvent.setup();
       render(<App />);
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
@@ -1055,6 +1057,23 @@ describe("App", () => {
 
       await waitFor(() => expect(screen.queryByRole("radio")).not.toBeInTheDocument());
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("explains when a model to select is no longer installed", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      const other = { ...testModel("/models/other.gguf"), id: "local-abc", displayName: "My fine-tune" };
+      backend.state.installed = [testModel(), other];
+      backend.state.model = testModel();
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+      const radio = await screen.findByRole("radio", { name: /My fine-tune/ });
+      backend.state.installed = [testModel()];
+
+      await user.click(radio);
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("That summary model is no longer installed.");
+      expect(screen.getByRole("alert")).not.toHaveTextContent("meeting");
     });
 
     it("explains why a model couldn't be removed", async () => {
