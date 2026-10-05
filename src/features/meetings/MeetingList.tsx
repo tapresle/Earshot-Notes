@@ -1,7 +1,8 @@
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 import type { Meeting } from "../../lib/api";
 import { groupByDay } from "./groupByDay";
 import type { SelectMode } from "./selection";
+import { useToday } from "./useToday";
 
 interface MeetingListProps {
   meetings: Meeting[];
@@ -29,9 +30,8 @@ export function MeetingList({
   footer,
 }: MeetingListProps) {
   const multiSelect = selectedIds.length > 1;
-  // Day labels are computed against the time the list mounted.
-  const [now] = useState(() => Date.now());
-  const groups = groupByDay(meetings, now);
+  const today = useToday();
+  const groups = groupByDay(meetings, today);
 
   return (
     <nav className="sidebar" aria-label="Meetings">
