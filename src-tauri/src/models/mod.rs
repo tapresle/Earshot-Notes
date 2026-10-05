@@ -140,21 +140,31 @@ pub const MINISTRAL_3_14B: KnownModel = KnownModel {
     size_bytes: 8_239_067_840,
     version: "Ministral-3-14B-Instruct-2512 Q4_K_M (unsloth 9b94884)",
     min_runtime: "0.1.158",
-    description: "The most capable option. Needs 16 GB of memory with little else open.",
+    description: "The most capable option. Needs at least 16 GB of memory.",
     context_limit: 8_192,
 };
 
-/// Every downloadable model, in the order the app lists them: the recommended
-/// model first, then by size.
+/// Every downloadable model, in the order the app lists them (see `display_order`).
 pub const KNOWN_MODELS: &[KnownModel] = &[
     GEMMA_4_E2B,
-    QWEN_3_4B_2507,
     PHI_4_MINI,
+    QWEN_3_4B_2507,
     GEMMA_4_E4B,
     QWEN_3_8B,
     MINISTRAL_3_8B,
     MINISTRAL_3_14B,
 ];
+
+/// The order the app lists models in: the recommended model first, then
+/// smallest first.
+pub fn display_order(id: &str, size_bytes: u64) -> (bool, u64) {
+    (id != GEMMA_4_E2B.id, size_bytes)
+}
+
+/// Sorts installed models into `display_order`.
+pub fn sort_for_display(models: &mut [ModelRecord]) {
+    models.sort_by_key(|m| display_order(&m.id, m.size_bytes.max(0) as u64));
+}
 
 /// The context limit for an installed model: its registry limit when it's a
 /// known model, or the app-wide cap for anything imported.
@@ -518,6 +528,44 @@ mod tests {
             assert!(!model.description.is_empty());
         }
         assert_eq!(KNOWN_MODELS[0], GEMMA_4_E2B);
+    }
+
+    #[test]
+    fn known_models_are_listed_recommended_first_then_by_size() {
+        let keys: Vec<_> = KNOWN_MODELS
+            .iter()
+            .map(|m| display_order(m.id, m.size_bytes))
+            .collect();
+
+        assert!(keys.is_sorted(), "reorder KNOWN_MODELS: {keys:?}");
+    }
+
+    #[test]
+    fn sorts_installed_models_recommended_first_then_by_size() {
+        let model = |id: &str, size_bytes: i64| ModelRecord {
+            id: id.into(),
+            display_name: id.into(),
+            file_path: String::new(),
+            size_bytes,
+            sha256: String::new(),
+            source: ModelSource::Import,
+            source_url: None,
+            version: None,
+            min_runtime: None,
+            added_at: 0,
+        };
+        let mut models = [
+            model("local-big", 9_000_000_000),
+            model(GEMMA_4_E2B.id, GEMMA_4_E2B.size_bytes as i64),
+            model("local-small", 1_000),
+        ];
+
+        sort_for_display(&mut models);
+
+        assert_eq!(
+            models.map(|m| m.id),
+            [GEMMA_4_E2B.id, "local-small", "local-big"]
+        );
     }
 
     #[test]

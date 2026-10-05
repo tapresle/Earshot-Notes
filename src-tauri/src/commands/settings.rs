@@ -66,8 +66,10 @@ pub struct InstalledModels {
 
 #[tauri::command]
 pub fn installed_models(store: State<'_, Arc<Store>>) -> CommandResult<InstalledModels> {
+    let mut models = store.list_models()?;
+    models::sort_for_display(&mut models);
     Ok(InstalledModels {
-        models: store.list_models()?,
+        models,
         selected_id: store.summary_model()?.map(|m| m.id),
     })
 }

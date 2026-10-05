@@ -59,8 +59,8 @@ impl From<io::Error> for DownloadError {
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
-/// Downloads `model` into `models_dir`, records it, and selects it for
-/// summaries. A partial download from an earlier attempt is resumed. The
+/// Downloads `model` into `models_dir` and records it. It becomes the summary
+/// model only when no other model is installed. A partial download from an earlier attempt is resumed. The
 /// partial file is kept on cancellation or network failure so the next attempt
 /// resumes, and deleted if the finished file fails verification.
 pub fn download(
@@ -72,7 +72,6 @@ pub fn download(
     on_progress: &mut dyn FnMut(Phase),
 ) -> Result<ModelRecord, DownloadError> {
     if let Some(existing) = store.model_by_sha256(model.sha256)? {
-        store.select_summary_model(&existing.id)?;
         return Ok(existing);
     }
     std::fs::create_dir_all(models_dir)?;
@@ -92,6 +91,7 @@ pub fn download(
     }
     std::fs::rename(&part, &dest)?;
 
+    let in_use = store.summary_model()?;
     let record = store.add_model(&ModelRecord {
         id: model.id.to_owned(),
         display_name: model.display_name.to_owned(),
@@ -104,7 +104,10 @@ pub fn download(
         min_runtime: Some(model.min_runtime.to_owned()),
         added_at: 0,
     })?;
-    store.select_summary_model(&record.id)?;
+    // Keep the model already in use. Pinning it matters when nothing was
+    // chosen explicitly, because summaries otherwise fall back to the newest.
+    let selected = in_use.map_or_else(|| record.id.clone(), |m| m.id);
+    store.select_summary_model(&selected)?;
     Ok(record)
 }
 
@@ -308,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn downloads_verifies_records_and_selects_the_model() {
+    fn downloads_verifies_records_and_selects_a_first_model() {
         let bytes = data(3_000_000);
         let model = model_for(&bytes);
         let dir = tempfile::tempdir().unwrap();
@@ -333,6 +336,55 @@ mod tests {
                 Phase::Verifying
             ]
         );
+    }
+
+    fn installed(store: &Store, id: &str) -> ModelRecord {
+        store
+            .add_model(&ModelRecord {
+                id: id.into(),
+                display_name: id.into(),
+                file_path: format!("/models/{id}.gguf"),
+                size_bytes: 1,
+                sha256: id.repeat(64)[..64].into(),
+                source: ModelSource::Import,
+                source_url: None,
+                version: None,
+                min_runtime: None,
+                added_at: 0,
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn keeps_the_selected_model_when_another_downloads() {
+        let bytes = data(1_000_000);
+        let model = model_for(&bytes);
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        installed(&store, "a");
+        let selected = installed(&store, "b");
+        store.select_summary_model(&selected.id).unwrap();
+
+        run(&model, dir.path(), &store, &FakeServer::new(&bytes))
+            .0
+            .unwrap();
+
+        assert_eq!(store.summary_model().unwrap(), Some(selected));
+    }
+
+    #[test]
+    fn keeps_the_only_model_in_use_even_without_an_explicit_selection() {
+        let bytes = data(1_000_000);
+        let model = model_for(&bytes);
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let existing = installed(&store, "a");
+
+        run(&model, dir.path(), &store, &FakeServer::new(&bytes))
+            .0
+            .unwrap();
+
+        assert_eq!(store.summary_model().unwrap(), Some(existing));
     }
 
     #[test]
