@@ -27,6 +27,8 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
   let nextId = Math.max(0, ...seed.map((m) => m.id)) + 1;
   const notFound = { kind: "notFound", missing: "meeting", message: "meeting doesn't exist" };
   const state = {
+    listError: null as unknown,
+    queries: [] as (string | null)[],
     recording: null as number | null,
     startError: null as unknown,
     unavailable: [] as { source: "me" | "them"; message: string }[],
@@ -61,10 +63,30 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
   };
 
   const handlers: Record<string, (args: Args) => unknown> = {
-    list_meetings: () =>
-      [...meetings.values()]
-        .sort((a, b) => b.createdAt - a.createdAt)
-        .map(({ id, title, createdAt, startedAt, endedAt }) => ({ id, title, createdAt, startedAt, endedAt })),
+    list_meetings: ({ query, after, limit }) => {
+      if (state.listError) throw state.listError;
+      state.queries.push((query as string | null) ?? null);
+      const cursor = after as { createdAt: number; id: number } | null;
+      // Like the FTS5 search: every word must start a word in the title, notes, or transcript.
+      const wordsOf = (text: string) => text.toLowerCase().split(/[^\p{L}\p{N}]+/u);
+      const terms = wordsOf((query as string | null) ?? "").filter(Boolean);
+      const matches = (m: MeetingDetail) => {
+        const words = wordsOf(
+          [m.title, m.notesMarkdown, ...segments.filter((s) => s.meetingId === m.id).map((s) => s.text)].join(" "),
+        );
+        return terms.every((term) => words.some((word) => word.startsWith(term)));
+      };
+      const newestFirst = [...meetings.values()]
+        .filter(matches)
+        .sort((a, b) => b.createdAt - a.createdAt || b.id - a.id)
+        .filter((m) => !cursor || m.createdAt < cursor.createdAt || (m.createdAt === cursor.createdAt && m.id < cursor.id));
+      const page = newestFirst.slice(0, limit as number);
+      const last = page[page.length - 1];
+      return {
+        meetings: page.map(({ id, title, createdAt, startedAt, endedAt }) => ({ id, title, createdAt, startedAt, endedAt })),
+        next: newestFirst.length > page.length ? { createdAt: last.createdAt, id: last.id } : null,
+      };
+    },
     create_meeting: () => {
       const meeting: MeetingDetail = {
         id: nextId++,
@@ -373,6 +395,160 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(await within(sidebar()).findByRole("button", { name: /Recovered/ })).toBeInTheDocument();
+  });
+
+  describe("search", () => {
+    function searchBox() {
+      return within(sidebar()).getByRole("searchbox", { name: "Search meetings" });
+    }
+
+    it("finds meetings by title, notes, or transcript", async () => {
+      fakeBackend(
+        [seedMeeting(1, "Budget review"), seedMeeting(2, "Planning", "- move the budget"), seedMeeting(3, "Standup"), seedMeeting(4, "Retro")],
+        [segment(1, 3, "them", 0, "The budget is final.")],
+      );
+      const user = userEvent.setup();
+      render(<App />);
+      await within(sidebar()).findByRole("button", { name: /Retro/ });
+
+      await user.type(searchBox(), "budg");
+
+      await waitFor(() => expect(within(sidebar()).queryByRole("button", { name: /Retro/ })).not.toBeInTheDocument());
+      for (const title of ["Budget review", "Planning", "Standup"]) {
+        expect(within(sidebar()).getByRole("button", { name: new RegExp(title) })).toBeInTheDocument();
+      }
+    });
+
+    it("waits for typing to pause before searching", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Design sync")]);
+      const user = userEvent.setup();
+      render(<App />);
+      await within(sidebar()).findByRole("button", { name: /Design sync/ });
+
+      await user.type(searchBox(), "design");
+
+      await waitFor(() => expect(backend.state.queries).toContain("design"));
+      expect(backend.state.queries).toEqual([null, "design"]);
+    });
+
+    it("says when nothing matches, and clears with Escape", async () => {
+      fakeBackend([seedMeeting(1, "Design sync")]);
+      const user = userEvent.setup();
+      render(<App />);
+      await within(sidebar()).findByRole("button", { name: /Design sync/ });
+
+      await user.type(searchBox(), "zebra");
+
+      expect(await within(sidebar()).findByText("No meetings match “zebra”.")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Pick a meeting" })).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+
+      expect(searchBox()).toHaveValue("");
+      expect(await within(sidebar()).findByRole("button", { name: /Design sync/ })).toBeInTheDocument();
+    });
+
+    it("pages through search results", async () => {
+      const backend = fakeBackend([
+        ...Array.from({ length: 55 }, (_, i) => seedMeeting(i + 1, `Sync ${i + 1}`)),
+        seedMeeting(100, "Other"),
+      ]);
+      const user = userEvent.setup();
+      render(<App />);
+      await within(sidebar()).findByRole("button", { name: /^Sync 1,/ });
+
+      await user.type(searchBox(), "sync");
+      await waitFor(() => expect(backend.state.queries).toContain("sync"));
+      await user.click(await within(sidebar()).findByRole("button", { name: "Show more meetings" }));
+
+      expect(await within(sidebar()).findByRole("button", { name: /^Sync 55,/ })).toBeInTheDocument();
+      expect(within(sidebar()).queryByRole("button", { name: /Other/ })).not.toBeInTheDocument();
+      expect(backend.state.queries[backend.state.queries.length - 1]).toBe("sync");
+    });
+
+    it("clears the search when you create a meeting", async () => {
+      fakeBackend([seedMeeting(1, "Design sync")]);
+      const user = userEvent.setup();
+      render(<App />);
+      await within(sidebar()).findByRole("button", { name: /Design sync/ });
+      await user.type(searchBox(), "zebra");
+      await within(sidebar()).findByText("No meetings match “zebra”.");
+
+      await user.click(screen.getByRole("button", { name: "New meeting" }));
+
+      expect(searchBox()).toHaveValue("");
+      expect(await within(sidebar()).findByRole("button", { name: /Untitled meeting/, current: "page" })).toBeInTheDocument();
+      expect(await within(sidebar()).findByRole("button", { name: /Design sync/ })).toBeInTheDocument();
+    });
+  });
+
+  describe("paging", () => {
+    const many = () => Array.from({ length: 60 }, (_, i) => seedMeeting(i + 1, `Meeting ${i + 1}`));
+    const listed = () => within(sidebar()).queryAllByRole("button", { name: /^Meeting \d+,/ });
+
+    it("loads the newest page first and the rest on request", async () => {
+      fakeBackend(many());
+      const user = userEvent.setup();
+      render(<App />);
+
+      expect(await within(sidebar()).findByRole("button", { name: /^Meeting 1,/ })).toBeInTheDocument();
+      expect(listed()).toHaveLength(50);
+      expect(within(sidebar()).queryByRole("button", { name: /^Meeting 51,/ })).not.toBeInTheDocument();
+
+      await user.click(within(sidebar()).getByRole("button", { name: "Show more meetings" }));
+
+      expect(await within(sidebar()).findByRole("button", { name: /^Meeting 60,/ })).toBeInTheDocument();
+      expect(listed()).toHaveLength(60);
+      expect(within(sidebar()).queryByRole("button", { name: "Show more meetings" })).not.toBeInTheDocument();
+    });
+
+    it("doesn't offer more when every meeting fits on one page", async () => {
+      fakeBackend([seedMeeting(1, "Only one")]);
+      render(<App />);
+
+      expect(await within(sidebar()).findByRole("button", { name: /Only one/ })).toBeInTheDocument();
+      expect(within(sidebar()).queryByRole("button", { name: "Show more meetings" })).not.toBeInTheDocument();
+    });
+
+    it("keeps the loaded meetings and offers a retry when the next page fails", async () => {
+      const backend = fakeBackend(many());
+      const user = userEvent.setup();
+      render(<App />);
+      await within(sidebar()).findByRole("button", { name: /^Meeting 1,/ });
+      backend.state.listError = { kind: "internal", message: "disk I/O error" };
+
+      await user.click(within(sidebar()).getByRole("button", { name: "Show more meetings" }));
+
+      expect(await within(sidebar()).findByRole("alert")).toHaveTextContent(
+        "Couldn't load more meetings. The app couldn't read or write your meetings.",
+      );
+      expect(listed()).toHaveLength(50);
+
+      backend.state.listError = null;
+      await user.click(within(sidebar()).getByRole("button", { name: "Show more meetings" }));
+
+      expect(await within(sidebar()).findByRole("button", { name: /^Meeting 60,/ })).toBeInTheDocument();
+      expect(within(sidebar()).queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("keeps a new meeting at the top while paging", async () => {
+      fakeBackend(many());
+      const user = userEvent.setup();
+      render(<App />);
+      await within(sidebar()).findByRole("button", { name: /^Meeting 1,/ });
+
+      await user.click(screen.getByRole("button", { name: "New meeting" }));
+      await screen.findByLabelText("Meeting title");
+      await user.click(within(sidebar()).getByRole("button", { name: "Show more meetings" }));
+
+      await within(sidebar()).findByRole("button", { name: /^Meeting 60,/ });
+      const titles = within(sidebar())
+        .getAllByRole("button", { name: /^(Meeting \d+|Untitled meeting),/ })
+        .map((item) => item.querySelector(".meeting-title")?.textContent);
+      expect(titles[0]).toBe("Untitled meeting");
+      expect(titles).toHaveLength(61);
+      expect(new Set(titles).size).toBe(61);
+    });
   });
 
   it("explains when an opened meeting no longer exists", async () => {

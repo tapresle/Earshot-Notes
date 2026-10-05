@@ -11,6 +11,21 @@ export interface Meeting {
   endedAt: number | null;
 }
 
+/** The position of the last meeting on a page. The next page starts after it. */
+export interface MeetingCursor {
+  createdAt: number;
+  id: number;
+}
+
+export interface MeetingPage {
+  meetings: Meeting[];
+  /** Where the next page starts, or null on the last page. */
+  next: MeetingCursor | null;
+}
+
+/** How many meetings the sidebar loads at a time. */
+export const MEETING_PAGE_SIZE = 50;
+
 export interface MeetingDetail extends Meeting {
   notesMarkdown: string;
   notesUpdatedAt: number;
@@ -194,7 +209,12 @@ function sentence(message: string): string {
 
 export const api = {
   createMeeting: (title = "") => invoke<Meeting>("create_meeting", { title }),
-  listMeetings: () => invoke<Meeting[]>("list_meetings"),
+  /**
+   * One page of meetings, newest first. With a search query, only meetings whose title, notes, or
+   * transcript contain every word. Pass the previous page's `next` to get the following page.
+   */
+  listMeetings: (query = "", after: MeetingCursor | null = null, limit = MEETING_PAGE_SIZE) =>
+    invoke<MeetingPage>("list_meetings", { query: query.trim() || null, after, limit }),
   getMeeting: (id: number) => invoke<MeetingDetail>("get_meeting", { id }),
   renameMeeting: (id: number, title: string) => invoke<string>("rename_meeting", { id, title }),
   updateNotes: (id: number, bodyMarkdown: string) => invoke<number>("update_notes", { id, bodyMarkdown }),

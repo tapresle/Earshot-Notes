@@ -64,9 +64,10 @@ impl TranscriptionWorker {
                     match whistle.transcribe(&samples) {
                         Ok(t) if t.text.is_empty() => {}
                         Ok(t) => on_result(job, t),
-                        Err(error) => eprintln!(
+                        Err(error) => log::warn!(
                             "transcription failed for meeting {} at {} ms: {error}",
-                            job.meeting_id, job.start_ms
+                            job.meeting_id,
+                            job.start_ms
                         ),
                     }
                 }
@@ -99,7 +100,7 @@ pub fn load_first(candidates: &[PathBuf]) -> Result<(Whistle, PathBuf), WhistleE
         match Whistle::load(path) {
             Ok(whistle) => return Ok((whistle, path.clone())),
             Err(error) => {
-                eprintln!("couldn't load Whistle from {}: {error}", path.display());
+                log::warn!("couldn't load Whistle from {}: {error}", path.display());
                 last_error = Some(error);
             }
         }

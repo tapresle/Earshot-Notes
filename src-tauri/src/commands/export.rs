@@ -4,7 +4,7 @@ use std::sync::Arc;
 use jiff::tz::TimeZone;
 use tauri::State;
 
-use super::{CommandError, CommandResult, ErrorKind};
+use super::{CommandError, CommandResult, ErrorKind, blocking};
 use crate::export::{self, ExportReport};
 use crate::store::{ExportMeeting, Store, StoreError};
 
@@ -15,20 +15,20 @@ fn one(store: &Store, meeting_id: i64) -> Result<ExportMeeting, CommandError> {
         .ok_or_else(|| StoreError::MeetingNotFound(meeting_id).into())
 }
 
-fn background_error(error: impl std::fmt::Display) -> CommandError {
-    CommandError {
-        kind: ErrorKind::Internal,
-        message: format!("the export task failed: {error}"),
-    }
-}
-
 /// The suggested file name for exporting one meeting.
 #[tauri::command]
-pub fn export_file_name(store: State<'_, Arc<Store>>, meeting_id: i64) -> CommandResult<String> {
-    Ok(export::file_name(
-        &one(&store, meeting_id)?,
-        &TimeZone::system(),
-    ))
+pub async fn export_file_name(
+    store: State<'_, Arc<Store>>,
+    meeting_id: i64,
+) -> CommandResult<String> {
+    let store = Arc::clone(&store);
+    blocking(move || {
+        Ok(export::file_name(
+            &one(&store, meeting_id)?,
+            &TimeZone::system(),
+        ))
+    })
+    .await
 }
 
 /// Writes one meeting to the path the user chose in the save dialog.
@@ -40,7 +40,7 @@ pub async fn export_meeting(
     path: String,
 ) -> CommandResult<String> {
     let store = Arc::clone(&store);
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         let mut path = PathBuf::from(path);
         if path
             .extension()
@@ -56,7 +56,6 @@ pub async fn export_meeting(
         Ok(path.to_string_lossy().into_owned())
     })
     .await
-    .map_err(background_error)?
 }
 
 /// Writes one file per meeting into a folder: the given meetings, or all of
@@ -68,7 +67,7 @@ pub async fn export_meetings(
     folder: String,
 ) -> CommandResult<ExportReport> {
     let store = Arc::clone(&store);
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         let folder = Path::new(&folder);
         if !folder.is_dir() {
             return Err(CommandError {
@@ -84,5 +83,4 @@ pub async fn export_meetings(
         ))
     })
     .await
-    .map_err(background_error)?
 }

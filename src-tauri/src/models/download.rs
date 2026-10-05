@@ -5,6 +5,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use super::{KnownModel, sha256_file};
@@ -59,6 +60,15 @@ impl From<io::Error> for DownloadError {
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
+/// How often the download checks for cancellation while it waits for data.
+const CANCEL_POLL: Duration = Duration::from_millis(200);
+
+/// How long the server may send nothing before the download fails as a
+/// network error. The partial file is kept, so retrying resumes. ureq has no
+/// per-read timeout (`timeout_recv_body` bounds the whole body, which would
+/// cut off large models on slow connections), so stalls are detected here.
+const STALL_LIMIT: Duration = Duration::from_secs(60);
+
 /// Downloads `model` into `models_dir` and records it. It becomes the summary
 /// model only when no other model is installed. A partial download from an earlier attempt is resumed. The
 /// partial file is kept on cancellation or network failure so the next attempt
@@ -80,7 +90,15 @@ pub fn download(
 
     let offset = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
     if offset < model.size_bytes {
-        fetch_into(model, &part, offset, fetch, cancel, on_progress)?;
+        fetch_into(
+            model,
+            &part,
+            offset,
+            fetch,
+            cancel,
+            STALL_LIMIT,
+            on_progress,
+        )?;
     }
 
     on_progress(Phase::Verifying);
@@ -112,12 +130,20 @@ pub fn partial_path(dest: &Path) -> PathBuf {
     dest.with_file_name(name)
 }
 
+/// Writes the response body into `part`. The body is read on its own thread so
+/// that a read blocked on a stalled connection can't delay cancellation: this
+/// loop wakes every `CANCEL_POLL` to check `cancel`, and fails once nothing has
+/// arrived for `stall_limit`. Either way the reader thread is left to finish
+/// its blocked read, and it exits when the read returns because nothing
+/// receives its data any more. Only this thread writes to `part`, so a resumed
+/// download can start right away.
 fn fetch_into(
     model: &KnownModel,
     part: &Path,
     offset: u64,
     fetch: &dyn Fetch,
     cancel: &AtomicBool,
+    stall_limit: Duration,
     on_progress: &mut dyn FnMut(Phase),
 ) -> Result<(), DownloadError> {
     let fetched = fetch
@@ -129,22 +155,38 @@ fn fetch_into(
     } else {
         (File::create(part)?, 0)
     };
-    let mut body = fetched.body;
-    let mut buffer = vec![0u8; 1 << 20];
+    let chunks = read_in_background(fetched.body)?;
     let mut last_report = Instant::now() - PROGRESS_INTERVAL;
+    let mut last_data = Instant::now();
     loop {
         if cancel.load(Ordering::Relaxed) {
             file.flush()?;
             return Err(DownloadError::Cancelled);
         }
-        let read = body
-            .read(&mut buffer)
-            .map_err(|e| DownloadError::Network(e.to_string()))?;
-        if read == 0 {
+        let chunk = match chunks.recv_timeout(CANCEL_POLL) {
+            Ok(chunk) => chunk.map_err(|e| DownloadError::Network(e.to_string()))?,
+            Err(RecvTimeoutError::Timeout) => {
+                if last_data.elapsed() >= stall_limit {
+                    file.flush()?;
+                    return Err(DownloadError::Network(format!(
+                        "the server sent nothing for {} seconds",
+                        stall_limit.as_secs()
+                    )));
+                }
+                continue;
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(DownloadError::Network(
+                    "the download stopped unexpectedly".into(),
+                ));
+            }
+        };
+        if chunk.is_empty() {
             break;
         }
-        file.write_all(&buffer[..read])?;
-        received += read as u64;
+        last_data = Instant::now();
+        file.write_all(&chunk)?;
+        received += chunk.len() as u64;
         if last_report.elapsed() >= PROGRESS_INTERVAL {
             on_progress(Phase::Downloading {
                 received,
@@ -159,6 +201,30 @@ fn fetch_into(
         total: model.size_bytes,
     });
     Ok(())
+}
+
+/// Reads `body` on a new thread and sends each chunk, ending with an empty
+/// chunk at the end of the body or with the first error. The thread stops
+/// after its current read once the receiver is dropped.
+fn read_in_background(mut body: Box<dyn Read + Send>) -> io::Result<Receiver<io::Result<Vec<u8>>>> {
+    let (sender, receiver) = mpsc::sync_channel(4);
+    std::thread::Builder::new()
+        .name("model-download".into())
+        .spawn(move || {
+            let mut buffer = vec![0u8; 1 << 20];
+            loop {
+                let chunk = match body.read(&mut buffer) {
+                    Ok(read) => Ok(buffer[..read].to_vec()),
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(error) => Err(error),
+                };
+                let more = matches!(&chunk, Ok(bytes) if !bytes.is_empty());
+                if sender.send(chunk).is_err() || !more {
+                    break;
+                }
+            }
+        })?;
+    Ok(receiver)
 }
 
 /// Fetches over HTTPS with ureq, following Hugging Face's redirect to its CDN.
@@ -465,6 +531,147 @@ mod tests {
         assert!(matches!(result, Err(DownloadError::Cancelled)));
         assert!(partial_path(&dir.path().join("test.gguf")).exists());
         assert!(store.list_models().unwrap().is_empty());
+    }
+
+    /// Sends every request to a local test server instead of the model's URL.
+    struct LocalHttp(String);
+
+    impl Fetch for LocalHttp {
+        fn fetch(&self, _url: &str, offset: u64) -> io::Result<Fetched> {
+            HttpFetch::default().fetch(&self.0, offset)
+        }
+    }
+
+    #[test]
+    fn cancel_stops_a_stalled_http_download_and_keeps_the_partial_file() {
+        let bytes = data(3_000_000);
+        let model = model_for(&bytes);
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let part = partial_path(&dir.path().join("test.gguf"));
+        let sent = 200_000;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let fetch = LocalHttp(format!(
+            "http://{}/test.gguf",
+            listener.local_addr().unwrap()
+        ));
+        let (release, released) = mpsc::channel::<()>();
+        // Sends the headers and the first `sent` bytes, then stalls with the
+        // connection open until the test is done, or 10 s as a backstop.
+        let server = std::thread::spawn({
+            let bytes = bytes.clone();
+            move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = Vec::new();
+                let mut byte = [0u8; 1];
+                while !request.ends_with(b"\r\n\r\n") {
+                    stream.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                }
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+                    bytes.len()
+                )
+                .unwrap();
+                stream.write_all(&bytes[..sent]).unwrap();
+                stream.flush().unwrap();
+                let _ = released.recv_timeout(Duration::from_secs(10));
+            }
+        });
+        let cancel = AtomicBool::new(false);
+
+        let (result, cancel_took) = std::thread::scope(|scope| {
+            let canceller = scope.spawn(|| {
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while std::fs::metadata(&part).map_or(0, |m| m.len()) < sent as u64 {
+                    assert!(Instant::now() < deadline, "the first bytes never arrived");
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                // Let the download block on the stalled connection.
+                std::thread::sleep(Duration::from_millis(500));
+                cancel.store(true, Ordering::Relaxed);
+                Instant::now()
+            });
+            let result = download(&model, dir.path(), &store, &fetch, &cancel, &mut |_| {});
+            let finished = Instant::now();
+            (result, finished - canceller.join().unwrap())
+        });
+        drop(release);
+        server.join().unwrap();
+
+        assert!(
+            matches!(result, Err(DownloadError::Cancelled)),
+            "{result:?}"
+        );
+        assert!(
+            cancel_took < Duration::from_secs(2),
+            "cancelling took {cancel_took:?}"
+        );
+        assert_eq!(std::fs::metadata(&part).unwrap().len(), sent as u64);
+        assert!(store.list_models().unwrap().is_empty());
+    }
+
+    /// Sends `data`, then blocks until `release` is dropped, like a connection
+    /// that stops sending.
+    struct StallingReader {
+        data: io::Cursor<Vec<u8>>,
+        release: Receiver<()>,
+    }
+
+    impl Read for StallingReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let read = self.data.read(buf)?;
+            if read > 0 {
+                return Ok(read);
+            }
+            let _ = self.release.recv();
+            Err(io::ErrorKind::ConnectionAborted.into())
+        }
+    }
+
+    struct StallingServer(Mutex<Option<StallingReader>>);
+
+    impl Fetch for StallingServer {
+        fn fetch(&self, _url: &str, _offset: u64) -> io::Result<Fetched> {
+            Ok(Fetched {
+                body: Box::new(self.0.lock().unwrap().take().unwrap()),
+                resumed: false,
+            })
+        }
+    }
+
+    #[test]
+    fn fails_when_the_server_stops_sending_and_keeps_the_partial_file() {
+        let bytes = data(1_000_000);
+        let model = model_for(&bytes);
+        let dir = tempfile::tempdir().unwrap();
+        let part = partial_path(&dir.path().join("test.gguf"));
+        let (release, released) = mpsc::channel();
+        let server = StallingServer(Mutex::new(Some(StallingReader {
+            data: io::Cursor::new(bytes[..300_000].to_vec()),
+            release: released,
+        })));
+
+        let started = Instant::now();
+        let result = fetch_into(
+            &model,
+            &part,
+            0,
+            &server,
+            &AtomicBool::new(false),
+            Duration::from_millis(500),
+            &mut |_| {},
+        );
+        let took = started.elapsed();
+        drop(release);
+
+        assert!(
+            matches!(&result, Err(DownloadError::Network(message)) if message.contains("sent nothing")),
+            "{result:?}"
+        );
+        assert!(took < Duration::from_secs(2), "giving up took {took:?}");
+        assert_eq!(std::fs::metadata(&part).unwrap().len(), 300_000);
     }
 
     #[test]
