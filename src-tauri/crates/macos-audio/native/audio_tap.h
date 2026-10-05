@@ -5,13 +5,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Receives interleaved float samples on a Core Audio thread. Must not block.
+// Receives interleaved float samples on a Core Audio thread, with the rate the
+// capture device is running at now. The rate can change during a capture, for
+// example when a Bluetooth headset switches profile. Must not block.
 typedef void (*gc_audio_callback)(void *context, const float *interleaved, uint32_t frames,
-                                  uint32_t channels);
+                                  uint32_t channels, double sample_rate);
 
 typedef struct {
+    // The capture device's rate when capture started.
     double sample_rate;
+    // The rate the tap's format reports, for diagnostics. It isn't the capture rate.
+    double tap_sample_rate;
     uint32_t channels;
+    // The output device being captured, as UTF-8, possibly truncated.
+    char device_name[128];
 } gc_audio_format;
 
 // Starts capturing everything the system plays, except this process. Returns an

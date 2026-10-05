@@ -25,13 +25,19 @@ impl Permission {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Format {
+    /// The capture device's rate when capture started. Each buffer carries the
+    /// current rate, which can differ from this one later.
     pub sample_rate: u32,
+    /// The rate the tap's format reports. For diagnostics only.
+    pub tap_sample_rate: u32,
     pub channels: u16,
+    /// The output device being captured.
+    pub device_name: String,
 }
 
-type Callback = Box<dyn FnMut(&[f32]) + Send>;
+type Callback = Box<dyn FnMut(&[f32], u32) + Send>;
 
 /// A running system audio capture. Dropping it stops the capture; after drop
 /// returns, the callback has finished its last call.
@@ -46,9 +52,10 @@ unsafe impl Send for SystemAudioTap {}
 
 impl SystemAudioTap {
     /// Starts capturing everything the system plays except this app.
-    /// `on_samples` receives interleaved samples on a real-time thread and must not block.
+    /// `on_samples` receives interleaved samples and the rate they were captured
+    /// at on a real-time thread, and must not block.
     pub fn start(
-        on_samples: impl FnMut(&[f32]) + Send + 'static,
+        on_samples: impl FnMut(&[f32], u32) + Send + 'static,
     ) -> Result<(Self, Format), String> {
         imp::start(Box::new(on_samples))
     }
@@ -92,10 +99,12 @@ mod imp {
     #[repr(C)]
     struct RawFormat {
         sample_rate: f64,
+        tap_sample_rate: f64,
         channels: u32,
+        device_name: [c_char; 128],
     }
 
-    type RawCallback = unsafe extern "C" fn(*mut c_void, *const f32, u32, u32);
+    type RawCallback = unsafe extern "C" fn(*mut c_void, *const f32, u32, u32, f64);
 
     unsafe extern "C" {
         fn gc_system_audio_start(
@@ -117,6 +126,7 @@ mod imp {
         samples: *const f32,
         frames: u32,
         channels: u32,
+        sample_rate: f64,
     ) {
         if samples.is_null() || frames == 0 {
             return;
@@ -127,14 +137,16 @@ mod imp {
         let callback = unsafe { &mut *(context as *mut Callback) };
         let samples =
             unsafe { std::slice::from_raw_parts(samples, frames as usize * channels as usize) };
-        callback(samples);
+        callback(samples, sample_rate.round() as u32);
     }
 
     pub fn start(callback: Callback) -> Result<(SystemAudioTap, Format), String> {
         let callback = Box::into_raw(Box::new(callback));
         let mut format = RawFormat {
             sample_rate: 0.0,
+            tap_sample_rate: 0.0,
             channels: 0,
+            device_name: [0; 128],
         };
         let mut error = [0 as c_char; 512];
         let handle = unsafe {
@@ -155,7 +167,13 @@ mod imp {
             SystemAudioTap { handle, callback },
             Format {
                 sample_rate: format.sample_rate.round() as u32,
+                tap_sample_rate: format.tap_sample_rate.round() as u32,
                 channels: format.channels as u16,
+                // SAFETY: the native side writes a NUL-terminated string, and the
+                // buffer starts zeroed in case it writes nothing.
+                device_name: unsafe { std::ffi::CStr::from_ptr(format.device_name.as_ptr()) }
+                    .to_string_lossy()
+                    .into_owned(),
             },
         ))
     }

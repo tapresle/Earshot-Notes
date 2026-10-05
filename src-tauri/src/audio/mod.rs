@@ -16,6 +16,15 @@ pub struct CaptureFormat {
     pub channels: u16,
 }
 
+/// Interleaved samples and the rate the device captured them at. The rate can
+/// change during a recording, for example when a Bluetooth headset switches
+/// profile, so it travels with every buffer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Buffer {
+    pub samples: Vec<f32>,
+    pub sample_rate: u32,
+}
+
 /// Receives user-facing descriptions of problems that happen after a capture started.
 pub type ErrorSink = Arc<dyn Fn(String) + Send + Sync>;
 

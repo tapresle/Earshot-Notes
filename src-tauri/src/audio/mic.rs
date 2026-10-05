@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use macos_audio::Permission as MacPermission;
 
-use super::{Capture, CaptureError, CaptureFormat, ErrorSink};
+use super::{Buffer, Capture, CaptureError, CaptureFormat, ErrorSink};
 
 /// Holds the capture thread. Dropping it stops the stream and closes the sender.
 pub struct MicCapture {
@@ -74,7 +74,7 @@ pub const MISSING_DEVICE: &str =
 /// `frames`; when the pipeline falls behind, buffers are dropped rather than
 /// blocking the audio thread. Stream failures after start go to `on_error`.
 pub fn start(
-    frames: SyncSender<Vec<f32>>,
+    frames: SyncSender<Buffer>,
     on_error: ErrorSink,
     preferred: Option<String>,
 ) -> Result<(MicCapture, CaptureFormat), CaptureError> {
@@ -112,7 +112,7 @@ fn ensure_permission() -> Result<(), CaptureError> {
 }
 
 fn run(
-    frames: SyncSender<Vec<f32>>,
+    frames: SyncSender<Buffer>,
     on_error: ErrorSink,
     preferred: Option<String>,
     ready: mpsc::Sender<Result<CaptureFormat, CaptureError>>,
@@ -159,7 +159,7 @@ fn resolve<D>(
 }
 
 fn open(
-    frames: SyncSender<Vec<f32>>,
+    frames: SyncSender<Buffer>,
     on_error: ErrorSink,
     preferred: Option<String>,
     dropped: Arc<AtomicU64>,
@@ -203,7 +203,7 @@ fn open(
 fn build<T>(
     device: &cpal::Device,
     config: cpal::StreamConfig,
-    frames: SyncSender<Vec<f32>>,
+    frames: SyncSender<Buffer>,
     on_error: ErrorSink,
     dropped: Arc<AtomicU64>,
 ) -> Result<cpal::Stream, CaptureError>
@@ -211,11 +211,15 @@ where
     T: SizedSample,
     f32: FromSample<T>,
 {
+    let sample_rate = config.sample_rate;
     device
         .build_input_stream(
             config,
             move |data: &[T], _: &cpal::InputCallbackInfo| {
-                let buffer: Vec<f32> = data.iter().map(|s| s.to_sample::<f32>()).collect();
+                let buffer = Buffer {
+                    samples: data.iter().map(|s| s.to_sample::<f32>()).collect(),
+                    sample_rate,
+                };
                 if let Err(TrySendError::Full(_)) = frames.try_send(buffer) {
                     dropped.fetch_add(1, Ordering::Relaxed);
                 }

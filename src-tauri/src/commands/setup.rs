@@ -67,7 +67,7 @@ pub async fn request_system_audio_permission() -> CommandResult<Option<Permissio
         if macos_audio::request_system_audio_access().is_some() {
             return macos_audio::system_audio_permission().map(Permission::from);
         }
-        if let Ok((tap, _)) = SystemAudioTap::start(|_| {}) {
+        if let Ok((tap, _)) = SystemAudioTap::start(|_, _| {}) {
             std::thread::sleep(std::time::Duration::from_secs(2));
             drop(tap);
         }

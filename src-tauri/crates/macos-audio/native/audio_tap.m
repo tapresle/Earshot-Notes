@@ -3,6 +3,11 @@
 // A global tap mixes the output of every process except this one. Taps can only
 // be read through an aggregate device, so the tap is attached to a private
 // aggregate device built on the default output device, and an IO proc reads it.
+//
+// Samples arrive at the aggregate device's rate, not the rate in the tap's
+// format. The device's rate can change while capturing (a Bluetooth headset
+// drops from 48 kHz to 16 or 24 kHz when its microphone opens), so a listener
+// tracks it and every buffer is reported with the rate it was captured at.
 
 #import "audio_tap.h"
 
@@ -25,9 +30,17 @@ typedef struct {
     gc_audio_callback callback;
     void *context;
     uint32_t channels;
+    // Written by rate_listener and read by the IO block. Both run on `queue`,
+    // which is serial, so they never race.
+    double sample_rate;
+    AudioObjectPropertyListenerBlock rate_listener;
     float *scratch;  // interleaving buffer for non-interleaved input
     uint32_t scratch_frames;
 } gc_tap;
+
+static const AudioObjectPropertyAddress kNominalRateAddress = {
+    kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeGlobal,
+    kAudioObjectPropertyElementMain};
 
 static void set_error(char *error, size_t len, NSString *message, OSStatus status) {
     if (!error || len == 0) return;
@@ -35,15 +48,18 @@ static void set_error(char *error, size_t len, NSString *message, OSStatus statu
 }
 
 static void destroy(gc_tap *t) {
-    if (t->proc) {
-        AudioDeviceStop(t->aggregate, t->proc);
-        // Wait for any IO block already queued so the callback never runs after stop.
-        if (t->queue) dispatch_sync(t->queue, ^{});
-        AudioDeviceDestroyIOProcID(t->aggregate, t->proc);
+    if (t->rate_listener) {
+        AudioObjectRemovePropertyListenerBlock(t->aggregate, &kNominalRateAddress, t->queue,
+                                               t->rate_listener);
     }
+    if (t->proc) AudioDeviceStop(t->aggregate, t->proc);
+    // Wait for any IO or rate block already queued so the callback never runs after stop.
+    if (t->queue) dispatch_sync(t->queue, ^{});
+    if (t->proc) AudioDeviceDestroyIOProcID(t->aggregate, t->proc);
     if (t->aggregate != kAudioObjectUnknown) AudioHardwareDestroyAggregateDevice(t->aggregate);
     if (t->tap != kAudioObjectUnknown) AudioHardwareDestroyProcessTap(t->tap);
     free(t->scratch);
+    t->rate_listener = nil;
     t->queue = nil;
     free(t);
 }
@@ -107,8 +123,10 @@ void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_
         }
         t->channels = asbd.mChannelsPerFrame;
 
+        // The default output device is where calls play. The default system output
+        // device is only where alert sounds play, and can be a different device.
         AudioObjectID output = kAudioObjectUnknown;
-        status = get_property(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultSystemOutputDevice,
+        status = get_property(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultOutputDevice,
                               sizeof(output), &output);
         CFStringRef output_uid = NULL;
         if (status == noErr) {
@@ -120,6 +138,12 @@ void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_
             return NULL;
         }
         NSString *outputUID = CFBridgingRelease(output_uid);
+        CFStringRef output_name = NULL;
+        if (get_property(output, kAudioObjectPropertyName, sizeof(output_name), &output_name) == noErr &&
+            output_name) {
+            NSString *name = CFBridgingRelease(output_name);
+            strlcpy(format->device_name, name.UTF8String ?: "", sizeof(format->device_name));
+        }
 
         NSDictionary *aggregate = @{
             @kAudioAggregateDeviceNameKey : @"Earshot capture",
@@ -141,6 +165,15 @@ void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_
             return NULL;
         }
 
+        // Fall back to the tap's rate only if the device won't report its own.
+        Float64 device_rate = 0;
+        if (get_property(t->aggregate, kAudioDevicePropertyNominalSampleRate, sizeof(device_rate),
+                         &device_rate) != noErr ||
+            device_rate <= 0) {
+            device_rate = asbd.mSampleRate;
+        }
+        t->sample_rate = device_rate;
+
         t->queue = dispatch_queue_create("earshot.system-audio", DISPATCH_QUEUE_SERIAL);
         gc_tap *captured = t;
         status = AudioDeviceCreateIOProcIDWithBlock(
@@ -153,7 +186,8 @@ void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_
                 if (input->mNumberBuffers == 1) {
                     const AudioBuffer *buffer = &input->mBuffers[0];
                     uint32_t frames = buffer->mDataByteSize / (sizeof(float) * channels);
-                    captured->callback(captured->context, buffer->mData, frames, channels);
+                    captured->callback(captured->context, buffer->mData, frames, channels,
+                                       captured->sample_rate);
                     return;
                 }
                 // Non-interleaved: one buffer per channel.
@@ -169,11 +203,30 @@ void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_
                     const float *src = input->mBuffers[c].mData;
                     for (uint32_t f = 0; f < frames; f++) captured->scratch[f * channels + c] = src[f];
                 }
-                captured->callback(captured->context, captured->scratch, frames, channels);
+                captured->callback(captured->context, captured->scratch, frames, channels,
+                                   captured->sample_rate);
             });
         if (status != noErr) {
             t->proc = NULL;
             set_error(error, error_len, @"Couldn't attach to the capture device", status);
+            destroy(t);
+            return NULL;
+        }
+
+        t->rate_listener = ^(UInt32 count, const AudioObjectPropertyAddress *addresses) {
+            (void)count; (void)addresses;
+            Float64 rate = 0;
+            if (get_property(captured->aggregate, kAudioDevicePropertyNominalSampleRate, sizeof(rate),
+                             &rate) == noErr &&
+                rate > 0) {
+                captured->sample_rate = rate;
+            }
+        };
+        status = AudioObjectAddPropertyListenerBlock(t->aggregate, &kNominalRateAddress, t->queue,
+                                                     t->rate_listener);
+        if (status != noErr) {
+            t->rate_listener = nil;
+            set_error(error, error_len, @"Couldn't watch the capture device's sample rate", status);
             destroy(t);
             return NULL;
         }
@@ -185,7 +238,8 @@ void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_
             return NULL;
         }
 
-        format->sample_rate = asbd.mSampleRate;
+        format->sample_rate = device_rate;
+        format->tap_sample_rate = asbd.mSampleRate;
         format->channels = t->channels;
     }
     return t;
