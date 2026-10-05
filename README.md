@@ -31,6 +31,8 @@ A meeting notes app that runs entirely on your Mac. It transcribes your micropho
 
 For development, run `npm run tauri dev` instead. `AGENTS.md` lists every build and test command.
 
+Release notes for each version are in [`docs/releases`](docs/releases).
+
 ## Signing
 
 `scripts/build-macos.sh` signs the app with the first of these it finds:

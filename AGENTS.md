@@ -55,3 +55,12 @@ Before you hand off work, run the lint, typecheck, test, and format commands. Al
 - **Test data:** tests use synthetic audio and text fixtures only. Generate speech fixtures with macOS `say`, for example `say -o tests/fixtures/name.wav --data-format=LEI16@16000 "text"`.
 - **Native binaries:** `libneedle.a` and `.cact` model files aren't committed. `scripts/fetch-native.sh` pins their Hugging Face revisions and SHA-256 checksums. To change a version, update the pins and checksums there.
 - **needle engine:** the engine holds one process-global, non-thread-safe model, so only one `Whistle` can exist at a time and it must stay on a single owner thread.
+
+## Releases
+
+Each release has notes in `docs/releases/vX.Y.Z.md`. To make a release:
+
+1. Set the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`. They must match.
+2. Write the release notes. The first release, `v0.1.0`, describes everything in the app. Later releases describe what changed since the previous one, grouped as new, improved, and fixed, and keep a known limitations section current.
+3. Build with `scripts/build-macos.sh`. The disk image is `src-tauri/target/release/bundle/dmg/Earshot_X.Y.Z_aarch64.dmg`.
+4. After the release branch is merged, tag the merge on `main` as `vX.Y.Z` with an annotated tag.
