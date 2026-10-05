@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { api, errorMessage, type TranscriptSegment } from "../../lib/api";
 import { formatOffset } from "./formatOffset";
 
+/** Speaker labels, matching the labels in exports and summary prompts. */
+const speakerLabel: Record<TranscriptSegment["source"], string> = {
+  me: "Me",
+  them: "Meeting Participants",
+};
+
 interface TranscriptPanelProps {
   meetingId: number | null;
   recording: boolean;
@@ -103,7 +109,7 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
         {segments.map((segment) => (
           <li key={segment.id} className="transcript-segment">
             <span className={`speaker speaker-${segment.source}`}>
-              {segment.source === "me" ? "Me" : "Them"}{" "}
+              {speakerLabel[segment.source]}{" "}
               <time className="segment-time">{formatOffset(segment.startMs)}</time>
             </span>
             <p>{segment.text}</p>

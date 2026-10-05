@@ -12,6 +12,14 @@ pub enum Source {
 }
 
 impl Source {
+    /// The speaker label shown in transcripts, exports, and prompts.
+    pub fn label(self) -> &'static str {
+        match self {
+            Source::Me => "Me",
+            Source::Them => "Meeting Participants",
+        }
+    }
+
     fn as_str(self) -> &'static str {
         match self {
             Source::Me => "me",

@@ -1,7 +1,7 @@
 //! The instructions and inputs sent to the model.
 
 use super::template::Message;
-use crate::store::{Source, TranscriptSegment};
+use crate::store::TranscriptSegment;
 
 const SYSTEM: &str = "You write meeting notes from a transcript and the note-taker's own rough notes.
 
@@ -10,7 +10,7 @@ Rules:
 - Write Markdown: short section headings and concise bullet points.
 - End with \"## Action items\" listing each task with its owner when the transcript names one. Omit the section if there are none.
 - Only state what the transcript or notes support. Never invent names, numbers, dates, or decisions.
-- \"Me\" is the note-taker. \"Them\" is everyone else on the call.
+- \"Me\" is the note-taker. \"Meeting Participants\" is everyone else on the call.
 - Reply with the notes only, no preamble.";
 
 const PART_SYSTEM: &str =
@@ -18,16 +18,13 @@ const PART_SYSTEM: &str =
 
 Rules:
 - Keep every decision, number, date, name, open question, and task with its owner.
-- \"Me\" is the note-taker. \"Them\" is everyone else on the call.
+- \"Me\" is the note-taker. \"Meeting Participants\" is everyone else on the call.
 - Only state what the transcript supports.
 - Reply with bullet points only.";
 
-/// Formats one transcript line, such as `[12:05] Them: Let's ship it.`
+/// Formats one transcript line, such as `[12:05] Meeting Participants: Let's ship it.`
 pub fn transcript_line(segment: &TranscriptSegment) -> String {
-    let speaker = match segment.source {
-        Source::Me => "Me",
-        Source::Them => "Them",
-    };
+    let speaker = segment.source.label();
     let seconds = segment.start_ms.max(0) / 1000;
     let stamp = if seconds >= 3600 {
         format!(
@@ -116,6 +113,7 @@ pub fn windows(lines: &[String], costs: &[usize], budget: usize) -> Vec<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::Source;
 
     fn segment(source: Source, start_ms: i64, text: &str) -> TranscriptSegment {
         TranscriptSegment {
@@ -133,7 +131,7 @@ mod tests {
     fn formats_transcript_lines_with_speaker_and_time() {
         assert_eq!(
             transcript_line(&segment(Source::Them, 725_000, "Ship it.")),
-            "[12:05] Them: Ship it."
+            "[12:05] Meeting Participants: Ship it."
         );
         assert_eq!(
             transcript_line(&segment(Source::Me, 3_725_000, "Agreed.")),

@@ -8,7 +8,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use serde::Serialize;
 
-use crate::store::{ExportMeeting, Source};
+use crate::store::ExportMeeting;
 
 const MAX_SLUG_CHARS: usize = 60;
 
@@ -58,12 +58,9 @@ pub fn render_meeting(meeting: &ExportMeeting, tz: &TimeZone) -> String {
         out.push_str("_No transcript._\n");
     }
     for segment in &meeting.segments {
-        let speaker = match segment.source {
-            Source::Me => "Me",
-            Source::Them => "Them",
-        };
         out.push_str(&format!(
-            "**{speaker}** [{}] {}\n",
+            "**{}** [{}] {}\n",
+            segment.source.label(),
             clock(segment.start_ms),
             segment.text.trim()
         ));
@@ -224,7 +221,7 @@ fn demote_headings(markdown: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{Meeting, Summary, TranscriptSegment};
+    use crate::store::{Meeting, Source, Summary, TranscriptSegment};
 
     // 2026-10-03 14:00:00 in New York (UTC-4 in October).
     const START: i64 = 1_791_050_400_000;
@@ -307,7 +304,7 @@ duration: 42m
 ## Transcript
 
 **Me** [00:22:58] Let's lock the onboarding copy today.
-**Them** [00:23:02] Agreed, I'll send the final strings tonight.
+**Meeting Participants** [00:23:02] Agreed, I'll send the final strings tonight.
 "
         );
     }

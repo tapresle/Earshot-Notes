@@ -606,7 +606,7 @@ describe("App", () => {
 
     const transcript = screen.getByRole("complementary", { name: "Transcript" });
     const items = await within(transcript).findAllByRole("listitem");
-    expect(items.map((item) => item.textContent)).toEqual(["Me 0:03Let's lock the copy.", "Them 1:05Agreed, ship it."]);
+    expect(items.map((item) => item.textContent)).toEqual(["Me 0:03Let's lock the copy.", "Meeting Participants 1:05Agreed, ship it."]);
   });
 
   it("adds live segments for the open meeting only", async () => {
