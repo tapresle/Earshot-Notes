@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::audio::resample::{ResampleError, To16k};
 use crate::audio::{Capture, CaptureError, CaptureFormat, ErrorSink, downmix};
-use crate::chunker::Chunker;
+use crate::chunker::{Chunker, MIC_MIN_SPEECH_RMS, SYSTEM_MIN_SPEECH_RMS};
 use crate::store::{Source, Store, StoreError};
 use crate::transcribe::worker::{Job, TranscriptionWorker};
 
@@ -198,7 +198,10 @@ pub fn run_pipeline(
     offset_ms: i64,
     mut submit: impl FnMut(Job),
 ) {
-    let mut chunker = Chunker::new();
+    let mut chunker = Chunker::new(match source {
+        Source::Me => MIC_MIN_SPEECH_RMS,
+        Source::Them => SYSTEM_MIN_SPEECH_RMS,
+    });
     let mut emit = |segment: crate::chunker::Segment| {
         submit(Job {
             meeting_id,
@@ -287,11 +290,10 @@ mod tests {
         Arc::new(|_, _| {})
     }
 
-    #[test]
-    fn turns_device_audio_into_timed_jobs() {
-        let audio = [silence(1000), tone(1500), silence(1000)].concat();
+    /// Runs mono audio through the pipeline as 48 kHz stereo and collects its jobs.
+    fn pipeline_jobs(source: Source, audio: &[f32]) -> Vec<Job> {
         let (tx, rx) = sync_channel(1024);
-        for buffer in stereo_buffers(&audio) {
+        for buffer in stereo_buffers(audio) {
             tx.send(buffer).unwrap();
         }
         drop(tx);
@@ -304,11 +306,19 @@ mod tests {
                 channels: 2,
             },
             To16k::new(RATE).unwrap(),
-            Source::Me,
+            source,
             7,
             60_000,
             |job| jobs.push(job),
         );
+        jobs
+    }
+
+    #[test]
+    fn turns_device_audio_into_timed_jobs() {
+        let audio = [silence(1000), tone(1500), silence(1000)].concat();
+
+        let jobs = pipeline_jobs(Source::Me, &audio);
 
         assert_eq!(jobs.len(), 1);
         let job = &jobs[0];
@@ -320,6 +330,19 @@ mod tests {
             job.start_ms
         );
         assert_eq!(job.samples.len() as i64, (job.end_ms - job.start_ms) * 16);
+    }
+
+    #[test]
+    fn hears_quieter_speech_from_system_audio_than_from_the_microphone() {
+        // About 0.005 RMS while speaking: a quiet call participant.
+        let audio: Vec<f32> = [silence(1000), tone(1500), silence(1000)]
+            .concat()
+            .iter()
+            .map(|s| s * 0.025)
+            .collect();
+
+        assert_eq!(pipeline_jobs(Source::Them, &audio).len(), 1);
+        assert!(pipeline_jobs(Source::Me, &audio).is_empty());
     }
 
     fn worker_unavailable() -> Result<&'static TranscriptionWorker, &'static str> {
