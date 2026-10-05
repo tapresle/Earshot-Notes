@@ -22,6 +22,8 @@ pub struct KnownModel {
     pub id: &'static str,
     pub display_name: &'static str,
     pub file_name: &'static str,
+    /// The quantization of the weights, such as `Q4_K_M`.
+    pub quantization: &'static str,
     pub repo: &'static str,
     pub revision: &'static str,
     pub sha256: &'static str,
@@ -55,6 +57,7 @@ pub const GEMMA_4_E2B: KnownModel = KnownModel {
     id: "gemma-4-e2b-it-q4_k_m",
     display_name: "Gemma 4 E2B",
     file_name: "gemma-4-E2B-it-Q4_K_M.gguf",
+    quantization: "Q4_K_M",
     repo: "unsloth/gemma-4-E2B-it-GGUF",
     revision: "0314792d7f1f7e229411f620751375812bb9faf2",
     sha256: "740185b21d22ceb83a11c3aa62ad5842ef32c70f6096d756bbee85a1e4ec34b8",
@@ -69,6 +72,7 @@ pub const QWEN_3_4B_2507: KnownModel = KnownModel {
     id: "qwen3-4b-instruct-2507-q4_k_m",
     display_name: "Qwen3 4B Instruct",
     file_name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    quantization: "Q4_K_M",
     repo: "unsloth/Qwen3-4B-Instruct-2507-GGUF",
     revision: "a06e946bb6b655725eafa393f4a9745d460374c9",
     sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
@@ -83,6 +87,7 @@ pub const PHI_4_MINI: KnownModel = KnownModel {
     id: "phi-4-mini-instruct-q4_k_m",
     display_name: "Phi-4 mini",
     file_name: "Phi-4-mini-instruct-Q4_K_M.gguf",
+    quantization: "Q4_K_M",
     repo: "unsloth/Phi-4-mini-instruct-GGUF",
     revision: "78eb92a46fc37e6b524df991ed9aca9bc6aa7b80",
     sha256: "88c00229914083cd112853aab84ed51b87bdf6b9ce42f532d8c85c7c63b1730a",
@@ -97,6 +102,7 @@ pub const GEMMA_4_E4B: KnownModel = KnownModel {
     id: "gemma-4-e4b-it-q4_k_m",
     display_name: "Gemma 4 E4B",
     file_name: "gemma-4-E4B-it-Q4_K_M.gguf",
+    quantization: "Q4_K_M",
     repo: "unsloth/gemma-4-E4B-it-GGUF",
     revision: "bfc15c382204943c3a8fff0c750b94ae2364d7a3",
     sha256: "85a896a047553e842f25297ee5b031d64ff30147d9c4af17b1e4b394cd1fab87",
@@ -111,6 +117,7 @@ pub const QWEN_3_8B: KnownModel = KnownModel {
     id: "qwen3-8b-q4_k_m",
     display_name: "Qwen3 8B",
     file_name: "Qwen3-8B-Q4_K_M.gguf",
+    quantization: "Q4_K_M",
     repo: "unsloth/Qwen3-8B-GGUF",
     revision: "a6adef130ffb23ddaf1a62fec9dced968c9bc482",
     sha256: "120307ba529eb2439d6c430d94104dabd578497bc7bfe7e322b5d9933b449bd4",
@@ -125,6 +132,7 @@ pub const MINISTRAL_3_8B: KnownModel = KnownModel {
     id: "ministral-3-8b-instruct-2512-q4_k_m",
     display_name: "Ministral 3 8B",
     file_name: "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
+    quantization: "Q4_K_M",
     repo: "unsloth/Ministral-3-8B-Instruct-2512-GGUF",
     revision: "3731507ec3e867db16d620f73e14d689125758f4",
     sha256: "5dbc3647eb563b9f8d3c70ec3d906cce84b86bb35c5e0b8a36e7df3937ab7174",
@@ -139,6 +147,7 @@ pub const MINISTRAL_3_14B: KnownModel = KnownModel {
     id: "ministral-3-14b-instruct-2512-q4_k_m",
     display_name: "Ministral 3 14B",
     file_name: "Ministral-3-14B-Instruct-2512-Q4_K_M.gguf",
+    quantization: "Q4_K_M",
     repo: "unsloth/Ministral-3-14B-Instruct-2512-GGUF",
     revision: "9b948841b705cc11285ff274b84ba6c885908b19",
     sha256: "76ce697c065f2e40f1e8e958118b02cab38e2c10a6015f7d7908036a292dc8c8",
@@ -559,6 +568,11 @@ mod tests {
                 model.id
             );
             assert!(!model.description.is_empty());
+            assert!(
+                model.file_name.contains(model.quantization),
+                "{} quantization doesn't match its file",
+                model.id
+            );
         }
         assert_eq!(KNOWN_MODELS[0], GEMMA_4_E2B);
     }

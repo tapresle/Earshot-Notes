@@ -159,7 +159,7 @@ mod tests {
             known["huggingFace"],
             serde_json::json!({
                 "repo": "unsloth/Qwen3-8B-GGUF",
-                "fileName": "Qwen3-8B-Q4_K_M.gguf",
+                "quantization": "Q4_K_M",
                 "revision": "a6adef130ffb23ddaf1a62fec9dced968c9bc482",
             })
         );

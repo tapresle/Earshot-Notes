@@ -71,7 +71,8 @@ export interface ModelRecord {
 /** Exactly which file a model is on Hugging Face. */
 export interface HuggingFaceSource {
   repo: string;
-  fileName: string;
+  /** The quantization of the weights, such as `Q4_K_M`. */
+  quantization: string;
   revision: string;
 }
 

@@ -175,6 +175,7 @@ mod tests {
             id: "test-model",
             display_name: "Test",
             file_name: "test.gguf",
+            quantization: "Q4_K_M",
             repo: "example/test",
             revision: "abc",
             sha256: Box::leak(sha256_file(&path).unwrap().into_boxed_str()),

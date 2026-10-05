@@ -1,6 +1,6 @@
 import { api, errorMessage, type HuggingFaceSource } from "../../lib/api";
 
-/** Exactly which file a model is on Hugging Face: the path links to its page, followed by the pinned revision. */
+/** Exactly which file a model is on Hugging Face: the repository, which links to its page, then the quantization and the pinned revision. */
 export function ModelOrigin({
   modelId,
   displayName,
@@ -20,9 +20,10 @@ export function ModelOrigin({
         title={`Open ${displayName} on Hugging Face`}
         onClick={() => void api.openModelPage(modelId).catch((e) => onError(errorMessage(e)))}
       >
-        {source.repo}/{source.fileName}
+        {source.repo}
       </button>{" "}
-      - <code className="selectable">{source.revision.slice(0, 7)}</code>
+      - <code className="selectable">{source.quantization}</code> -{" "}
+      <code className="selectable">{source.revision.slice(0, 7)}</code>
     </p>
   );
 }

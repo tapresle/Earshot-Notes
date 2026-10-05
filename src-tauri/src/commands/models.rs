@@ -16,7 +16,7 @@ use crate::store::Store;
 #[serde(rename_all = "camelCase")]
 pub struct HuggingFaceSource {
     repo: &'static str,
-    file_name: &'static str,
+    quantization: &'static str,
     revision: &'static str,
 }
 
@@ -24,7 +24,7 @@ impl From<&KnownModel> for HuggingFaceSource {
     fn from(model: &KnownModel) -> Self {
         Self {
             repo: model.repo,
-            file_name: model.file_name,
+            quantization: model.quantization,
             revision: model.revision,
         }
     }
