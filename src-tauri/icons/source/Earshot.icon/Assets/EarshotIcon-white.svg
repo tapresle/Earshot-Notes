@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="50.999645mm"
+   height="50.307056mm"
+   viewBox="0 0 50.999645 50.307056"
+   version="1.1"
+   id="svg1"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <g
+     id="layer1"
+     transform="translate(-79.499588,-123.69374)">
+    <path
+       style="fill:none;stroke:#ffffff;stroke-width:3;stroke-linecap:round;stroke-dasharray:none"
+       id="path1"
+       d="m 100.01133,148.83644 a 5,5 0 0 1 2.95867,-4.90581 5,5 0 0 1 5.62371,1.09298 5,5 0 0 1 0.90579,5.65688 5,5 0 0 1 -5.00128,2.79427" />
+    <path
+       style="fill:none;stroke:#ffffff;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:none;paint-order:normal"
+       id="path14"
+       d="m 106.71012,158.35269 a 10,10 0 0 1 -11.420204,-7.46224 10,10 0 0 1 6.650844,-11.91101 10,10 0 0 1 12.34427,5.80732" />
+    <path
+       style="fill:none;stroke:#ffffff;stroke-width:2;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:none;paint-order:normal"
+       id="path14-8"
+       d="m 110.24125,134.44549 a 15,15 0 0 1 9.73892,14.82554 15,15 0 0 1 -11.20956,13.74732 15,15 0 0 1 -16.482438,-6.55535" />
+    <path
+       style="fill:none;stroke:#ffffff;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:none;paint-order:normal"
+       id="path14-8-0"
+       d="m 85.263264,145.26562 a 20,20 0 0 1 20.350096,-16.75621 20,20 0 0 1 19.28454,17.97228 20,20 0 0 1 -15.28292,21.47858" />
+    <path
+       style="fill:none;stroke:#ffffff;stroke-width:1;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:none;paint-order:normal"
+       id="path14-8-0-5"
+       d="m 126.03655,134.9921 a 25,25 0 0 1 -1.7706,29.43973 25,25 0 0 1 -28.583661,7.26688 25,25 0 0 1 -15.615893,-25.01953 25,25 0 0 1 19.085026,-22.48544" />
+    <circle
+       style="fill:none;stroke:#ffffff;stroke-width:2;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:none;paint-order:normal"
+       id="path15"
+       cx="105"
+       cy="148.5"
+       r="1" />
+  </g>
+</svg>
