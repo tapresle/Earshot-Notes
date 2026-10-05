@@ -5,11 +5,30 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter, State};
 
 use super::summaries::models_dir;
-use super::{CommandError, CommandResult, ErrorKind};
+use super::{CommandError, CommandResult, ErrorKind, open_with_system};
 use crate::models::download::{HttpFetch, Phase, partial_path};
 use crate::models::manager::{DownloadEvent, Downloads, StartError};
-use crate::models::{GEMMA_4_E2B, KNOWN_MODELS};
+use crate::models::{self, GEMMA_4_E2B, KNOWN_MODELS, KnownModel};
 use crate::store::Store;
+
+/// Exactly which file a model is, on Hugging Face.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HuggingFaceSource {
+    repo: &'static str,
+    file_name: &'static str,
+    revision: &'static str,
+}
+
+impl From<&KnownModel> for HuggingFaceSource {
+    fn from(model: &KnownModel) -> Self {
+        Self {
+            repo: model.repo,
+            file_name: model.file_name,
+            revision: model.revision,
+        }
+    }
+}
 
 /// A model the app can download, and where it stands on this machine.
 #[derive(Serialize)]
@@ -20,6 +39,7 @@ pub struct AvailableModel {
     description: &'static str,
     file_name: &'static str,
     size_bytes: u64,
+    hugging_face: HuggingFaceSource,
     recommended: bool,
     installed: bool,
     /// Bytes already saved by an earlier, unfinished download.
@@ -58,6 +78,7 @@ pub fn available_models(
                 description: model.description,
                 file_name: model.file_name,
                 size_bytes: model.size_bytes,
+                hugging_face: model.into(),
                 recommended: model.id == GEMMA_4_E2B.id,
                 installed: store.model_by_sha256(model.sha256)?.is_some(),
                 partial_bytes: std::fs::metadata(partial_path(&dir.join(model.file_name)))
@@ -70,6 +91,17 @@ pub fn available_models(
             })
         })
         .collect()
+}
+
+/// Opens a known model's Hugging Face page in the browser. The UI names the
+/// model; the URL comes from the pinned registry.
+#[tauri::command]
+pub fn open_model_page(model_id: String) -> CommandResult<()> {
+    let model = models::known_by_id(&model_id).ok_or_else(|| CommandError {
+        kind: ErrorKind::Invalid,
+        message: format!("there's no Hugging Face page for {model_id}"),
+    })?;
+    open_with_system(&model.page_url(), "the model's Hugging Face page")
 }
 
 /// Downloads a known model by id. Only models in the pinned registry can be

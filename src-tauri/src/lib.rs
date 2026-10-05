@@ -91,6 +91,7 @@ pub fn run() {
             commands::settings::installed_models,
             commands::settings::select_summary_model,
             commands::settings::remove_summary_model,
+            commands::models::open_model_page,
             commands::setup::mic_permission,
             commands::setup::request_mic_permission,
             commands::setup::system_audio_permission,

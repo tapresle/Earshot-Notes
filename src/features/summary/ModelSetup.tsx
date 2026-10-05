@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { api, errorMessage, type AvailableModel, type ModelRecord } from "../../lib/api";
+import { ModelOrigin } from "./ModelOrigin";
 
 function gigabytes(bytes: number): string {
   return `${(bytes / 1e9).toFixed(1)} GB`;
@@ -89,6 +90,7 @@ export function ModelSetup({ onReady }: { onReady: (model: ModelRecord) => void 
           model={model}
           onDownload={() => void download(model)}
           onCancel={() => void api.cancelDownload().catch((e) => setError(errorMessage(e)))}
+          onError={setError}
         />
       ))}
       {error && (
@@ -110,10 +112,12 @@ function ModelCard({
   model,
   onDownload,
   onCancel,
+  onError,
 }: {
   model: AvailableModel;
   onDownload: () => void;
   onCancel: () => void;
+  onError: (message: string) => void;
 }) {
   const { download } = model;
   const nameId = useId();
@@ -125,6 +129,7 @@ function ModelCard({
         <span className="model-size">{gigabytes(model.sizeBytes)}</span>
       </div>
       <p className="model-description">{model.description}</p>
+      <ModelOrigin modelId={model.id} displayName={model.displayName} source={model.huggingFace} onError={onError} />
       {download?.phase === "downloading" ? (
         <div className="download-progress">
           <progress

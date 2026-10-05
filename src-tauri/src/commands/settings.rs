@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
+use super::models::HuggingFaceSource;
 use super::recording::{Transcription, TranscriptionModel};
 use super::summaries::models_dir;
 use super::{CommandError, CommandResult, ErrorKind};
@@ -58,8 +59,17 @@ pub fn set_input_device(
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct InstalledModel {
+    #[serde(flatten)]
+    model: ModelRecord,
+    /// Where the model comes from, when it's one the app knows.
+    hugging_face: Option<HuggingFaceSource>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InstalledModels {
-    models: Vec<ModelRecord>,
+    models: Vec<InstalledModel>,
     /// The model summaries use, if any.
     selected_id: Option<String>,
 }
@@ -69,7 +79,13 @@ pub fn installed_models(store: State<'_, Arc<Store>>) -> CommandResult<Installed
     let mut models = store.list_models()?;
     models::sort_for_display(&mut models);
     Ok(InstalledModels {
-        models,
+        models: models
+            .into_iter()
+            .map(|model| InstalledModel {
+                hugging_face: models::known_by_id(&model.id).map(Into::into),
+                model,
+            })
+            .collect(),
         selected_id: store.summary_model()?.map(|m| m.id),
     })
 }
@@ -104,4 +120,52 @@ pub fn remove_summary_model(
     let dir = models_dir(&app)?;
     summarizer.when_idle(|| models::remove(&model_id, &dir, &store))??;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::ModelSource;
+
+    fn record(id: &str) -> ModelRecord {
+        ModelRecord {
+            id: id.into(),
+            display_name: "Model".into(),
+            file_path: "/models/m.gguf".into(),
+            size_bytes: 1,
+            sha256: "abc".into(),
+            source: ModelSource::Import,
+            source_url: None,
+            version: None,
+            min_runtime: None,
+            added_at: 0,
+        }
+    }
+
+    #[test]
+    fn installed_models_carry_their_hugging_face_source_when_known() {
+        let known = InstalledModel {
+            hugging_face: models::known_by_id("qwen3-8b-q4_k_m").map(Into::into),
+            model: record("qwen3-8b-q4_k_m"),
+        };
+        let imported = InstalledModel {
+            hugging_face: models::known_by_id("local-abc").map(Into::into),
+            model: record("local-abc"),
+        };
+
+        let known = serde_json::to_value(known).unwrap();
+        assert_eq!(known["displayName"], "Model");
+        assert_eq!(
+            known["huggingFace"],
+            serde_json::json!({
+                "repo": "unsloth/Qwen3-8B-GGUF",
+                "fileName": "Qwen3-8B-Q4_K_M.gguf",
+                "revision": "a6adef130ffb23ddaf1a62fec9dced968c9bc482",
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(imported).unwrap()["huggingFace"],
+            serde_json::Value::Null
+        );
+    }
 }

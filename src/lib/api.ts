@@ -68,6 +68,13 @@ export interface ModelRecord {
   addedAt: number;
 }
 
+/** Exactly which file a model is on Hugging Face. */
+export interface HuggingFaceSource {
+  repo: string;
+  fileName: string;
+  revision: string;
+}
+
 export type DownloadPhase = { phase: "downloading"; received: number; total: number } | { phase: "verifying" };
 
 export interface AvailableModel {
@@ -77,6 +84,7 @@ export interface AvailableModel {
   description: string;
   fileName: string;
   sizeBytes: number;
+  huggingFace: HuggingFaceSource;
   recommended: boolean;
   installed: boolean;
   /** Bytes saved by an earlier, unfinished download. */
@@ -131,8 +139,13 @@ export interface InputDevice {
   isDefault: boolean;
 }
 
+export type InstalledModel = ModelRecord & {
+  /** Where the model comes from, when it's one the app knows. */
+  huggingFace: HuggingFaceSource | null;
+};
+
 export interface InstalledModels {
-  models: ModelRecord[];
+  models: InstalledModel[];
   selectedId: string | null;
 }
 
@@ -220,6 +233,7 @@ export const api = {
   setInputDevice: (deviceId: string | null) => invoke<void>("set_input_device", { deviceId }),
   installedModels: () => invoke<InstalledModels>("installed_models"),
   selectSummaryModel: (modelId: string) => invoke<void>("select_summary_model", { modelId }),
+  openModelPage: (modelId: string) => invoke<void>("open_model_page", { modelId }),
   removeSummaryModel: (modelId: string) => invoke<void>("remove_summary_model", { modelId }),
   micPermission: () => invoke<Permission>("mic_permission"),
   requestMicPermission: () => invoke<Permission>("request_mic_permission"),

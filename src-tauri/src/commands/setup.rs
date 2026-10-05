@@ -6,7 +6,7 @@ use macos_audio::{Permission as MacPermission, SystemAudioTap};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use super::{CommandError, CommandResult, ErrorKind};
+use super::{CommandError, CommandResult, ErrorKind, open_with_system};
 use crate::store::Store;
 
 const SETUP_COMPLETE: &str = "setup_complete";
@@ -105,23 +105,7 @@ impl PrivacyPane {
 
 #[tauri::command]
 pub fn open_privacy_settings(pane: PrivacyPane) -> CommandResult<()> {
-    std::process::Command::new("open")
-        .arg(pane.url())
-        .status()
-        .map_err(|e| CommandError {
-            kind: ErrorKind::Unavailable,
-            message: format!("couldn't open System Settings: {e}"),
-        })
-        .and_then(|status| {
-            if status.success() {
-                Ok(())
-            } else {
-                Err(CommandError {
-                    kind: ErrorKind::Unavailable,
-                    message: "couldn't open System Settings".into(),
-                })
-            }
-        })
+    open_with_system(pane.url(), "System Settings")
 }
 
 #[tauri::command]

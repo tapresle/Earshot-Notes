@@ -5,9 +5,11 @@ import {
   isCommandError,
   type InputDevice,
   type InstalledModels,
+  type InstalledModel as InstalledModelInfo,
   type ModelRecord,
   type TranscriptionModel,
 } from "../../lib/api";
+import { ModelOrigin } from "../summary/ModelOrigin";
 import { ModelSetup } from "../summary/ModelSetup";
 
 export function SettingsView({ onShowSetup }: { onShowSetup: () => void }) {
@@ -181,7 +183,7 @@ function InstalledModel({
   onRemoved,
   onError,
 }: {
-  model: ModelRecord;
+  model: InstalledModelInfo;
   selected: boolean;
   onSelect: () => void;
   onRemoved: () => void;
@@ -236,7 +238,7 @@ function InstalledModel({
           </span>
           <span className="model-details">
             {gigabytes(model.sizeBytes)} · {model.source === "download" ? "Downloaded" : "Imported"}
-            {model.version ? ` · ${model.version}` : ""}
+            {model.version && !model.huggingFace ? ` · ${model.version}` : ""}
           </span>
         </span>
       </label>
@@ -269,6 +271,14 @@ function InstalledModel({
         >
           Remove
         </button>
+      )}
+      {model.huggingFace && (
+        <ModelOrigin
+          modelId={model.id}
+          displayName={model.displayName}
+          source={model.huggingFace}
+          onError={onError}
+        />
       )}
     </div>
   );

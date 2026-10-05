@@ -34,6 +34,24 @@ pub enum ErrorKind {
     Internal,
 }
 
+/// Opens a URL with the system's default handler, such as the browser or
+/// System Settings. Callers build `target` themselves; never pass one from the UI.
+pub(crate) fn open_with_system(target: &str, what: &str) -> CommandResult<()> {
+    let unavailable = |detail: String| CommandError {
+        kind: ErrorKind::Unavailable,
+        message: format!("couldn't open {what}{detail}"),
+    };
+    let status = std::process::Command::new("open")
+        .arg(target)
+        .status()
+        .map_err(|e| unavailable(format!(": {e}")))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(unavailable(String::new()))
+    }
+}
+
 impl From<StoreError> for CommandError {
     fn from(error: StoreError) -> Self {
         let kind = match error {

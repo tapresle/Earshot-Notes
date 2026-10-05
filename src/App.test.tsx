@@ -40,6 +40,8 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     downloading: false,
     downloadedId: null as string | null,
     removeError: null as unknown,
+    openedModelPage: null as string | null,
+    openModelPageError: null as unknown,
     downloadCancelled: false,
     exports: [] as { ids: number[] | null; folder: string }[],
     exportFailures: [] as { title: string; message: string }[],
@@ -117,6 +119,7 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
         displayName: "Gemma 4 E2B",
         description: "Fast and light. A good fit for most meetings.",
         fileName: "gemma-4-E2B-it-Q4_K_M.gguf",
+        huggingFace: GEMMA_SOURCE,
         sizeBytes: 3_106_738_272,
         recommended: true,
         installed: state.model !== null,
@@ -128,6 +131,11 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
         displayName: "Qwen3 8B",
         description: "High-quality summaries. Slower, and uses more memory.",
         fileName: "Qwen3-8B-Q4_K_M.gguf",
+        huggingFace: {
+          repo: "unsloth/Qwen3-8B-GGUF",
+          fileName: "Qwen3-8B-Q4_K_M.gguf",
+          revision: "a6adef130ffb23ddaf1a62fec9dced968c9bc482",
+        },
         sizeBytes: 5_027_784_512,
         recommended: false,
         installed: false,
@@ -159,7 +167,14 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     set_input_device: ({ deviceId }) => {
       state.inputDevice = (deviceId as string | null) ?? null;
     },
-    installed_models: () => ({ models: state.installed, selectedId: state.model?.id ?? null }),
+    installed_models: () => ({
+      models: state.installed.map((m) => ({ ...m, huggingFace: m.id === "gemma-4-e2b-it-q4_k_m" ? GEMMA_SOURCE : null })),
+      selectedId: state.model?.id ?? null,
+    }),
+    open_model_page: ({ modelId }) => {
+      if (state.openModelPageError) throw state.openModelPageError;
+      state.openedModelPage = String(modelId);
+    },
     select_summary_model: ({ modelId }) => {
       state.model = state.installed.find((m) => m.id === modelId) ?? null;
     },
@@ -209,6 +224,12 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
   vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => handlers[command]((args ?? {}) as Args));
   return Object.assign(meetings, { state });
 }
+
+const GEMMA_SOURCE = {
+  repo: "unsloth/gemma-4-E2B-it-GGUF",
+  fileName: "gemma-4-E2B-it-Q4_K_M.gguf",
+  revision: "0314792d7f1f7e229411f620751375812bb9faf2",
+};
 
 function testModel(path = "/models/gemma.gguf"): ModelRecord {
   return {
@@ -705,6 +726,29 @@ describe("App", () => {
       expect(backend.state.downloadedId).toBe("qwen3-8b-q4_k_m");
     });
 
+    it("shows where each model comes from and opens its Hugging Face page", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      const user = await openMeeting("Sync");
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+
+      const qwen = await screen.findByRole("group", { name: "Qwen3 8B" });
+      expect(qwen).toHaveTextContent("unsloth/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf at revision a6adef1");
+      await user.click(within(qwen).getByRole("button", { name: "Hugging Face page for Qwen3 8B" }));
+
+      expect(backend.state.openedModelPage).toBe("qwen3-8b-q4_k_m");
+    });
+
+    it("explains when a model's page can't be opened", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.openModelPageError = { kind: "unavailable", message: "couldn't open the model's Hugging Face page" };
+      const user = await openMeeting("Sync");
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+
+      await user.click(await screen.findByRole("button", { name: "Hugging Face page for Gemma 4 E2B" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't open the model's Hugging Face page");
+    });
+
     it("offers to resume a partial download", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       backend.state.partialBytes = 1_200_000_000;
@@ -910,6 +954,25 @@ describe("App", () => {
       expect(screen.getByRole("radio", { name: /My fine-tune/ })).toBeChecked();
       expect(screen.getAllByText("Selected")).toHaveLength(1);
       expect(screen.getByRole("radio", { name: /My fine-tune/ }).closest("label")).toHaveTextContent("Selected");
+    });
+
+    it("shows the Hugging Face source of installed models it knows", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      const other = { ...testModel("/models/other.gguf"), id: "local-abc", displayName: "My fine-tune" };
+      backend.state.installed = [testModel(), other];
+      backend.state.model = testModel();
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+      const gemmaCard = (await screen.findByRole("radio", { name: /Gemma 4 E2B/ })).closest(".installed-model") as HTMLElement;
+      const otherCard = screen.getByRole("radio", { name: /My fine-tune/ }).closest(".installed-model") as HTMLElement;
+
+      expect(gemmaCard).toHaveTextContent("unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf at revision 0314792");
+      expect(within(otherCard).queryByRole("button", { name: /Hugging Face page/ })).not.toBeInTheDocument();
+      await user.click(within(gemmaCard).getByRole("button", { name: "Hugging Face page for Gemma 4 E2B" }));
+
+      expect(backend.state.openedModelPage).toBe("gemma-4-e2b-it-q4_k_m");
+      expect(screen.getByRole("radio", { name: /Gemma 4 E2B/ })).toBeChecked();
     });
 
     it("removes a model after confirming, and can cancel", async () => {

@@ -43,6 +43,11 @@ impl KnownModel {
             self.repo, self.revision, self.file_name
         )
     }
+
+    /// The repository's page on Hugging Face, with the model card.
+    pub fn page_url(&self) -> String {
+        format!("https://huggingface.co/{}", self.repo)
+    }
 }
 
 /// The recommended summary model.
@@ -164,6 +169,10 @@ pub fn display_order(id: &str, size_bytes: u64) -> (bool, u64) {
 /// Sorts installed models into `display_order`.
 pub fn sort_for_display(models: &mut [ModelRecord]) {
     models.sort_by_key(|m| display_order(&m.id, m.size_bytes.max(0) as u64));
+}
+
+pub fn known_by_id(id: &str) -> Option<&'static KnownModel> {
+    KNOWN_MODELS.iter().find(|k| k.id == id)
 }
 
 /// The context limit for an installed model: its registry limit when it's a
@@ -590,6 +599,17 @@ mod tests {
             models.map(|m| m.id),
             [GEMMA_4_E2B.id, "local-small", "local-big"]
         );
+    }
+
+    #[test]
+    fn links_to_the_repository_page() {
+        assert_eq!(
+            known_by_id("qwen3-8b-q4_k_m")
+                .map(KnownModel::page_url)
+                .as_deref(),
+            Some("https://huggingface.co/unsloth/Qwen3-8B-GGUF")
+        );
+        assert_eq!(known_by_id("local-abc123"), None);
     }
 
     #[test]
