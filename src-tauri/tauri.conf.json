@@ -41,7 +41,8 @@
       "../LICENSE": "licenses/Earshot-LICENSE.txt",
       "resources/licenses/needle-LICENSE.txt": "licenses/needle-LICENSE.txt",
       "resources/licenses/whistle-LICENSE.txt": "licenses/whistle-LICENSE.txt",
-      "resources/licenses/llama.cpp-LICENSE.txt": "licenses/llama.cpp-LICENSE.txt"
+      "resources/licenses/llama.cpp-LICENSE.txt": "licenses/llama.cpp-LICENSE.txt",
+      "resources/licenses/third-party-notices.txt": "licenses/third-party-notices.txt"
     },
     "macOS": {
       "minimumSystemVersion": "26.0",
