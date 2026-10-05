@@ -141,7 +141,7 @@ pub fn start_recording(
             .spawn(move || {
                 run_pipeline(frames, format, resampler, source, meeting_id, offset_ms, |job| {
                     if worker.submit(job).is_err() {
-                        eprintln!(
+                        log::warn!(
                             "dropped a segment for meeting {meeting_id}: the transcription worker stopped"
                         );
                     }
@@ -178,7 +178,7 @@ pub fn stop_recording(store: &Store, recorder: &Recorder) -> Result<Option<i64>,
     drop(active.captures);
     for pipeline in active.pipelines {
         if pipeline.join().is_err() {
-            eprintln!(
+            log::error!(
                 "an audio pipeline for meeting {} panicked",
                 active.meeting_id
             );

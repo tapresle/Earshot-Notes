@@ -1,3 +1,6 @@
+// Log through the `log` macros so messages reach the log file.
+#![deny(clippy::print_stdout, clippy::print_stderr)]
+
 pub mod audio;
 pub mod chunker;
 pub mod commands;
@@ -12,6 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::{App, Emitter, Manager, RunEvent};
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
 use commands::recording::{Transcription, TranscriptionModel};
 use recording::Recorder;
@@ -24,10 +28,38 @@ use transcribe::worker::TranscriptionWorker;
 
 const DATABASE_FILE: &str = "earshot.db";
 const WHISTLE_FILE: &str = "models/whistle.cact";
+/// The log file rolls over at this size, keeping only the newest file.
+const MAX_LOG_BYTES: u128 = 1_000_000;
+
+/// Logs to stderr and to a file in the system log folder
+/// (`~/Library/Logs/<bundle id>/Earshot.log` on macOS). Nothing is sent anywhere else.
+fn logger() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_plugin_log::Builder::new()
+        .clear_targets()
+        .targets([
+            Target::new(TargetKind::Stderr),
+            Target::new(TargetKind::LogDir { file_name: None }),
+        ])
+        // Dependencies only report problems; the app itself also reports what it did.
+        .level(log::LevelFilter::Warn)
+        .level_for(
+            "earshot_lib",
+            if cfg!(debug_assertions) {
+                log::LevelFilter::Debug
+            } else {
+                log::LevelFilter::Info
+            },
+        )
+        .max_file_size(MAX_LOG_BYTES)
+        .rotation_strategy(RotationStrategy::KeepOne)
+        .timezone_strategy(TimezoneStrategy::UseLocal)
+        .build()
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(logger())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
@@ -36,8 +68,8 @@ pub fn run() {
             let store = Arc::new(Store::open(&data_dir.join(DATABASE_FILE))?);
             match store.close_interrupted_recordings() {
                 Ok(0) => {}
-                Ok(n) => eprintln!("closed {n} recordings interrupted by the last exit"),
-                Err(error) => eprintln!("couldn't close interrupted recordings: {error}"),
+                Ok(n) => log::info!("closed {n} recordings interrupted by the last exit"),
+                Err(error) => log::error!("couldn't close interrupted recordings: {error}"),
             }
 
             // A model in the user's data folder (from a future update) wins over the bundled one.
@@ -107,7 +139,7 @@ pub fn run() {
                 let store = app.state::<Arc<Store>>();
                 if let Err(error) = recording::stop_recording(&store, &app.state::<Arc<Recorder>>())
                 {
-                    eprintln!("couldn't stop the recording on exit: {error}");
+                    log::error!("couldn't stop the recording on exit: {error}");
                 }
             }
         });
@@ -134,21 +166,21 @@ fn spawn_transcription(
         match saved {
             Ok(segment) => {
                 if let Err(error) = handle.emit("transcript:segment", &segment) {
-                    eprintln!("couldn't send a transcript segment to the UI: {error}");
+                    log::warn!("couldn't send a transcript segment to the UI: {error}");
                 }
             }
-            Err(error) => eprintln!(
+            Err(error) => log::error!(
                 "couldn't save a transcript segment for meeting {}: {error}",
                 job.meeting_id
             ),
         }
     })
     .map(|(worker, loaded)| {
-        eprintln!("loaded Whistle from {}", loaded.path.display());
+        log::info!("loaded Whistle from {}", loaded.path.display());
         (worker, loaded.path)
     })
     .map_err(|error| {
-        eprintln!("transcription is unavailable: {error}");
+        log::error!("transcription is unavailable: {error}");
         error.to_string()
     })
 }
@@ -192,7 +224,7 @@ fn spawn_summarizer(app: &App, store: Arc<Store>) -> Summarizer {
             ),
         };
         if let Err(error) = handle.emit(name, payload) {
-            eprintln!("couldn't send {name} to the UI: {error}");
+            log::warn!("couldn't send {name} to the UI: {error}");
         }
     })
 }

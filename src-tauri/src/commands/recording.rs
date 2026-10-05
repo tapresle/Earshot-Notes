@@ -54,7 +54,7 @@ pub async fn start_recording(
                 problem,
             },
         ) {
-            eprintln!("couldn't send a recording issue to the UI: {error}");
+            log::warn!("couldn't send a recording issue to the UI: {error}");
         }
     });
     let sources: Vec<(Source, CaptureStarter)> = vec![

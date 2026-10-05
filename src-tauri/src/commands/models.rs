@@ -140,7 +140,7 @@ pub fn download_model(
             ),
         };
         if let Err(error) = handle.emit(name, payload) {
-            eprintln!("couldn't send {name} to the UI: {error}");
+            log::warn!("couldn't send {name} to the UI: {error}");
         }
     });
     downloads.start(
