@@ -183,6 +183,13 @@ body {
   margin-top: 20px;
 }
 
+.load-more {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .meeting-list {
   list-style: none;
   margin: 0;

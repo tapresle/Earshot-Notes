@@ -4,7 +4,7 @@ use tauri::State;
 
 use super::{CommandError, CommandResult, ErrorKind, blocking};
 use crate::recording::Recorder;
-use crate::store::{Meeting, MeetingDetail, Store};
+use crate::store::{Meeting, MeetingCursor, MeetingDetail, MeetingPage, Store};
 
 #[tauri::command]
 pub async fn create_meeting(store: State<'_, Arc<Store>>, title: String) -> CommandResult<Meeting> {
@@ -12,10 +12,16 @@ pub async fn create_meeting(store: State<'_, Arc<Store>>, title: String) -> Comm
     blocking(move || Ok(store.create_meeting(&title)?)).await
 }
 
+/// One page of meetings, newest first. Pass the previous page's `next` as
+/// `after` to get the page that follows it.
 #[tauri::command]
-pub async fn list_meetings(store: State<'_, Arc<Store>>) -> CommandResult<Vec<Meeting>> {
+pub async fn list_meetings(
+    store: State<'_, Arc<Store>>,
+    after: Option<MeetingCursor>,
+    limit: u32,
+) -> CommandResult<MeetingPage> {
     let store = Arc::clone(&store);
-    blocking(move || Ok(store.list_meetings()?)).await
+    blocking(move || Ok(store.list_meetings(after, limit)?)).await
 }
 
 #[tauri::command]

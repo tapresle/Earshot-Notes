@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage, type Meeting } from "./lib/api";
+import { useEffect, useState } from "react";
+import { api, errorMessage } from "./lib/api";
 import { MeetingList } from "./features/meetings/MeetingList";
+import { LoadMore } from "./features/meetings/LoadMore";
+import { useMeetingList } from "./features/meetings/useMeetingList";
 import { MeetingView } from "./features/meetings/MeetingView";
 import { TranscriptPanel } from "./features/transcript/TranscriptPanel";
 import { ExportBar } from "./features/export/ExportBar";
@@ -11,25 +13,14 @@ import "./styles.css";
 
 type View = "meetings" | "settings" | "setup";
 
-type ListState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; meetings: Meeting[] };
-
 export default function App() {
-  const [list, setList] = useState<ListState>({ kind: "loading" });
+  const { list, reload, loadMore, update: updateMeetings } = useMeetingList();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [recordingMeetingId, setRecordingMeetingId] = useState<number | null>(null);
   const [selection, setSelection] = useState<Selection>({ ids: [], anchor: null });
   const [view, setView] = useState<View>("meetings");
-
-  const load = useCallback(() => {
-    api
-      .listMeetings()
-      .then((meetings) => setList({ kind: "ready", meetings }))
-      .catch((error) => setList({ kind: "error", message: errorMessage(error) }));
-  }, []);
-
-  useEffect(load, [load]);
 
   useEffect(() => {
     api
@@ -50,7 +41,7 @@ export default function App() {
     setCreateError(null);
     try {
       const meeting = await api.createMeeting();
-      setList((current) => (current.kind === "ready" ? { kind: "ready", meetings: [meeting, ...current.meetings] } : current));
+      updateMeetings((all) => [meeting, ...all]);
       setSelectedId(meeting.id);
       setSelection({ ids: [meeting.id], anchor: meeting.id });
       setView("meetings");
@@ -59,10 +50,6 @@ export default function App() {
     } finally {
       setCreating(false);
     }
-  }
-
-  function updateMeetings(update: (meetings: Meeting[]) => Meeting[]) {
-    setList((current) => (current.kind === "ready" ? { kind: "ready", meetings: update(current.meetings) } : current));
   }
 
   const meetings = list.kind === "ready" ? list.meetings : [];
@@ -87,6 +74,14 @@ export default function App() {
         creating={creating}
         footer={
           <>
+            {list.kind === "ready" && (
+              <LoadMore
+                hasMore={list.next !== null}
+                loading={list.loadingMore}
+                error={list.moreError}
+                onLoadMore={loadMore}
+              />
+            )}
             <ExportBar
               selectedIds={selection.ids}
               meetingCount={meetings.length}
@@ -121,10 +116,7 @@ export default function App() {
             <button
               type="button"
               className="button"
-              onClick={() => {
-                setList({ kind: "loading" });
-                load();
-              }}
+              onClick={reload}
             >
               Try again
             </button>

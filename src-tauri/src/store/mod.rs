@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::Connection;
 
 pub use export::ExportMeeting;
-pub use meetings::{Meeting, MeetingDetail};
+pub use meetings::{MAX_PAGE_SIZE, Meeting, MeetingCursor, MeetingDetail, MeetingPage};
 pub use models::{ModelRecord, ModelSource};
 pub use summaries::{NewSummary, Summary};
 pub use transcript::{NewSegment, Source, TranscriptSegment};
