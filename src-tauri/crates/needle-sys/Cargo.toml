@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Raw FFI bindings to the Cactus needle engine (needle.h)"
 edition = "2024"
 license = "Apache-2.0"
+publish = false
 links = "needle"
 build = "build.rs"
 

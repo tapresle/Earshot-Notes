@@ -22,6 +22,8 @@ export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
 echo "Signing with: $APPLE_SIGNING_IDENTITY"
 
 ./scripts/fetch-native.sh
+# The bundled third-party notices must match the current dependencies.
+./scripts/generate-notices.sh --check
 npm run tauri build
 
 echo

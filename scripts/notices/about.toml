@@ -1,0 +1,28 @@
+# cargo-about configuration for scripts/generate-notices.sh.
+# Only crates compiled into the shipped app count: normal dependencies for the
+# macOS Apple Silicon target. Build and dev dependencies don't ship.
+targets = ["aarch64-apple-darwin"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# Earshot's own workspace crates (`publish = false`) are covered by the bundled
+# Earshot and needle licenses.
+private = { ignore = true }
+# Licenses a dependency may use. A new dependency under any other license makes
+# the script fail, so the license gets a look before it ships.
+accepted = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+    "BSL-1.0",
+    "0BSD",
+    "CC0-1.0",
+    "Unlicense",
+]
