@@ -10,6 +10,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0002_transcript_segments.sql"),
     include_str!("../../migrations/0003_summaries_and_models.sql"),
     include_str!("../../migrations/0004_meetings_page_index.sql"),
+    include_str!("../../migrations/0005_meeting_search.sql"),
 ];
 
 pub fn apply(conn: &mut Connection) -> Result<(), StoreError> {
@@ -57,6 +58,40 @@ mod tests {
         apply(&mut conn).unwrap();
 
         assert_eq!(version(&conn), MIGRATIONS.len());
+    }
+
+    #[test]
+    fn indexes_meetings_saved_before_search_existed() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        // The schema as it was before 0005_meeting_search.sql.
+        for sql in &MIGRATIONS[..4] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 4).unwrap();
+        conn.execute_batch(
+            "INSERT INTO meetings (id, title, created_at) VALUES (1, 'Kickoff', 0);
+             INSERT INTO notes (meeting_id, body_markdown, updated_at) VALUES (1, 'Agenda', 0);
+             INSERT INTO transcript_segments (meeting_id, source, start_ms, end_ms, text)
+             VALUES (1, 'me', 0, 1000, 'hello there');",
+        )
+        .unwrap();
+
+        apply(&mut conn).unwrap();
+
+        for (table, word) in [
+            ("meetings_fts", "kickoff"),
+            ("notes_fts", "agenda"),
+            ("transcript_fts", "hello"),
+        ] {
+            let rowid: i64 = conn
+                .query_row(
+                    &format!("SELECT rowid FROM {table} WHERE {table} MATCH ?1"),
+                    [word],
+                    |row| row.get(0),
+                )
+                .unwrap_or_else(|e| panic!("{table}: {e}"));
+            assert_eq!(rowid, 1, "{table}");
+        }
     }
 
     #[test]

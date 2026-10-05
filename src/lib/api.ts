@@ -196,9 +196,12 @@ export function errorMessage(error: unknown): string {
 
 export const api = {
   createMeeting: (title = "") => invoke<Meeting>("create_meeting", { title }),
-  /** One page of meetings, newest first. Pass the previous page's `next` to get the following page. */
-  listMeetings: (after: MeetingCursor | null = null, limit = MEETING_PAGE_SIZE) =>
-    invoke<MeetingPage>("list_meetings", { after, limit }),
+  /**
+   * One page of meetings, newest first. With a search query, only meetings whose title, notes, or
+   * transcript contain every word. Pass the previous page's `next` to get the following page.
+   */
+  listMeetings: (query = "", after: MeetingCursor | null = null, limit = MEETING_PAGE_SIZE) =>
+    invoke<MeetingPage>("list_meetings", { query: query.trim() || null, after, limit }),
   getMeeting: (id: number) => invoke<MeetingDetail>("get_meeting", { id }),
   renameMeeting: (id: number, title: string) => invoke<string>("rename_meeting", { id, title }),
   updateNotes: (id: number, bodyMarkdown: string) => invoke<number>("update_notes", { id, bodyMarkdown }),

@@ -12,16 +12,22 @@ pub async fn create_meeting(store: State<'_, Arc<Store>>, title: String) -> Comm
     blocking(move || Ok(store.create_meeting(&title)?)).await
 }
 
-/// One page of meetings, newest first. Pass the previous page's `next` as
-/// `after` to get the page that follows it.
+/// One page of meetings, newest first, limited to those that match `query`
+/// when it has any words. Pass the previous page's `next` as `after` to get
+/// the page that follows it.
 #[tauri::command]
 pub async fn list_meetings(
     store: State<'_, Arc<Store>>,
+    query: Option<String>,
     after: Option<MeetingCursor>,
     limit: u32,
 ) -> CommandResult<MeetingPage> {
     let store = Arc::clone(&store);
-    blocking(move || Ok(store.list_meetings(after, limit)?)).await
+    blocking(move || {
+        let query = query.as_deref().unwrap_or_default();
+        Ok(store.search_meetings(query, after, limit)?)
+    })
+    .await
 }
 
 #[tauri::command]

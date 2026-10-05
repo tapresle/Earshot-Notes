@@ -1,4 +1,5 @@
-use rusqlite::{OptionalExtension, Row, params};
+use rusqlite::types::Value;
+use rusqlite::{OptionalExtension, Row, params, params_from_iter};
 use serde::{Deserialize, Serialize};
 
 use super::{Store, StoreError, now_ms};
@@ -44,12 +45,13 @@ impl MeetingCursor {
     };
 }
 
-/// Meetings after the cursor `(?1, ?2)`, newest first, at most `?3` of them.
+/// Meetings after the cursor `(?1, ?2)` that also meet `filter`, newest first,
+/// at most `?3` of them. Parameters in `filter` start at `?4`.
 /// The `meetings_page` index serves both the seek and the order.
-fn page_query() -> String {
+fn page_query(filter: &str) -> String {
     format!(
         "SELECT {MEETING_COLUMNS} FROM meetings m
-         WHERE (m.created_at, m.id) < (?1, ?2)
+         WHERE (m.created_at, m.id) < (?1, ?2) {filter}
          ORDER BY m.created_at DESC, m.id DESC LIMIT ?3"
     )
 }
@@ -134,14 +136,33 @@ impl Store {
         after: Option<MeetingCursor>,
         limit: u32,
     ) -> Result<MeetingPage, StoreError> {
+        self.page_of_meetings("", Vec::new(), after, limit)
+    }
+
+    /// A page of the meetings that meet `filter`, an SQL condition on `m`
+    /// that starts with `AND`, with `filter_params` bound from `?4`.
+    pub(super) fn page_of_meetings(
+        &self,
+        filter: &str,
+        filter_params: Vec<Value>,
+        after: Option<MeetingCursor>,
+        limit: u32,
+    ) -> Result<MeetingPage, StoreError> {
         let limit = limit.clamp(1, MAX_PAGE_SIZE);
-        let conn = self.conn();
+        let after = after.unwrap_or(MeetingCursor::START);
         // One more than asked for, to learn whether another page follows.
         let fetch = i64::from(limit) + 1;
-        let after = after.unwrap_or(MeetingCursor::START);
+        let params = [
+            Value::Integer(after.created_at),
+            Value::Integer(after.id),
+            Value::Integer(fetch),
+        ]
+        .into_iter()
+        .chain(filter_params);
+        let conn = self.conn();
         let meetings = conn
-            .prepare_cached(&page_query())?
-            .query_map(params![after.created_at, after.id, fetch], meeting_from_row)?
+            .prepare_cached(&page_query(filter))?
+            .query_map(params_from_iter(params), meeting_from_row)?
             .collect::<Result<_, _>>()?;
         Ok(MeetingPage::from_rows(meetings, limit))
     }
@@ -349,7 +370,7 @@ mod tests {
         let store = store();
         let conn = store.conn();
         let plan: Vec<String> = conn
-            .prepare(&format!("EXPLAIN QUERY PLAN {}", page_query()))
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", page_query("")))
             .unwrap()
             .query_map(params![1, 1, 1], |row| row.get(3))
             .unwrap()

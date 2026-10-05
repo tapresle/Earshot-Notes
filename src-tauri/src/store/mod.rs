@@ -1,9 +1,10 @@
-//! SQLite persistence for meetings and notes.
+//! SQLite persistence for meetings and notes, and search over them.
 
 mod export;
 mod meetings;
 mod migrations;
 mod models;
+mod search;
 pub mod settings;
 mod summaries;
 mod transcript;

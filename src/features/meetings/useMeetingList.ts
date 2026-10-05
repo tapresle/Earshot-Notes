@@ -20,27 +20,33 @@ export function appendPage(meetings: Meeting[], page: MeetingPage): Meeting[] {
   return [...meetings, ...page.meetings.filter((m) => !loaded.has(m.id))];
 }
 
-/** The sidebar's meetings, loaded a page at a time, newest first. */
-export function useMeetingList() {
+/**
+ * The sidebar's meetings, loaded a page at a time, newest first, limited to those that match
+ * `query` when it has any words. While a new query loads, the previous results stay on screen.
+ */
+export function useMeetingList(query = "") {
   const [list, setList] = useState<MeetingListState>({ kind: "loading" });
   // Bumped on every reload, so a response for an older load is ignored.
   const generation = useRef(0);
-  const loadingMore = useRef(false);
+  // True while a page is on its way, so only one request runs at a time.
+  const busy = useRef(false);
 
   const loadFirstPage = useCallback(() => {
     const current = ++generation.current;
-    loadingMore.current = false;
-    api.listMeetings().then(
+    busy.current = true;
+    api.listMeetings(query).then(
       (page) => {
         if (current !== generation.current) return;
+        busy.current = false;
         setList({ kind: "ready", meetings: page.meetings, next: page.next, loadingMore: false, moreError: null });
       },
       (error) => {
         if (current !== generation.current) return;
+        busy.current = false;
         setList({ kind: "error", message: errorMessage(error) });
       },
     );
-  }, []);
+  }, [query]);
 
   useEffect(loadFirstPage, [loadFirstPage]);
 
@@ -52,14 +58,14 @@ export function useMeetingList() {
 
   const next = list.kind === "ready" ? list.next : null;
   const loadMore = useCallback(() => {
-    if (next === null || loadingMore.current) return;
+    if (next === null || busy.current) return;
     const current = generation.current;
-    loadingMore.current = true;
+    busy.current = true;
     setList((state) => (state.kind === "ready" ? { ...state, loadingMore: true, moreError: null } : state));
-    api.listMeetings(next).then(
+    api.listMeetings(query, next).then(
       (page) => {
         if (current !== generation.current) return;
-        loadingMore.current = false;
+        busy.current = false;
         setList((state) =>
           state.kind === "ready"
             ? { ...state, meetings: appendPage(state.meetings, page), next: page.next, loadingMore: false }
@@ -68,13 +74,13 @@ export function useMeetingList() {
       },
       (error) => {
         if (current !== generation.current) return;
-        loadingMore.current = false;
+        busy.current = false;
         setList((state) =>
           state.kind === "ready" ? { ...state, loadingMore: false, moreError: errorMessage(error) } : state,
         );
       },
     );
-  }, [next]);
+  }, [query, next]);
 
   /** Changes the loaded meetings in place, such as after a rename or delete. */
   const update = useCallback((change: (meetings: Meeting[]) => Meeting[]) => {

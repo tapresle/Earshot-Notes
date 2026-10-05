@@ -3,6 +3,8 @@ import { api, errorMessage } from "./lib/api";
 import { MeetingList } from "./features/meetings/MeetingList";
 import { LoadMore } from "./features/meetings/LoadMore";
 import { useMeetingList } from "./features/meetings/useMeetingList";
+import { SearchField } from "./features/meetings/SearchField";
+import { useDebounced } from "./features/meetings/useDebounced";
 import { MeetingView } from "./features/meetings/MeetingView";
 import { TranscriptPanel } from "./features/transcript/TranscriptPanel";
 import { ExportBar } from "./features/export/ExportBar";
@@ -13,8 +15,13 @@ import "./styles.css";
 
 type View = "meetings" | "settings" | "setup";
 
+/** How long typing must pause before the sidebar searches. */
+const SEARCH_DELAY_MS = 200;
+
 export default function App() {
-  const { list, reload, loadMore, update: updateMeetings } = useMeetingList();
+  const [search, setSearch] = useState("");
+  const query = useDebounced(search.trim(), SEARCH_DELAY_MS);
+  const { list, reload, loadMore, update: updateMeetings } = useMeetingList(query);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -42,6 +49,8 @@ export default function App() {
     try {
       const meeting = await api.createMeeting();
       updateMeetings((all) => [meeting, ...all]);
+      // A new meeting matches no search, so show the full list it belongs to.
+      setSearch("");
       setSelectedId(meeting.id);
       setSelection({ ids: [meeting.id], anchor: meeting.id });
       setView("meetings");
@@ -72,6 +81,17 @@ export default function App() {
         }}
         onCreate={() => void createMeeting()}
         creating={creating}
+        search={
+          <SearchField
+            value={search}
+            onChange={(value) => {
+              setSearch(value);
+              // Keep only the open meeting selected, since the list is about to change.
+              setSelection({ ids: selectedId === null ? [] : [selectedId], anchor: selectedId });
+            }}
+          />
+        }
+        emptyHint={query === "" ? undefined : `No meetings match “${query}”.`}
         footer={
           <>
             {list.kind === "ready" && (
@@ -126,7 +146,7 @@ export default function App() {
           list.kind === "ready" &&
           (selectedId === null ? (
             <div className="empty-state">
-              <h1>{meetings.length === 0 ? "Start your first meeting" : "Pick a meeting"}</h1>
+              <h1>{meetings.length === 0 && query === "" ? "Start your first meeting" : "Pick a meeting"}</h1>
               <p>Take notes while the app transcribes on this device. Nothing leaves your computer.</p>
             </div>
           ) : (
