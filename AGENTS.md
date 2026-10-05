@@ -64,3 +64,8 @@ Each release has notes in `docs/releases/vX.Y.Z.md`. To make a release:
 2. Write the release notes. The first release, `v0.1.0`, describes everything in the app. Later releases describe what changed since the previous one, grouped as new, improved, and fixed, and keep a known limitations section current.
 3. Build with `scripts/build-macos.sh`. The disk image is `src-tauri/target/release/bundle/dmg/Earshot_X.Y.Z_aarch64.dmg`.
 4. After the release branch is merged, tag the merge on `main` as `vX.Y.Z` with an annotated tag.
+5. Push `main` and the tag to `origin`, then publish a GitHub release for the tag with the disk image attached. Use the release notes without their title line as the description, and add a **Download** section with the disk image's SHA-256. For example:
+
+   ```bash
+   gh release create vX.Y.Z src-tauri/target/release/bundle/dmg/Earshot_X.Y.Z_aarch64.dmg --title "Earshot X.Y.Z" --notes-file <notes> --verify-tag
+   ```
