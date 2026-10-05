@@ -182,7 +182,12 @@ mod tests {
         }))
         .unwrap_err();
 
-        assert_eq!(error.kind, ErrorKind::NotFound);
+        assert_eq!(
+            error.kind,
+            ErrorKind::NotFound {
+                missing: Missing::Meeting
+            }
+        );
     }
 
     #[test]
