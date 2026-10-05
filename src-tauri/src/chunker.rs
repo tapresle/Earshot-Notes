@@ -17,8 +17,13 @@ const LONG_SEGMENT_SILENCE_FRAMES: usize = 8; // 160 ms
 const MAX_SEGMENT_FRAMES: usize = 28 * 50; // 28 s, under Whistle's 30 s limit
 const MIN_SPEECH_FRAMES: usize = 5; // 100 ms; shorter bursts are clicks or bumps
 
-/// Absolute floor so near-silent rooms aren't treated as speech.
-const MIN_SPEECH_RMS: f32 = 0.01;
+/// Absolute floor for the microphone, so a near-silent room or the
+/// microphone's own hiss isn't treated as speech.
+pub const MIC_MIN_SPEECH_RMS: f32 = 0.01;
+/// Absolute floor for system audio (about -50 dBFS). Call audio is quieter than
+/// a close microphone and arrives noise-suppressed, so the microphone floor drops
+/// quiet speakers. Silence there is digital silence, so a lower floor is safe.
+pub const SYSTEM_MIN_SPEECH_RMS: f32 = 0.003;
 /// Speech must be this many times louder than the tracked background noise.
 const NOISE_MULTIPLIER: f32 = 3.0;
 
@@ -46,6 +51,8 @@ pub struct Chunker {
     frames_seen: u64,
     /// Tracked background level; seeded from the first frame.
     noise_floor: Option<f32>,
+    /// Frames at or below this level are never speech.
+    min_speech_rms: f32,
 }
 
 struct Current {
@@ -56,20 +63,15 @@ struct Current {
     silence_run: usize,
 }
 
-impl Default for Chunker {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Chunker {
-    pub fn new() -> Self {
+    pub fn new(min_speech_rms: f32) -> Self {
         Self {
             partial: Vec::with_capacity(FRAME),
             preroll: VecDeque::with_capacity(PREROLL_FRAMES),
             current: None,
             frames_seen: 0,
             noise_floor: None,
+            min_speech_rms,
         }
     }
 
@@ -149,7 +151,7 @@ impl Chunker {
     fn is_speech(&mut self, frame: &[f32]) -> bool {
         let rms = (frame.iter().map(|s| s * s).sum::<f32>() / frame.len() as f32).sqrt();
         let floor = *self.noise_floor.get_or_insert(rms);
-        let speech = rms > MIN_SPEECH_RMS.max(floor * NOISE_MULTIPLIER);
+        let speech = rms > self.min_speech_rms.max(floor * NOISE_MULTIPLIER);
         // Follow the background down quickly and up slowly. During speech the
         // floor still creeps up, so noise that starts mid-stream (a fan, an air
         // conditioner) is absorbed in about 15 s. Pauses between words pull it
@@ -200,8 +202,18 @@ mod tests {
         parts.concat()
     }
 
+    /// Scales audio down to a quiet call participant: about 0.005 RMS while
+    /// speaking, between the system and microphone floors.
+    fn quiet(audio: &[f32]) -> Vec<f32> {
+        audio.iter().map(|s| s * 0.025).collect()
+    }
+
     fn run(samples: &[f32], push_size: usize) -> Vec<Segment> {
-        let mut chunker = Chunker::new();
+        run_with(MIC_MIN_SPEECH_RMS, samples, push_size)
+    }
+
+    fn run_with(min_speech_rms: f32, samples: &[f32], push_size: usize) -> Vec<Segment> {
+        let mut chunker = Chunker::new(min_speech_rms);
         let mut segments: Vec<Segment> = samples
             .chunks(push_size)
             .flat_map(|chunk| chunker.push(chunk))
@@ -312,6 +324,23 @@ mod tests {
         ]);
 
         assert_eq!(run(&audio, 1), run(&audio, 7919));
+    }
+
+    #[test]
+    fn picks_up_quiet_speech_at_the_system_audio_floor() {
+        let audio = quiet(&concat(&[silence(1000), tone(1500), silence(1000)]));
+
+        let segments = run_with(SYSTEM_MIN_SPEECH_RMS, &audio, 512);
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].start_ms(), 800);
+    }
+
+    #[test]
+    fn ignores_quiet_speech_at_the_microphone_floor() {
+        let audio = quiet(&concat(&[silence(1000), tone(1500), silence(1000)]));
+
+        assert!(run_with(MIC_MIN_SPEECH_RMS, &audio, 512).is_empty());
     }
 
     #[test]
