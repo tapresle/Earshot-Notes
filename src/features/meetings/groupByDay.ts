@@ -5,7 +5,8 @@ export interface DayGroup {
   meetings: Meeting[];
 }
 
-function startOfDay(ms: number): number {
+/** The start of the local day containing `ms`. */
+export function startOfDay(ms: number): number {
   const date = new Date(ms);
   date.setHours(0, 0, 0, 0);
   return date.getTime();
