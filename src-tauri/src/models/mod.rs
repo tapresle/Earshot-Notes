@@ -185,8 +185,9 @@ pub enum ImportError {
     Store(#[from] StoreError),
 }
 
-/// Copies a GGUF file into `models_dir`, records it, and selects it for
-/// summaries. Importing a file that's already installed returns the existing record.
+/// Copies a GGUF file into `models_dir` and records it. It becomes the summary
+/// model only when no other model is installed. Importing a file that's
+/// already installed returns the existing record.
 pub fn import(
     source: &Path,
     models_dir: &Path,
@@ -198,7 +199,6 @@ pub fn import(
     }
     let sha256 = sha256_file(source)?;
     if let Some(existing) = store.model_by_sha256(&sha256)? {
-        store.select_summary_model(&existing.id)?;
         return Ok(existing);
     }
 
@@ -234,10 +234,7 @@ pub fn import(
         min_runtime: known.map(|k| k.min_runtime.to_owned()),
         added_at: 0,
     };
-    let saved = store.add_model(&record).and_then(|saved| {
-        store.select_summary_model(&saved.id)?;
-        Ok(saved)
-    });
+    let saved = store.add_model_keeping_selection(&record);
     if saved.is_err() {
         let _ = std::fs::remove_file(&dest);
     }
@@ -331,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn imports_copies_and_selects_a_model() {
+    fn imports_copies_and_selects_a_first_model() {
         let source_dir = tempfile::tempdir().unwrap();
         let models_dir = tempfile::tempdir().unwrap();
         let store = Store::open_in_memory().unwrap();
@@ -370,6 +367,33 @@ mod tests {
         assert_eq!(record.version.as_deref(), Some(GEMMA_4_E2B.version));
         assert_eq!(record.min_runtime.as_deref(), Some("0.1.158"));
         assert_eq!(record.source_url, Some(GEMMA_4_E2B.url()));
+    }
+
+    #[test]
+    fn keeps_the_selected_model_when_importing_another() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let models = dir.path().join("models");
+        let first = import(&fake_gguf(dir.path(), "a.gguf", b"a"), &models, &store, &[]).unwrap();
+
+        import(&fake_gguf(dir.path(), "b.gguf", b"b"), &models, &store, &[]).unwrap();
+
+        assert_eq!(store.summary_model().unwrap(), Some(first));
+    }
+
+    #[test]
+    fn reimporting_an_installed_model_does_not_select_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let models = dir.path().join("models");
+        let a = fake_gguf(dir.path(), "a.gguf", b"a");
+        import(&a, &models, &store, &[]).unwrap();
+        let b = import(&fake_gguf(dir.path(), "b.gguf", b"b"), &models, &store, &[]).unwrap();
+        store.select_summary_model(&b.id).unwrap();
+
+        import(&a, &models, &store, &[]).unwrap();
+
+        assert_eq!(store.summary_model().unwrap(), Some(b));
     }
 
     #[test]

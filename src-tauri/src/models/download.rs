@@ -91,8 +91,7 @@ pub fn download(
     }
     std::fs::rename(&part, &dest)?;
 
-    let in_use = store.summary_model()?;
-    let record = store.add_model(&ModelRecord {
+    Ok(store.add_model_keeping_selection(&ModelRecord {
         id: model.id.to_owned(),
         display_name: model.display_name.to_owned(),
         file_path: dest.to_string_lossy().into_owned(),
@@ -103,12 +102,7 @@ pub fn download(
         version: Some(model.version.to_owned()),
         min_runtime: Some(model.min_runtime.to_owned()),
         added_at: 0,
-    })?;
-    // Keep the model already in use. Pinning it matters when nothing was
-    // chosen explicitly, because summaries otherwise fall back to the newest.
-    let selected = in_use.map_or_else(|| record.id.clone(), |m| m.id);
-    store.select_summary_model(&selected)?;
-    Ok(record)
+    })?)
 }
 
 /// Where an in-progress download is written.

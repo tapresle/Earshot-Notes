@@ -80,7 +80,8 @@ pub fn summary_model(store: State<'_, Arc<Store>>) -> CommandResult<Option<Model
     Ok(store.summary_model()?)
 }
 
-/// Copies a GGUF file the user picked into the models folder and selects it.
+/// Copies a GGUF file the user picked into the models folder. It becomes the
+/// summary model only when no other model is installed.
 /// Hashing a multi-gigabyte file takes a few seconds, so this runs off the main thread.
 #[tauri::command]
 pub async fn import_model(

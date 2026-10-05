@@ -85,6 +85,20 @@ impl Store {
         })
     }
 
+    /// Records a newly installed model without changing which model summaries
+    /// use: the model in use stays selected, and a first model becomes the
+    /// selection. The model in use is pinned because, with no explicit choice,
+    /// summaries fall back to the newest model.
+    pub fn add_model_keeping_selection(
+        &self,
+        model: &ModelRecord,
+    ) -> Result<ModelRecord, StoreError> {
+        let in_use = self.summary_model()?;
+        let saved = self.add_model(model)?;
+        self.select_summary_model(in_use.as_ref().map_or(&saved.id, |m| &m.id))?;
+        Ok(saved)
+    }
+
     pub fn model_by_sha256(&self, sha256: &str) -> Result<Option<ModelRecord>, StoreError> {
         Ok(self
             .conn()
@@ -254,6 +268,21 @@ mod tests {
             store.delete_model("ghost"),
             Err(StoreError::ModelNotFound(_))
         ));
+    }
+
+    #[test]
+    fn adding_a_model_selects_it_only_when_it_is_the_first() {
+        let store = Store::open_in_memory().unwrap();
+
+        let first = store
+            .add_model_keeping_selection(&record("first", "1"))
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store
+            .add_model_keeping_selection(&record("second", "2"))
+            .unwrap();
+
+        assert_eq!(store.summary_model().unwrap(), Some(first));
     }
 
     #[test]
