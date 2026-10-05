@@ -1,5 +1,6 @@
-use rusqlite::{OptionalExtension, Row, params};
-use serde::Serialize;
+use rusqlite::types::Value;
+use rusqlite::{OptionalExtension, Row, params, params_from_iter};
+use serde::{Deserialize, Serialize};
 
 use super::{Store, StoreError, now_ms};
 
@@ -23,6 +24,61 @@ pub struct MeetingDetail {
     pub meeting: Meeting,
     pub notes_markdown: String,
     pub notes_updated_at: i64,
+}
+
+/// The most meetings one page can hold.
+pub const MAX_PAGE_SIZE: u32 = 200;
+
+/// The position of the last meeting on a page. The next page starts after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingCursor {
+    pub created_at: i64,
+    pub id: i64,
+}
+
+impl MeetingCursor {
+    /// Before every meeting, so the first page starts at the newest one.
+    const START: Self = Self {
+        created_at: i64::MAX,
+        id: i64::MAX,
+    };
+}
+
+/// Meetings after the cursor `(?1, ?2)` that also meet `filter`, newest first,
+/// at most `?3` of them. Parameters in `filter` start at `?4`.
+/// The `meetings_page` index serves both the seek and the order.
+fn page_query(filter: &str) -> String {
+    format!(
+        "SELECT {MEETING_COLUMNS} FROM meetings m
+         WHERE (m.created_at, m.id) < (?1, ?2) {filter}
+         ORDER BY m.created_at DESC, m.id DESC LIMIT ?3"
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingPage {
+    pub meetings: Vec<Meeting>,
+    /// Where the next page starts, or `None` on the last page.
+    pub next: Option<MeetingCursor>,
+}
+
+impl MeetingPage {
+    /// Builds a page from up to `limit + 1` rows; the extra row only signals
+    /// that another page follows.
+    pub(super) fn from_rows(mut meetings: Vec<Meeting>, limit: u32) -> Self {
+        let more = meetings.len() > limit as usize;
+        meetings.truncate(limit as usize);
+        let next = match meetings.last() {
+            Some(last) if more => Some(MeetingCursor {
+                created_at: last.created_at,
+                id: last.id,
+            }),
+            _ => None,
+        };
+        Self { meetings, next }
+    }
 }
 
 pub(super) const MEETING_COLUMNS: &str = "m.id, m.title, m.created_at, m.started_at, m.ended_at";
@@ -71,16 +127,44 @@ impl Store {
         })
     }
 
-    /// All meetings, newest first.
-    pub fn list_meetings(&self) -> Result<Vec<Meeting>, StoreError> {
+    /// One page of meetings, newest first, starting after `after` (or at the
+    /// newest meeting). Pages are keyed on `(created_at, id)` rather than an
+    /// offset, so each page is an index seek, and meetings created or deleted
+    /// between pages don't shift the next one.
+    pub fn list_meetings(
+        &self,
+        after: Option<MeetingCursor>,
+        limit: u32,
+    ) -> Result<MeetingPage, StoreError> {
+        self.page_of_meetings("", Vec::new(), after, limit)
+    }
+
+    /// A page of the meetings that meet `filter`, an SQL condition on `m`
+    /// that starts with `AND`, with `filter_params` bound from `?4`.
+    pub(super) fn page_of_meetings(
+        &self,
+        filter: &str,
+        filter_params: Vec<Value>,
+        after: Option<MeetingCursor>,
+        limit: u32,
+    ) -> Result<MeetingPage, StoreError> {
+        let limit = limit.clamp(1, MAX_PAGE_SIZE);
+        let after = after.unwrap_or(MeetingCursor::START);
+        // One more than asked for, to learn whether another page follows.
+        let fetch = i64::from(limit) + 1;
+        let params = [
+            Value::Integer(after.created_at),
+            Value::Integer(after.id),
+            Value::Integer(fetch),
+        ]
+        .into_iter()
+        .chain(filter_params);
         let conn = self.conn();
-        let mut stmt = conn.prepare(&format!(
-            "SELECT {MEETING_COLUMNS} FROM meetings m ORDER BY m.created_at DESC, m.id DESC"
-        ))?;
-        let meetings = stmt
-            .query_map([], meeting_from_row)?
+        let meetings = conn
+            .prepare_cached(&page_query(filter))?
+            .query_map(params_from_iter(params), meeting_from_row)?
             .collect::<Result<_, _>>()?;
-        Ok(meetings)
+        Ok(MeetingPage::from_rows(meetings, limit))
     }
 
     pub fn get_meeting(&self, id: i64) -> Result<MeetingDetail, StoreError> {
@@ -179,19 +263,123 @@ mod tests {
         let first = store.create_meeting("First").unwrap();
         let second = store.create_meeting("Second").unwrap();
 
-        let ids: Vec<i64> = store
-            .list_meetings()
-            .unwrap()
-            .iter()
-            .map(|m| m.id)
-            .collect();
+        let page = store.list_meetings(None, 50).unwrap();
 
-        assert_eq!(ids, vec![second.id, first.id]);
+        assert_eq!(ids(&page.meetings), vec![second.id, first.id]);
+        assert_eq!(page.next, None);
     }
 
     #[test]
     fn lists_nothing_for_a_new_database() {
-        assert!(store().list_meetings().unwrap().is_empty());
+        let page = store().list_meetings(None, 50).unwrap();
+
+        assert!(page.meetings.is_empty());
+        assert_eq!(page.next, None);
+    }
+
+    fn ids(meetings: &[Meeting]) -> Vec<i64> {
+        meetings.iter().map(|m| m.id).collect()
+    }
+
+    /// Creates meetings with the given creation times, in that order.
+    fn meetings_created_at(store: &Store, times: &[i64]) -> Vec<Meeting> {
+        times
+            .iter()
+            .map(|&at| {
+                let meeting = store.create_meeting("Meeting").unwrap();
+                store
+                    .conn()
+                    .execute(
+                        "UPDATE meetings SET created_at = ?1 WHERE id = ?2",
+                        params![at, meeting.id],
+                    )
+                    .unwrap();
+                Meeting {
+                    created_at: at,
+                    ..meeting
+                }
+            })
+            .collect()
+    }
+
+    /// Follows `next` from the first page to the last.
+    fn all_pages(store: &Store, limit: u32) -> Vec<MeetingPage> {
+        let mut pages = vec![store.list_meetings(None, limit).unwrap()];
+        while let Some(next) = pages.last().unwrap().next {
+            pages.push(store.list_meetings(Some(next), limit).unwrap());
+        }
+        pages
+    }
+
+    #[test]
+    fn pages_through_every_meeting_once_in_order() {
+        let store = store();
+        // Ties on created_at are broken by id, newest first.
+        let made = meetings_created_at(&store, &[100, 200, 200, 200, 300, 400, 400]);
+        let mut expected = made.clone();
+        expected.sort_by_key(|m| std::cmp::Reverse((m.created_at, m.id)));
+
+        let pages = all_pages(&store, 3);
+
+        let sizes: Vec<usize> = pages.iter().map(|p| p.meetings.len()).collect();
+        assert_eq!(sizes, vec![3, 3, 1]);
+        let listed: Vec<Meeting> = pages.into_iter().flat_map(|p| p.meetings).collect();
+        assert_eq!(listed, expected);
+    }
+
+    #[test]
+    fn ends_without_an_empty_page_when_the_last_page_is_full() {
+        let store = store();
+        meetings_created_at(&store, &[1, 2, 3, 4]);
+
+        let pages = all_pages(&store, 2);
+
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[1].meetings.len(), 2);
+        assert_eq!(pages[1].next, None);
+    }
+
+    #[test]
+    fn keeps_its_place_when_meetings_change_between_pages() {
+        let store = store();
+        let made = meetings_created_at(&store, &[1, 2, 3, 4, 5]);
+        let first = store.list_meetings(None, 2).unwrap();
+        assert_eq!(ids(&first.meetings), vec![made[4].id, made[3].id]);
+
+        // A new meeting, and a deleted one that the cursor points at.
+        store.create_meeting("Newer").unwrap();
+        store.delete_meeting(made[3].id).unwrap();
+        let second = store.list_meetings(first.next, 2).unwrap();
+
+        assert_eq!(ids(&second.meetings), vec![made[2].id, made[1].id]);
+    }
+
+    #[test]
+    fn clamps_the_page_size() {
+        let store = store();
+        meetings_created_at(&store, &vec![7; MAX_PAGE_SIZE as usize + 1]);
+
+        assert_eq!(store.list_meetings(None, 0).unwrap().meetings.len(), 1);
+        let largest = store.list_meetings(None, u32::MAX).unwrap();
+        assert_eq!(largest.meetings.len(), MAX_PAGE_SIZE as usize);
+        assert!(largest.next.is_some());
+    }
+
+    #[test]
+    fn seeks_pages_through_the_creation_index() {
+        let store = store();
+        let conn = store.conn();
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", page_query("")))
+            .unwrap()
+            .query_map(params![1, 1, 1], |row| row.get(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let plan = plan.join("; ");
+
+        assert!(plan.contains("INDEX meetings_page"), "{plan}");
+        assert!(!plan.contains("TEMP B-TREE"), "{plan}");
     }
 
     #[test]

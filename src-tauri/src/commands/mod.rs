@@ -1,4 +1,8 @@
 //! Tauri command handlers. Keep them thin: validate, call into a module, map errors.
+//!
+//! Synchronous commands run on the main thread, so a command that touches the
+//! database, the disk, or another thread is `async` and does that work through
+//! [`blocking`].
 
 pub mod export;
 pub mod meetings;
@@ -13,18 +17,22 @@ use serde::Serialize;
 use crate::recording::RecordingError;
 use crate::store::StoreError;
 
-/// The error shape the UI receives from every command.
+/// The error shape the UI receives from every command: `kind`, `message`,
+/// and for `notFound`, `missing`.
 #[derive(Debug, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
 pub struct CommandError {
+    #[serde(flatten)]
     pub kind: ErrorKind,
     pub message: String,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ErrorKind {
-    NotFound,
+    /// The thing the action names doesn't exist, such as a deleted meeting.
+    NotFound {
+        missing: Missing,
+    },
     /// The action conflicts with the current state, such as an active recording.
     Conflict,
     /// A device or model the action needs isn't available.
@@ -32,6 +40,14 @@ pub enum ErrorKind {
     /// The input isn't acceptable, such as a file that isn't a model.
     Invalid,
     Internal,
+}
+
+/// What a `NotFound` error couldn't find, so the UI can say so.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum Missing {
+    Meeting,
+    Model,
 }
 
 /// Opens a URL with the system's default handler, such as the browser or
@@ -55,7 +71,12 @@ pub(crate) fn open_with_system(target: &str, what: &str) -> CommandResult<()> {
 impl From<StoreError> for CommandError {
     fn from(error: StoreError) -> Self {
         let kind = match error {
-            StoreError::MeetingNotFound(_) | StoreError::ModelNotFound(_) => ErrorKind::NotFound,
+            StoreError::MeetingNotFound(_) => ErrorKind::NotFound {
+                missing: Missing::Meeting,
+            },
+            StoreError::ModelNotFound(_) => ErrorKind::NotFound {
+                missing: Missing::Model,
+            },
             StoreError::SchemaTooNew { .. } | StoreError::Sqlite(_) => ErrorKind::Internal,
         };
         Self {
@@ -82,6 +103,19 @@ impl From<RecordingError> for CommandError {
 
 pub type CommandResult<T> = Result<T, CommandError>;
 
+/// Runs blocking work, such as a SQLite query, on the async runtime's blocking
+/// thread pool, so it never holds up the main thread or an async worker.
+pub(crate) async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> CommandResult<T> + Send + 'static,
+) -> CommandResult<T> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| CommandError {
+            kind: ErrorKind::Internal,
+            message: format!("a background task failed: {error}"),
+        })?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,8 +124,26 @@ mod tests {
     fn maps_a_missing_meeting_to_not_found() {
         let error = CommandError::from(StoreError::MeetingNotFound(7));
 
-        assert_eq!(error.kind, ErrorKind::NotFound);
+        assert_eq!(
+            error.kind,
+            ErrorKind::NotFound {
+                missing: Missing::Meeting
+            }
+        );
         assert_eq!(error.message, "meeting 7 doesn't exist");
+    }
+
+    #[test]
+    fn maps_a_missing_model_to_not_found() {
+        let error = CommandError::from(StoreError::ModelNotFound("local-abc".into()));
+
+        assert_eq!(
+            error.kind,
+            ErrorKind::NotFound {
+                missing: Missing::Model
+            }
+        );
+        assert_eq!(error.message, "model local-abc doesn't exist");
     }
 
     #[test]
@@ -103,7 +155,46 @@ mod tests {
 
         assert_eq!(conflict.kind, ErrorKind::Conflict);
         assert_eq!(unavailable.kind, ErrorKind::Unavailable);
-        assert_eq!(missing.kind, ErrorKind::NotFound);
+        assert_eq!(
+            missing.kind,
+            ErrorKind::NotFound {
+                missing: Missing::Meeting
+            }
+        );
+    }
+
+    #[test]
+    fn runs_blocking_work_off_the_calling_thread() {
+        let caller = std::thread::current().id();
+
+        let (worker, value) =
+            tauri::async_runtime::block_on(blocking(|| Ok((std::thread::current().id(), 7))))
+                .unwrap();
+
+        assert_ne!(worker, caller);
+        assert_eq!(value, 7);
+    }
+
+    #[test]
+    fn passes_errors_from_blocking_work_through() {
+        let error = tauri::async_runtime::block_on(blocking::<()>(|| {
+            Err(StoreError::MeetingNotFound(3).into())
+        }))
+        .unwrap_err();
+
+        assert_eq!(
+            error.kind,
+            ErrorKind::NotFound {
+                missing: Missing::Meeting
+            }
+        );
+    }
+
+    #[test]
+    fn reports_a_panic_in_blocking_work_as_internal() {
+        let error = tauri::async_runtime::block_on(blocking::<()>(|| panic!("boom"))).unwrap_err();
+
+        assert_eq!(error.kind, ErrorKind::Internal);
     }
 
     #[test]
@@ -112,7 +203,19 @@ mod tests {
 
         assert_eq!(
             serde_json::to_value(error).unwrap(),
-            serde_json::json!({ "kind": "notFound", "message": "meeting 7 doesn't exist" })
+            serde_json::json!({
+                "kind": "notFound",
+                "missing": "meeting",
+                "message": "meeting 7 doesn't exist",
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(CommandError {
+                kind: ErrorKind::Conflict,
+                message: "busy".into(),
+            })
+            .unwrap(),
+            serde_json::json!({ "kind": "conflict", "message": "busy" })
         );
     }
 }

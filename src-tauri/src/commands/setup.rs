@@ -6,7 +6,7 @@ use macos_audio::{Permission as MacPermission, SystemAudioTap};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use super::{CommandError, CommandResult, ErrorKind, open_with_system};
+use super::{CommandError, CommandResult, ErrorKind, blocking, open_with_system};
 use crate::store::Store;
 
 const SETUP_COMPLETE: &str = "setup_complete";
@@ -109,14 +109,16 @@ pub fn open_privacy_settings(pane: PrivacyPane) -> CommandResult<()> {
 }
 
 #[tauri::command]
-pub fn setup_complete(store: State<'_, Arc<Store>>) -> CommandResult<bool> {
-    Ok(store.setting(SETUP_COMPLETE)?.is_some())
+pub async fn setup_complete(store: State<'_, Arc<Store>>) -> CommandResult<bool> {
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.setting(SETUP_COMPLETE)?.is_some())).await
 }
 
 /// Marks the checklist done, or brings it back when `complete` is false.
 #[tauri::command]
-pub fn set_setup_complete(store: State<'_, Arc<Store>>, complete: bool) -> CommandResult<()> {
-    Ok(store.set_setting(SETUP_COMPLETE, complete.then_some("1"))?)
+pub async fn set_setup_complete(store: State<'_, Arc<Store>>, complete: bool) -> CommandResult<()> {
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.set_setting(SETUP_COMPLETE, complete.then_some("1"))?)).await
 }
 
 #[cfg(test)]

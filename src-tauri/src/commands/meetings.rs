@@ -2,45 +2,62 @@ use std::sync::Arc;
 
 use tauri::State;
 
-use super::{CommandError, CommandResult, ErrorKind};
+use super::{CommandError, CommandResult, ErrorKind, blocking};
 use crate::recording::Recorder;
-use crate::store::{Meeting, MeetingDetail, Store};
+use crate::store::{Meeting, MeetingCursor, MeetingDetail, MeetingPage, Store};
 
 #[tauri::command]
-pub fn create_meeting(store: State<'_, Arc<Store>>, title: String) -> CommandResult<Meeting> {
-    Ok(store.create_meeting(&title)?)
+pub async fn create_meeting(store: State<'_, Arc<Store>>, title: String) -> CommandResult<Meeting> {
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.create_meeting(&title)?)).await
+}
+
+/// One page of meetings, newest first, limited to those that match `query`
+/// when it has any words. Pass the previous page's `next` as `after` to get
+/// the page that follows it.
+#[tauri::command]
+pub async fn list_meetings(
+    store: State<'_, Arc<Store>>,
+    query: Option<String>,
+    after: Option<MeetingCursor>,
+    limit: u32,
+) -> CommandResult<MeetingPage> {
+    let store = Arc::clone(&store);
+    blocking(move || {
+        let query = query.as_deref().unwrap_or_default();
+        Ok(store.search_meetings(query, after, limit)?)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn list_meetings(store: State<'_, Arc<Store>>) -> CommandResult<Vec<Meeting>> {
-    Ok(store.list_meetings()?)
+pub async fn get_meeting(store: State<'_, Arc<Store>>, id: i64) -> CommandResult<MeetingDetail> {
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.get_meeting(id)?)).await
 }
 
 #[tauri::command]
-pub fn get_meeting(store: State<'_, Arc<Store>>, id: i64) -> CommandResult<MeetingDetail> {
-    Ok(store.get_meeting(id)?)
-}
-
-#[tauri::command]
-pub fn rename_meeting(
+pub async fn rename_meeting(
     store: State<'_, Arc<Store>>,
     id: i64,
     title: String,
 ) -> CommandResult<String> {
-    Ok(store.rename_meeting(id, &title)?)
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.rename_meeting(id, &title)?)).await
 }
 
 #[tauri::command]
-pub fn update_notes(
+pub async fn update_notes(
     store: State<'_, Arc<Store>>,
     id: i64,
     body_markdown: String,
 ) -> CommandResult<i64> {
-    Ok(store.update_notes(id, &body_markdown)?)
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.update_notes(id, &body_markdown)?)).await
 }
 
 #[tauri::command]
-pub fn delete_meeting(
+pub async fn delete_meeting(
     store: State<'_, Arc<Store>>,
     recorder: State<'_, Arc<Recorder>>,
     id: i64,
@@ -51,5 +68,6 @@ pub fn delete_meeting(
             message: "stop recording before deleting this meeting".into(),
         });
     }
-    Ok(store.delete_meeting(id)?)
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.delete_meeting(id)?)).await
 }

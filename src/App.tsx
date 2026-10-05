@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage, type Meeting } from "./lib/api";
+import { useEffect, useState } from "react";
+import { api, errorMessage } from "./lib/api";
 import { MeetingList } from "./features/meetings/MeetingList";
+import { LoadMore } from "./features/meetings/LoadMore";
+import { useMeetingList } from "./features/meetings/useMeetingList";
+import { SearchField } from "./features/meetings/SearchField";
+import { useDebounced } from "./features/meetings/useDebounced";
 import { MeetingView } from "./features/meetings/MeetingView";
 import { TranscriptPanel } from "./features/transcript/TranscriptPanel";
 import { ExportBar } from "./features/export/ExportBar";
@@ -11,25 +15,19 @@ import "./styles.css";
 
 type View = "meetings" | "settings" | "setup";
 
-type ListState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; meetings: Meeting[] };
+/** How long typing must pause before the sidebar searches. */
+const SEARCH_DELAY_MS = 200;
 
 export default function App() {
-  const [list, setList] = useState<ListState>({ kind: "loading" });
+  const [search, setSearch] = useState("");
+  const query = useDebounced(search.trim(), SEARCH_DELAY_MS);
+  const { list, reload, loadMore, update: updateMeetings } = useMeetingList(query);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [recordingMeetingId, setRecordingMeetingId] = useState<number | null>(null);
   const [selection, setSelection] = useState<Selection>({ ids: [], anchor: null });
   const [view, setView] = useState<View>("meetings");
-
-  const load = useCallback(() => {
-    api
-      .listMeetings()
-      .then((meetings) => setList({ kind: "ready", meetings }))
-      .catch((error) => setList({ kind: "error", message: errorMessage(error) }));
-  }, []);
-
-  useEffect(load, [load]);
 
   useEffect(() => {
     api
@@ -50,7 +48,9 @@ export default function App() {
     setCreateError(null);
     try {
       const meeting = await api.createMeeting();
-      setList((current) => (current.kind === "ready" ? { kind: "ready", meetings: [meeting, ...current.meetings] } : current));
+      updateMeetings((all) => [meeting, ...all]);
+      // A new meeting matches no search, so show the full list it belongs to.
+      setSearch("");
       setSelectedId(meeting.id);
       setSelection({ ids: [meeting.id], anchor: meeting.id });
       setView("meetings");
@@ -59,10 +59,6 @@ export default function App() {
     } finally {
       setCreating(false);
     }
-  }
-
-  function updateMeetings(update: (meetings: Meeting[]) => Meeting[]) {
-    setList((current) => (current.kind === "ready" ? { kind: "ready", meetings: update(current.meetings) } : current));
   }
 
   const meetings = list.kind === "ready" ? list.meetings : [];
@@ -85,8 +81,27 @@ export default function App() {
         }}
         onCreate={() => void createMeeting()}
         creating={creating}
+        search={
+          <SearchField
+            value={search}
+            onChange={(value) => {
+              setSearch(value);
+              // Keep only the open meeting selected, since the list is about to change.
+              setSelection({ ids: selectedId === null ? [] : [selectedId], anchor: selectedId });
+            }}
+          />
+        }
+        emptyHint={query === "" ? undefined : `No meetings match “${query}”.`}
         footer={
           <>
+            {list.kind === "ready" && (
+              <LoadMore
+                hasMore={list.next !== null}
+                loading={list.loadingMore}
+                error={list.moreError}
+                onLoadMore={loadMore}
+              />
+            )}
             <ExportBar
               selectedIds={selection.ids}
               meetingCount={meetings.length}
@@ -121,10 +136,7 @@ export default function App() {
             <button
               type="button"
               className="button"
-              onClick={() => {
-                setList({ kind: "loading" });
-                load();
-              }}
+              onClick={reload}
             >
               Try again
             </button>
@@ -134,7 +146,7 @@ export default function App() {
           list.kind === "ready" &&
           (selectedId === null ? (
             <div className="empty-state">
-              <h1>{meetings.length === 0 ? "Start your first meeting" : "Pick a meeting"}</h1>
+              <h1>{meetings.length === 0 && query === "" ? "Start your first meeting" : "Pick a meeting"}</h1>
               <p>Take notes while the app transcribes on this device. Nothing leaves your computer.</p>
             </div>
           ) : (

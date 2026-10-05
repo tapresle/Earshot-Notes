@@ -136,7 +136,9 @@ fn run(
 
     let dropped = dropped.load(Ordering::Relaxed);
     if dropped > 0 {
-        eprintln!("microphone capture dropped {dropped} buffers because transcription fell behind");
+        log::warn!(
+            "microphone capture dropped {dropped} buffers because transcription fell behind"
+        );
     }
 }
 
@@ -219,7 +221,7 @@ where
                 }
             },
             move |error: cpal::Error| {
-                eprintln!("microphone stream error: {error}");
+                log::warn!("microphone stream error: {error}");
                 // Overruns, automatic reroutes to a new default device, and a
                 // refused real-time priority leave the stream running.
                 use cpal::ErrorKind::{DeviceChanged, RealtimeDenied, Xrun};

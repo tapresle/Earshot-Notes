@@ -11,6 +11,21 @@ export interface Meeting {
   endedAt: number | null;
 }
 
+/** The position of the last meeting on a page. The next page starts after it. */
+export interface MeetingCursor {
+  createdAt: number;
+  id: number;
+}
+
+export interface MeetingPage {
+  meetings: Meeting[];
+  /** Where the next page starts, or null on the last page. */
+  next: MeetingCursor | null;
+}
+
+/** How many meetings the sidebar loads at a time. */
+export const MEETING_PAGE_SIZE = 50;
+
 export interface MeetingDetail extends Meeting {
   notesMarkdown: string;
   notesUpdatedAt: number;
@@ -157,6 +172,8 @@ export type PrivacyPane = "microphone" | "systemAudio";
 export interface CommandError {
   kind: "notFound" | "conflict" | "unavailable" | "invalid" | "internal";
   message: string;
+  /** What a `notFound` error couldn't find. */
+  missing?: "meeting" | "model";
 }
 
 export function isCommandError(error: unknown): error is CommandError {
@@ -168,20 +185,36 @@ export function errorMessage(error: unknown): string {
   if (!isCommandError(error)) return "Something went wrong.";
   switch (error.kind) {
     case "notFound":
-      return "That meeting no longer exists.";
+      switch (error.missing) {
+        case "meeting":
+          return "That meeting no longer exists.";
+        case "model":
+          return "That summary model is no longer installed.";
+        default:
+          return sentence(error.message);
+      }
     case "conflict":
     case "unavailable":
     case "invalid":
       // These messages are written for people and explain what to do.
-      return `${error.message.charAt(0).toUpperCase()}${error.message.slice(1)}.`;
+      return sentence(error.message);
     case "internal":
       return "The app couldn't read or write your meetings.";
   }
 }
 
+function sentence(message: string): string {
+  return `${message.charAt(0).toUpperCase()}${message.slice(1)}.`;
+}
+
 export const api = {
   createMeeting: (title = "") => invoke<Meeting>("create_meeting", { title }),
-  listMeetings: () => invoke<Meeting[]>("list_meetings"),
+  /**
+   * One page of meetings, newest first. With a search query, only meetings whose title, notes, or
+   * transcript contain every word. Pass the previous page's `next` to get the following page.
+   */
+  listMeetings: (query = "", after: MeetingCursor | null = null, limit = MEETING_PAGE_SIZE) =>
+    invoke<MeetingPage>("list_meetings", { query: query.trim() || null, after, limit }),
   getMeeting: (id: number) => invoke<MeetingDetail>("get_meeting", { id }),
   renameMeeting: (id: number, title: string) => invoke<string>("rename_meeting", { id, title }),
   updateNotes: (id: number, bodyMarkdown: string) => invoke<number>("update_notes", { id, bodyMarkdown }),

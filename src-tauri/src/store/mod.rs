@@ -1,9 +1,10 @@
-//! SQLite persistence for meetings and notes.
+//! SQLite persistence for meetings and notes, and search over them.
 
 mod export;
 mod meetings;
 mod migrations;
 mod models;
+mod search;
 pub mod settings;
 mod summaries;
 mod transcript;
@@ -15,7 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::Connection;
 
 pub use export::ExportMeeting;
-pub use meetings::{Meeting, MeetingDetail};
+pub use meetings::{MAX_PAGE_SIZE, Meeting, MeetingCursor, MeetingDetail, MeetingPage};
 pub use models::{ModelRecord, ModelSource};
 pub use summaries::{NewSummary, Summary};
 pub use transcript::{NewSegment, Source, TranscriptSegment};
