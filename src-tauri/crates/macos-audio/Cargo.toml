@@ -3,6 +3,7 @@ name = "macos-audio"
 version = "0.1.0"
 description = "macOS system audio capture through Core Audio process taps, and microphone permission"
 edition = "2024"
+license = "GPL-3.0-only"
 build = "build.rs"
 
 [dependencies]

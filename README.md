@@ -68,6 +68,8 @@ If recording goes silent after you install a new build, open **System Settings**
 
 Summaries need a local model. In **Settings**, or on a meeting's **Summary** tab, download the recommended model (Gemma 4 E2B, 3.1 GB) or one of the alternatives (Qwen3 4B Instruct, Phi-4 mini, Gemma 4 E4B, Qwen3 8B, Ministral 3 8B, or Ministral 3 14B), or import any GGUF file you already have. Downloads resume if interrupted and are verified against a pinned SHA-256 checksum before use. To free disk space, click **Remove** next to an installed model in **Settings**.
 
-## Licenses
+## License
 
-The app bundles the needle engine and Whistle model (Apache 2.0) and links llama.cpp (MIT). Their license texts are in the app bundle under `Contents/Resources/licenses`.
+Earshot is free software, licensed under the [GNU General Public License, version 3](LICENSE) only (`GPL-3.0-only`). You can use, study, change, and share it. If you distribute a modified version, you must make its source available under the same license.
+
+The app bundles the needle engine and Whistle model (Apache 2.0) and links llama.cpp (MIT), both compatible with GPL 3.0. The `needle-sys` crate, which includes needle's C header, stays under Apache 2.0. All of these license texts, including Earshot's, are in the app bundle under `Contents/Resources/licenses`.

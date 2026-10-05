@@ -38,6 +38,7 @@
     ],
     "resources": {
       "resources/models/whistle.cact": "models/whistle.cact",
+      "../LICENSE": "licenses/Earshot-LICENSE.txt",
       "resources/licenses/needle-LICENSE.txt": "licenses/needle-LICENSE.txt",
       "resources/licenses/whistle-LICENSE.txt": "licenses/whistle-LICENSE.txt",
       "resources/licenses/llama.cpp-LICENSE.txt": "licenses/llama.cpp-LICENSE.txt"

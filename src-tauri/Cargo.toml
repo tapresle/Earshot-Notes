@@ -3,6 +3,7 @@ name = "earshot"
 version = "0.1.0"
 description = "Local-first meeting notes with on-device transcription and summaries"
 edition = "2024"
+license = "GPL-3.0-only"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
