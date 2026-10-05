@@ -57,7 +57,7 @@ Before you hand off work, run the lint, typecheck, test, and format commands. Al
 - **Rendering model output:** never render model output as HTML. Use `src/features/summary/Markdown.tsx`.
 - **Test data:** tests use synthetic audio and text fixtures only. Generate speech fixtures with macOS `say`, for example `say -o tests/fixtures/name.wav --data-format=LEI16@16000 "text"`.
 - **Native binaries:** `libneedle.a` and `.cact` model files aren't committed. `scripts/fetch-native.sh` pins their Hugging Face revisions and SHA-256 checksums. To change a version, update the pins and checksums there.
-- **needle engine:** the engine holds one process-global, non-thread-safe model, so only one `Whistle` can exist at a time and it must stay on a single owner thread.
+- **needle engine:** the engine holds one process-global, non-thread-safe model, so only one `Whistle` can exist at a time and it must stay on a single owner thread. `Whistle::transcribe` always passes English (`LANGUAGE` in `whistle.rs`): per-clip language detection read short or quiet call audio as other languages.
 - **Git and pull requests:** don't add AI attribution anywhere: no `Co-Authored-By` or session trailers in commits, no "Generated with" footers or session links in pull requests, and no AI names in branch names. Commit as the repository owner. Name branches by purpose, such as `feature/<issue>-<topic>`, `bugfix/<issue>-<topic>`, or `chore/<topic>`.
 
 ## Releases
