@@ -732,8 +732,8 @@ describe("App", () => {
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
       const qwen = await screen.findByRole("group", { name: "Qwen3 8B" });
-      expect(qwen).toHaveTextContent("unsloth/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf at revision a6adef1");
-      await user.click(within(qwen).getByRole("button", { name: "Hugging Face page for Qwen3 8B" }));
+      expect(qwen).toHaveTextContent("unsloth/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf - a6adef1");
+      await user.click(within(qwen).getByRole("button", { name: "unsloth/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf" }));
 
       expect(backend.state.openedModelPage).toBe("qwen3-8b-q4_k_m");
     });
@@ -744,7 +744,7 @@ describe("App", () => {
       const user = await openMeeting("Sync");
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
-      await user.click(await screen.findByRole("button", { name: "Hugging Face page for Gemma 4 E2B" }));
+      await user.click(await screen.findByRole("button", { name: "unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf" }));
 
       expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't open the model's Hugging Face page");
     });
@@ -967,9 +967,9 @@ describe("App", () => {
       const gemmaCard = (await screen.findByRole("radio", { name: /Gemma 4 E2B/ })).closest(".installed-model") as HTMLElement;
       const otherCard = screen.getByRole("radio", { name: /My fine-tune/ }).closest(".installed-model") as HTMLElement;
 
-      expect(gemmaCard).toHaveTextContent("unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf at revision 0314792");
-      expect(within(otherCard).queryByRole("button", { name: /Hugging Face page/ })).not.toBeInTheDocument();
-      await user.click(within(gemmaCard).getByRole("button", { name: "Hugging Face page for Gemma 4 E2B" }));
+      expect(gemmaCard).toHaveTextContent("unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf - 0314792");
+      expect(within(otherCard).queryByRole("button", { name: /GGUF/ })).not.toBeInTheDocument();
+      await user.click(within(gemmaCard).getByRole("button", { name: "unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf" }));
 
       expect(backend.state.openedModelPage).toBe("gemma-4-e2b-it-q4_k_m");
       expect(screen.getByRole("radio", { name: /Gemma 4 E2B/ })).toBeChecked();

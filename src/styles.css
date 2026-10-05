@@ -788,7 +788,10 @@ body {
 }
 
 .model-origin .link-button {
-  font-size: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95em;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .model-remove-confirm {
