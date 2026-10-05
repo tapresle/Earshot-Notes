@@ -18,6 +18,7 @@ pub struct ResampleError {
 /// they become available. The resampler's startup delay is trimmed, so output
 /// sample N lines up with input time N / 16 kHz.
 pub struct To16k {
+    input_rate: u32,
     inner: Option<Inner>,
 }
 
@@ -26,12 +27,43 @@ struct Inner {
     pending: Vec<f32>,
     out: Vec<f32>,
     delay_left: usize,
+    received: u64,
+    emitted: u64,
+}
+
+impl Inner {
+    /// Resamples every whole chunk in `pending` and appends the output to `result`.
+    fn drain(&mut self, result: &mut Vec<f32>) {
+        let mut consumed = 0;
+        while self.pending.len() - consumed >= self.fft.input_frames_next() {
+            let needed = self.fft.input_frames_next();
+            let input = &self.pending[consumed..consumed + needed];
+            let input = InterleavedSlice::new(input, 1, needed).expect("sized to frames");
+            let out_len = self.out.len();
+            let mut output =
+                InterleavedSlice::new_mut(&mut self.out, 1, out_len).expect("sized to frames");
+            let (used, written) = self
+                .fft
+                .process_into_buffer(&input, &mut output, None)
+                .expect("buffers are sized from the resampler's own limits");
+            consumed += used;
+
+            let skip = self.delay_left.min(written);
+            self.delay_left -= skip;
+            result.extend_from_slice(&self.out[skip..written]);
+            self.emitted += (written - skip) as u64;
+        }
+        self.pending.drain(..consumed);
+    }
 }
 
 impl To16k {
     pub fn new(input_rate: u32) -> Result<Self, ResampleError> {
         if input_rate == SAMPLE_RATE {
-            return Ok(Self { inner: None });
+            return Ok(Self {
+                input_rate,
+                inner: None,
+            });
         }
         let fft = Fft::<f32>::new(
             input_rate as usize,
@@ -47,41 +79,53 @@ impl To16k {
         let out = vec![0.0; fft.output_frames_max()];
         let delay_left = fft.output_delay();
         Ok(Self {
+            input_rate,
             inner: Some(Inner {
                 fft,
                 pending: Vec::with_capacity(CHUNK_FRAMES * 2),
                 out,
                 delay_left,
+                received: 0,
+                emitted: 0,
             }),
         })
+    }
+
+    pub fn input_rate(&self) -> u32 {
+        self.input_rate
     }
 
     pub fn process(&mut self, samples: &[f32]) -> Vec<f32> {
         let Some(inner) = self.inner.as_mut() else {
             return samples.to_vec();
         };
+        inner.received += samples.len() as u64;
         inner.pending.extend_from_slice(samples);
 
         let mut result = Vec::new();
-        let mut consumed = 0;
-        while inner.pending.len() - consumed >= inner.fft.input_frames_next() {
-            let needed = inner.fft.input_frames_next();
-            let input = &inner.pending[consumed..consumed + needed];
-            let input = InterleavedSlice::new(input, 1, needed).expect("sized to frames");
-            let out_len = inner.out.len();
-            let mut output =
-                InterleavedSlice::new_mut(&mut inner.out, 1, out_len).expect("sized to frames");
-            let (used, written) = inner
-                .fft
-                .process_into_buffer(&input, &mut output, None)
-                .expect("buffers are sized from the resampler's own limits");
-            consumed += used;
+        inner.drain(&mut result);
+        result
+    }
 
-            let skip = inner.delay_left.min(written);
-            inner.delay_left -= skip;
-            result.extend_from_slice(&inner.out[skip..written]);
+    /// Returns the output still held back, so that everything this resampler
+    /// returned lasts as long as everything it received, to the nearest 16 kHz
+    /// sample. Call it before replacing the resampler, so later audio keeps
+    /// its timing.
+    pub fn finish(self) -> Vec<f32> {
+        let Some(mut inner) = self.inner else {
+            return Vec::new();
+        };
+        let rate = u64::from(self.input_rate);
+        let total = (inner.received * u64::from(SAMPLE_RATE) + rate / 2) / rate;
+        let mut result = Vec::new();
+        // Silence pushes the held-back input, and the resampler's delay, through.
+        while inner.emitted < total {
+            let needed = inner.fft.input_frames_next();
+            inner.pending.resize(needed, 0.0);
+            inner.drain(&mut result);
         }
-        inner.pending.drain(..consumed);
+        let excess = (inner.emitted - total) as usize;
+        result.truncate(result.len().saturating_sub(excess));
         result
     }
 }
@@ -130,6 +174,31 @@ mod tests {
         // 440 Hz has 880 zero crossings per second; check the middle second.
         let crossings = zero_crossings(&output[8_000..24_000]);
         assert!((878..=882).contains(&crossings), "{crossings}");
+    }
+
+    #[test]
+    fn finishing_makes_the_output_as_long_as_the_input() {
+        for (rate, frames) in [(48_000, 48_123), (44_100, 22_051), (24_000, 777)] {
+            let mut resampler = To16k::new(rate).unwrap();
+            let input = sine(rate, 440.0, frames as f32 / rate as f32);
+
+            let mut output: Vec<f32> = input
+                .chunks(rate as usize / 100)
+                .flat_map(|chunk| resampler.process(chunk))
+                .collect();
+            output.extend(resampler.finish());
+
+            let expected = (input.len() as f64 * 16_000.0 / rate as f64).round() as usize;
+            assert_eq!(output.len(), expected, "{rate} Hz");
+        }
+    }
+
+    #[test]
+    fn finishing_a_passthrough_returns_nothing() {
+        let mut resampler = To16k::new(16_000).unwrap();
+        resampler.process(&[0.5; 100]);
+
+        assert!(resampler.finish().is_empty());
     }
 
     #[test]

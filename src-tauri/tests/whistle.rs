@@ -198,22 +198,38 @@ mod worker {
 
 mod pipeline {
     use super::*;
-    use earshot_lib::audio::CaptureFormat;
     use earshot_lib::audio::resample::To16k;
+    use earshot_lib::audio::{Buffer, CaptureFormat};
     use earshot_lib::recording::run_pipeline;
     use earshot_lib::store::Source;
     use std::sync::mpsc::sync_channel;
 
-    /// Linear interpolation to 48 kHz stereo, standing in for a typical device.
-    fn as_48k_stereo(samples_16k: &[f32]) -> Vec<f32> {
-        let mut out = Vec::with_capacity(samples_16k.len() * 6);
-        for pair in samples_16k.windows(2) {
-            for step in 0..3 {
-                let s = pair[0] + (pair[1] - pair[0]) * step as f32 / 3.0;
-                out.extend([s, s]);
-            }
+    /// Linear interpolation to stereo at a device rate above 16 kHz.
+    fn as_stereo_at(rate: u32, samples_16k: &[f32]) -> Vec<f32> {
+        let frames = (samples_16k.len() - 1) * rate as usize / SAMPLE_RATE as usize;
+        let mut out = Vec::with_capacity(frames * 2);
+        for i in 0..frames {
+            let t = i as f64 * SAMPLE_RATE as f64 / rate as f64;
+            let (index, fraction) = (t as usize, t.fract() as f32);
+            let s = samples_16k[index] + (samples_16k[index + 1] - samples_16k[index]) * fraction;
+            out.extend([s, s]);
         }
         out
+    }
+
+    fn as_48k_stereo(samples_16k: &[f32]) -> Vec<f32> {
+        as_stereo_at(48_000, samples_16k)
+    }
+
+    /// Splits stereo audio into 10 ms device buffers at `rate`.
+    fn buffers_at(rate: u32, stereo: &[f32]) -> Vec<Buffer> {
+        stereo
+            .chunks(rate as usize / 100 * 2)
+            .map(|chunk| Buffer {
+                samples: chunk.to_vec(),
+                sample_rate: rate,
+            })
+            .collect()
     }
 
     #[test]
@@ -224,8 +240,8 @@ mod pipeline {
         audio.extend(vec![0.0; SAMPLE_RATE as usize]);
         let device_audio = as_48k_stereo(&audio);
         let (tx, rx) = sync_channel(4096);
-        for buffer in device_audio.chunks(960) {
-            tx.send(buffer.to_vec()).unwrap();
+        for buffer in buffers_at(48_000, &device_audio) {
+            tx.send(buffer).unwrap();
         }
         drop(tx);
         let mut jobs = Vec::new();
@@ -258,6 +274,55 @@ mod pipeline {
             jobs[0].start_ms
         );
     }
+
+    #[test]
+    fn transcribes_speech_after_the_device_switches_to_a_lower_rate() {
+        // A Bluetooth headset drops from 48 kHz to 24 kHz when its microphone opens.
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let mut audio = vec![0.0; SAMPLE_RATE as usize];
+        audio.extend(speech_fixture());
+        audio.extend(vec![0.0; SAMPLE_RATE as usize]);
+        let (tx, rx) = sync_channel(8192);
+        for rate in [48_000, 24_000] {
+            for buffer in buffers_at(rate, &as_stereo_at(rate, &audio)) {
+                tx.send(buffer).unwrap();
+            }
+        }
+        drop(tx);
+        let mut jobs = Vec::new();
+
+        run_pipeline(
+            rx,
+            CaptureFormat {
+                sample_rate: 48_000,
+                channels: 2,
+            },
+            To16k::new(48_000).unwrap(),
+            Source::Them,
+            1,
+            0,
+            |job| jobs.push(job),
+        );
+
+        let mut whistle = Whistle::load(Path::new(MODEL)).unwrap();
+        let expected = "the quarterly planning meeting starts at 10 please bring the budget report";
+        let segments: Vec<(i64, String)> = jobs
+            .iter()
+            .map(|job| {
+                let text = whistle.transcribe(&job.samples).unwrap().text;
+                (job.start_ms, normalize(&text))
+            })
+            .collect();
+        assert_eq!(segments.len(), 2, "{segments:#?}");
+        for (_, text) in &segments {
+            assert_eq!(text, expected, "{segments:#?}");
+        }
+        // The second copy starts exactly one copy's length after the first.
+        let copy_ms = (audio.len() - 1) as i64 * 1000 / SAMPLE_RATE as i64;
+        let gap = segments[1].0 - segments[0].0;
+        assert!((gap - copy_ms).abs() <= 20, "{gap} vs {copy_ms}");
+    }
+
     #[test]
     fn keeps_transcribing_across_multiple_chunks_past_thirty_seconds() {
         let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
@@ -279,8 +344,8 @@ mod pipeline {
         assert!(total_ms >= 45_000, "{total_ms}");
 
         let (tx, rx) = sync_channel(16_384);
-        for buffer in as_48k_stereo(&audio).chunks(960) {
-            tx.send(buffer.to_vec()).unwrap();
+        for buffer in buffers_at(48_000, &as_48k_stereo(&audio)) {
+            tx.send(buffer).unwrap();
         }
         drop(tx);
         let mut jobs = Vec::new();

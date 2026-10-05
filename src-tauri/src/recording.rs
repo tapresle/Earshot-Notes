@@ -8,7 +8,7 @@ use std::thread::{self, JoinHandle};
 use serde::Serialize;
 
 use crate::audio::resample::{ResampleError, To16k};
-use crate::audio::{Capture, CaptureError, CaptureFormat, ErrorSink, downmix};
+use crate::audio::{Buffer, Capture, CaptureError, CaptureFormat, ErrorSink, downmix};
 use crate::chunker::{Chunker, MIC_MIN_SPEECH_RMS, SYSTEM_MIN_SPEECH_RMS};
 use crate::store::{Source, Store, StoreError};
 use crate::transcribe::worker::{Job, TranscriptionWorker};
@@ -59,7 +59,7 @@ pub type CaptureStart = Result<(Box<dyn Capture>, CaptureFormat), CaptureError>;
 
 /// Starts one capture stream, sending interleaved buffers to the sender and
 /// runtime problems to the sink.
-pub type CaptureStarter = Box<dyn FnOnce(SyncSender<Vec<f32>>, ErrorSink) -> CaptureStart + Send>;
+pub type CaptureStarter = Box<dyn FnOnce(SyncSender<Buffer>, ErrorSink) -> CaptureStart + Send>;
 
 /// Receives problems that happen while recording, such as a disconnected device.
 pub type IssueSink = Arc<dyn Fn(i64, SourceProblem) + Send + Sync>;
@@ -189,10 +189,13 @@ pub fn stop_recording(store: &Store, recorder: &Recorder) -> Result<Option<i64>,
 }
 
 /// Converts captured buffers into transcription jobs until the capture closes.
+/// `resampler` starts at the capture's initial rate. When a buffer arrives at
+/// another rate, the pipeline replaces it, first flushing the old one so later
+/// segments keep their timing.
 pub fn run_pipeline(
-    frames: Receiver<Vec<f32>>,
+    frames: Receiver<Buffer>,
     format: CaptureFormat,
-    mut resampler: To16k,
+    resampler: To16k,
     source: Source,
     meeting_id: i64,
     offset_ms: i64,
@@ -211,11 +214,35 @@ pub fn run_pipeline(
             samples: segment.samples,
         });
     };
-    for buffer in frames {
-        let mono = downmix(&buffer, format.channels as usize);
-        for segment in chunker.push(&resampler.process(&mono)) {
+    let mut push = |samples: &[f32]| {
+        for segment in chunker.push(samples) {
             emit(segment);
         }
+    };
+    let mut rate = resampler.input_rate();
+    // None while the capture runs at a rate that can't be resampled.
+    let mut resampler = Some(resampler);
+    for buffer in frames {
+        if buffer.sample_rate != rate {
+            log::info!(
+                "{source:?} audio changed from {rate} Hz to {} Hz",
+                buffer.sample_rate
+            );
+            if let Some(previous) = resampler.take() {
+                push(&previous.finish());
+            }
+            resampler = To16k::new(buffer.sample_rate)
+                .inspect_err(|e| {
+                    log::error!("{source:?} audio is skipped until its rate changes: {e}")
+                })
+                .ok();
+            rate = buffer.sample_rate;
+        }
+        let Some(resampler) = resampler.as_mut() else {
+            continue;
+        };
+        let mono = downmix(&buffer.samples, format.channels as usize);
+        push(&resampler.process(&mono));
     }
     if let Some(segment) = chunker.finish() {
         emit(segment);
@@ -232,34 +259,63 @@ mod tests {
     impl Capture for FakeCapture {}
 
     const RATE: u32 = 48_000;
+    const PITCH_HZ: f32 = 440.0;
 
-    fn tone(ms: u32) -> Vec<f32> {
-        let period = RATE as usize / 4;
-        let gap = RATE as usize * 40 / 1000;
-        (0..(RATE * ms / 1000) as usize)
+    /// A 440 Hz tone at `rate` with a 40 ms pause every 250 ms, like speech.
+    fn tone_at(rate: u32, ms: u32) -> Vec<f32> {
+        let period = rate as usize / 4;
+        let gap = rate as usize * 40 / 1000;
+        (0..(rate * ms / 1000) as usize)
             .map(|i| {
                 if i % period >= period - gap {
                     0.0
                 } else {
-                    0.3 * (i as f32 * 440.0 * std::f32::consts::TAU / RATE as f32).sin()
+                    0.3 * (i as f32 * PITCH_HZ * std::f32::consts::TAU / rate as f32).sin()
                 }
             })
             .collect()
     }
 
-    fn silence(ms: u32) -> Vec<f32> {
-        vec![0.0; (RATE * ms / 1000) as usize]
+    fn tone(ms: u32) -> Vec<f32> {
+        tone_at(RATE, ms)
     }
 
-    /// Interleaves mono audio into stereo 10 ms buffers, like a device would deliver.
-    fn stereo_buffers(mono: &[f32]) -> Vec<Vec<f32>> {
-        mono.chunks(RATE as usize / 100)
-            .map(|chunk| chunk.iter().flat_map(|&s| [s, s]).collect())
+    fn silence_at(rate: u32, ms: u32) -> Vec<f32> {
+        vec![0.0; (rate * ms / 1000) as usize]
+    }
+
+    fn silence(ms: u32) -> Vec<f32> {
+        silence_at(RATE, ms)
+    }
+
+    /// Interleaves mono audio at `rate` into stereo 10 ms buffers, like a device would deliver.
+    fn stereo_buffers_at(rate: u32, mono: &[f32]) -> Vec<Buffer> {
+        mono.chunks(rate as usize / 100)
+            .map(|chunk| Buffer {
+                samples: chunk.iter().flat_map(|&s| [s, s]).collect(),
+                sample_rate: rate,
+            })
             .collect()
     }
 
+    fn stereo_buffers(mono: &[f32]) -> Vec<Buffer> {
+        stereo_buffers_at(RATE, mono)
+    }
+
+    /// The pitch of a job's audio over the 100 ms starting `from_ms` into the
+    /// recording, from its zero crossings.
+    fn pitch_hz(job: &Job, offset_ms: i64, from_ms: i64) -> f32 {
+        let start = ((offset_ms + from_ms - job.start_ms) * 16) as usize;
+        let window = &job.samples[start..start + 1600];
+        let crossings = window
+            .windows(2)
+            .filter(|w| (w[0] < 0.0) != (w[1] < 0.0))
+            .count();
+        crossings as f32 * 10.0 / 2.0
+    }
+
     /// A capture that delivers the given buffers from a background thread, then closes.
-    fn fake_capture(buffers: Vec<Vec<f32>>) -> CaptureStarter {
+    fn fake_capture(buffers: Vec<Buffer>) -> CaptureStarter {
         Box::new(move |tx, _on_error| {
             thread::spawn(move || {
                 for buffer in buffers {
@@ -290,10 +346,10 @@ mod tests {
         Arc::new(|_, _| {})
     }
 
-    /// Runs mono audio through the pipeline as 48 kHz stereo and collects its jobs.
-    fn pipeline_jobs(source: Source, audio: &[f32]) -> Vec<Job> {
-        let (tx, rx) = sync_channel(1024);
-        for buffer in stereo_buffers(audio) {
+    /// Runs stereo buffers through a pipeline that starts at `rate` and collects its jobs.
+    fn run_buffers(source: Source, rate: u32, buffers: Vec<Buffer>) -> Vec<Job> {
+        let (tx, rx) = sync_channel(buffers.len().max(1));
+        for buffer in buffers {
             tx.send(buffer).unwrap();
         }
         drop(tx);
@@ -302,16 +358,21 @@ mod tests {
         run_pipeline(
             rx,
             CaptureFormat {
-                sample_rate: RATE,
+                sample_rate: rate,
                 channels: 2,
             },
-            To16k::new(RATE).unwrap(),
+            To16k::new(rate).unwrap(),
             source,
             7,
             60_000,
             |job| jobs.push(job),
         );
         jobs
+    }
+
+    /// Runs mono audio through the pipeline as 48 kHz stereo and collects its jobs.
+    fn pipeline_jobs(source: Source, audio: &[f32]) -> Vec<Job> {
+        run_buffers(source, RATE, stereo_buffers(audio))
     }
 
     #[test]
@@ -330,6 +391,71 @@ mod tests {
             job.start_ms
         );
         assert_eq!(job.samples.len() as i64, (job.end_ms - job.start_ms) * 16);
+    }
+
+    #[test]
+    fn resamples_audio_at_the_rate_it_was_captured_at() {
+        let rate = 24_000;
+        let audio = [
+            silence_at(rate, 1000),
+            tone_at(rate, 1500),
+            silence_at(rate, 1000),
+        ]
+        .concat();
+
+        let jobs = run_buffers(Source::Them, rate, stereo_buffers_at(rate, &audio));
+
+        assert_eq!(jobs.len(), 1);
+        let job = &jobs[0];
+        assert!(
+            (60_780..=60_800).contains(&job.start_ms),
+            "{}",
+            job.start_ms
+        );
+        // Inside the tone's first 210 ms burst, which starts at 1000 ms.
+        let pitch = pitch_hz(job, 60_000, 1050);
+        assert!((pitch - PITCH_HZ).abs() <= 10.0, "{pitch}");
+    }
+
+    #[test]
+    fn keeps_timing_and_pitch_when_the_capture_rate_changes() {
+        // A Bluetooth headset drops from 48 kHz to 24 kHz partway through.
+        let low = 24_000;
+        let before = stereo_buffers(&[silence(1000), tone(1500), silence(1000)].concat());
+        let after = stereo_buffers_at(
+            low,
+            &[
+                silence_at(low, 1000),
+                tone_at(low, 1500),
+                silence_at(low, 1000),
+            ]
+            .concat(),
+        );
+
+        let jobs = run_buffers(Source::Them, RATE, [before, after].concat());
+
+        assert_eq!(
+            jobs.len(),
+            2,
+            "{:?}",
+            jobs.iter().map(|j| j.start_ms).collect::<Vec<_>>()
+        );
+        // Speech starts at 1000 ms and 4500 ms; each job has 200 ms of pre-roll.
+        assert!(
+            (60_780..=60_800).contains(&jobs[0].start_ms),
+            "{}",
+            jobs[0].start_ms
+        );
+        // Audio lost or added at the switch would move the second job by a frame.
+        assert_eq!(jobs[1].start_ms - jobs[0].start_ms, 3500);
+        for (job, speech_ms) in jobs.iter().zip([1000, 4500]) {
+            assert_eq!(job.samples.len() as i64, (job.end_ms - job.start_ms) * 16);
+            let pitch = pitch_hz(job, 60_000, speech_ms + 50);
+            assert!(
+                (pitch - PITCH_HZ).abs() <= 10.0,
+                "{pitch} at {speech_ms} ms"
+            );
+        }
     }
 
     #[test]

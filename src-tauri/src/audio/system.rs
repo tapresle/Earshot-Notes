@@ -7,7 +7,7 @@ use std::sync::mpsc::{SyncSender, TrySendError};
 
 use macos_audio::{Permission, SystemAudioTap};
 
-use super::{Capture, CaptureError, CaptureFormat, ErrorSink};
+use super::{Buffer, Capture, CaptureError, CaptureFormat, ErrorSink};
 
 pub struct SystemCapture {
     tap: Option<SystemAudioTap>,
@@ -33,7 +33,7 @@ impl Drop for SystemCapture {
 /// blocks until the prompt is answered). When macOS won't report the
 /// permission, capture starts anyway; a denied permission then records silence.
 pub fn start(
-    frames: SyncSender<Vec<f32>>,
+    frames: SyncSender<Buffer>,
     _on_error: ErrorSink,
 ) -> Result<(SystemCapture, CaptureFormat), CaptureError> {
     check_access(
@@ -42,12 +42,23 @@ pub fn start(
     )?;
     let dropped = Arc::new(AtomicU64::new(0));
     let counter = dropped.clone();
-    let (tap, format) = SystemAudioTap::start(move |samples| {
-        if let Err(TrySendError::Full(_)) = frames.try_send(samples.to_vec()) {
+    let (tap, format) = SystemAudioTap::start(move |samples, sample_rate| {
+        let buffer = Buffer {
+            samples: samples.to_vec(),
+            sample_rate,
+        };
+        if let Err(TrySendError::Full(_)) = frames.try_send(buffer) {
             counter.fetch_add(1, Ordering::Relaxed);
         }
     })
     .map_err(CaptureError::SystemAudio)?;
+    log::info!(
+        "system audio capture started on \"{}\" at {} Hz, {} channels (tap format {} Hz)",
+        format.device_name,
+        format.sample_rate,
+        format.channels,
+        format.tap_sample_rate
+    );
     Ok((
         SystemCapture {
             tap: Some(tap),
