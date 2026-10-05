@@ -22,7 +22,7 @@ impl Drop for SystemCapture {
         drop(self.tap.take());
         let dropped = self.dropped.load(Ordering::Relaxed);
         if dropped > 0 {
-            eprintln!(
+            log::warn!(
                 "system audio capture dropped {dropped} buffers because transcription fell behind"
             );
         }

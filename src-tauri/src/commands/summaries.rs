@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Manager, State};
 
-use super::{CommandError, CommandResult, ErrorKind};
+use super::{CommandError, CommandResult, ErrorKind, blocking};
 use crate::models::{self, ImportError, KNOWN_MODELS};
 use crate::recording::Recorder;
 use crate::store::{ModelRecord, Store, Summary};
@@ -47,37 +47,40 @@ impl From<ImportError> for CommandError {
 /// Summarizes the meeting as it stands. While it's recording, the summary
 /// covers the transcript so far and is marked partial.
 #[tauri::command]
-pub fn summarize_meeting(
+pub async fn summarize_meeting(
     store: State<'_, Arc<Store>>,
     recorder: State<'_, Arc<Recorder>>,
-    summarizer: State<'_, Summarizer>,
+    summarizer: State<'_, Arc<Summarizer>>,
     meeting_id: i64,
 ) -> CommandResult<()> {
     let is_final = recorder.active_meeting() != Some(meeting_id);
-    Ok(summarizer.start(&store, meeting_id, is_final)?)
+    let (store, summarizer) = (Arc::clone(&store), Arc::clone(&summarizer));
+    blocking(move || Ok(summarizer.start(&store, meeting_id, is_final)?)).await
 }
 
 #[tauri::command]
-pub fn cancel_summary(summarizer: State<'_, Summarizer>) -> bool {
+pub fn cancel_summary(summarizer: State<'_, Arc<Summarizer>>) -> bool {
     summarizer.cancel()
 }
 
 #[tauri::command]
-pub fn active_summary(summarizer: State<'_, Summarizer>) -> Option<i64> {
+pub fn active_summary(summarizer: State<'_, Arc<Summarizer>>) -> Option<i64> {
     summarizer.active_meeting()
 }
 
 #[tauri::command]
-pub fn latest_summary(
+pub async fn latest_summary(
     store: State<'_, Arc<Store>>,
     meeting_id: i64,
 ) -> CommandResult<Option<Summary>> {
-    Ok(store.latest_summary(meeting_id)?)
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.latest_summary(meeting_id)?)).await
 }
 
 #[tauri::command]
-pub fn summary_model(store: State<'_, Arc<Store>>) -> CommandResult<Option<ModelRecord>> {
-    Ok(store.summary_model()?)
+pub async fn summary_model(store: State<'_, Arc<Store>>) -> CommandResult<Option<ModelRecord>> {
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.summary_model()?)).await
 }
 
 /// Copies a GGUF file the user picked into the models folder. It becomes the
@@ -91,18 +94,13 @@ pub async fn import_model(
 ) -> CommandResult<ModelRecord> {
     let store = Arc::clone(&store);
     let models_dir = models_dir(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        models::import(
+    blocking(move || {
+        Ok(models::import(
             PathBuf::from(path).as_path(),
             &models_dir,
             &store,
             KNOWN_MODELS,
-        )
+        )?)
     })
     .await
-    .map_err(|error| CommandError {
-        kind: ErrorKind::Internal,
-        message: format!("the import task failed: {error}"),
-    })?
-    .map_err(Into::into)
 }

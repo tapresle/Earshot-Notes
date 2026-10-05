@@ -15,6 +15,10 @@ interface MeetingListProps {
   onCreate: () => void;
   creating: boolean;
   footer?: ReactNode;
+  /** Shown under the New meeting button, such as a search field. */
+  search?: ReactNode;
+  /** Shown when there are no meetings to list. */
+  emptyHint?: string;
 }
 
 const timeFormat: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
@@ -28,6 +32,8 @@ export function MeetingList({
   onCreate,
   creating,
   footer,
+  search,
+  emptyHint = "Your meetings appear here.",
 }: MeetingListProps) {
   const multiSelect = selectedIds.length > 1;
   const today = useToday();
@@ -38,9 +44,10 @@ export function MeetingList({
       <button type="button" className="button primary full-width" onClick={onCreate} disabled={creating}>
         {creating ? "Creating…" : "New meeting"}
       </button>
+      {search}
 
       {groups.length === 0 ? (
-        <p className="empty-hint sidebar-hint">Your meetings appear here.</p>
+        <p className="empty-hint sidebar-hint">{emptyHint}</p>
       ) : (
         groups.map((group) => (
           <section key={group.label} className="day-group" aria-label={group.label}>

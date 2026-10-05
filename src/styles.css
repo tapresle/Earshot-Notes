@@ -183,6 +183,35 @@ body {
   margin-top: 20px;
 }
 
+.search-input {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.load-more {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .meeting-list {
   list-style: none;
   margin: 0;

@@ -5,7 +5,7 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter, State};
 
 use super::summaries::models_dir;
-use super::{CommandError, CommandResult, ErrorKind, open_with_system};
+use super::{CommandError, CommandResult, ErrorKind, blocking, open_with_system};
 use crate::models::download::{HttpFetch, Phase, partial_path};
 use crate::models::manager::{DownloadEvent, Downloads, StartError};
 use crate::models::{self, GEMMA_4_E2B, KNOWN_MODELS, KnownModel};
@@ -62,35 +62,39 @@ impl From<StartError> for CommandError {
 }
 
 #[tauri::command]
-pub fn available_models(
+pub async fn available_models(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     downloads: State<'_, Downloads>,
 ) -> CommandResult<Vec<AvailableModel>> {
     let dir = models_dir(&app)?;
     let status = downloads.status();
-    KNOWN_MODELS
-        .iter()
-        .map(|model| {
-            Ok(AvailableModel {
-                id: model.id,
-                display_name: model.display_name,
-                description: model.description,
-                file_name: model.file_name,
-                size_bytes: model.size_bytes,
-                hugging_face: model.into(),
-                recommended: model.id == GEMMA_4_E2B.id,
-                installed: store.model_by_sha256(model.sha256)?.is_some(),
-                partial_bytes: std::fs::metadata(partial_path(&dir.join(model.file_name)))
-                    .map(|m| m.len())
-                    .unwrap_or(0),
-                download: status
-                    .as_ref()
-                    .filter(|(id, _)| id == model.id)
-                    .map(|(_, phase)| *phase),
+    let store = Arc::clone(&store);
+    blocking(move || {
+        KNOWN_MODELS
+            .iter()
+            .map(|model| {
+                Ok(AvailableModel {
+                    id: model.id,
+                    display_name: model.display_name,
+                    description: model.description,
+                    file_name: model.file_name,
+                    size_bytes: model.size_bytes,
+                    hugging_face: model.into(),
+                    recommended: model.id == GEMMA_4_E2B.id,
+                    installed: store.model_by_sha256(model.sha256)?.is_some(),
+                    partial_bytes: std::fs::metadata(partial_path(&dir.join(model.file_name)))
+                        .map(|m| m.len())
+                        .unwrap_or(0),
+                    download: status
+                        .as_ref()
+                        .filter(|(id, _)| id == model.id)
+                        .map(|(_, phase)| *phase),
+                })
             })
-        })
-        .collect()
+            .collect()
+    })
+    .await
 }
 
 /// Opens a known model's Hugging Face page in the browser. The UI names the
@@ -140,7 +144,7 @@ pub fn download_model(
             ),
         };
         if let Err(error) = handle.emit(name, payload) {
-            eprintln!("couldn't send {name} to the UI: {error}");
+            log::warn!("couldn't send {name} to the UI: {error}");
         }
     });
     downloads.start(

@@ -1,4 +1,8 @@
 //! Tauri command handlers. Keep them thin: validate, call into a module, map errors.
+//!
+//! Synchronous commands run on the main thread, so a command that touches the
+//! database, the disk, or another thread is `async` and does that work through
+//! [`blocking`].
 
 pub mod export;
 pub mod meetings;
@@ -82,6 +86,19 @@ impl From<RecordingError> for CommandError {
 
 pub type CommandResult<T> = Result<T, CommandError>;
 
+/// Runs blocking work, such as a SQLite query, on the async runtime's blocking
+/// thread pool, so it never holds up the main thread or an async worker.
+pub(crate) async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> CommandResult<T> + Send + 'static,
+) -> CommandResult<T> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| CommandError {
+            kind: ErrorKind::Internal,
+            message: format!("a background task failed: {error}"),
+        })?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,6 +121,35 @@ mod tests {
         assert_eq!(conflict.kind, ErrorKind::Conflict);
         assert_eq!(unavailable.kind, ErrorKind::Unavailable);
         assert_eq!(missing.kind, ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn runs_blocking_work_off_the_calling_thread() {
+        let caller = std::thread::current().id();
+
+        let (worker, value) =
+            tauri::async_runtime::block_on(blocking(|| Ok((std::thread::current().id(), 7))))
+                .unwrap();
+
+        assert_ne!(worker, caller);
+        assert_eq!(value, 7);
+    }
+
+    #[test]
+    fn passes_errors_from_blocking_work_through() {
+        let error = tauri::async_runtime::block_on(blocking::<()>(|| {
+            Err(StoreError::MeetingNotFound(3).into())
+        }))
+        .unwrap_err();
+
+        assert_eq!(error.kind, ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn reports_a_panic_in_blocking_work_as_internal() {
+        let error = tauri::async_runtime::block_on(blocking::<()>(|| panic!("boom"))).unwrap_err();
+
+        assert_eq!(error.kind, ErrorKind::Internal);
     }
 
     #[test]
