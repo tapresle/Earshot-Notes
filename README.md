@@ -1,6 +1,8 @@
-# Earshot
+# Earshot Notes
 
-A meeting notes app that runs entirely on your Mac. It transcribes your microphone and the other side of your calls with [Cactus Whistle](https://huggingface.co/Cactus-Compute/whistle), gives you a notepad during the meeting, and on request turns your notes and the transcript into meeting notes with a local language model through [llama.cpp](https://github.com/ggml-org/llama.cpp). Nothing leaves your computer. The only network request is the optional, one-time model download you start yourself.
+Earshot Notes is a meeting notes app that runs entirely on your Mac. It transcribes your microphone and the other side of your calls with [Cactus Whistle](https://huggingface.co/Cactus-Compute/whistle), gives you a notepad during the meeting, and on request turns your notes and the transcript into meeting notes with a local language model through [llama.cpp](https://github.com/ggml-org/llama.cpp). Nothing leaves your computer. The only network request is the optional, one-time model download you start yourself.
+
+Learn more at [earshotnotes.com](https://earshotnotes.com).
 
 ## Requirements
 
@@ -27,7 +29,7 @@ A meeting notes app that runs entirely on your Mac. It transcribes your micropho
    ./scripts/build-macos.sh
    ```
 
-4. Open `src-tauri/target/release/bundle/dmg/Earshot_0.1.0_aarch64.dmg` and drag the app to **Applications**.
+4. Open `src-tauri/target/release/bundle/dmg/Earshot Notes_<version>_aarch64.dmg` and drag the app to **Applications**. If an older version named `Earshot.app` is installed, delete it: both use the same meetings and models, so don't run them at the same time.
 
 For development, run `npm run tauri dev` instead. `AGENTS.md` lists every build and test command.
 
@@ -50,7 +52,7 @@ With an ad-hoc signature the app also runs, but macOS treats each build as a new
 The app isn't notarized, so Gatekeeper blocks it on other Macs. Open it once, then choose **System Settings** > **Privacy & Security** > **Open Anyway**, or remove the quarantine flag:
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/Earshot.app"
+xattr -dr com.apple.quarantine "/Applications/Earshot Notes.app"
 ```
 
 Notarization needs a paid Apple Developer account and a **Developer ID Application** certificate. With those, set `APPLE_ID`, `APPLE_PASSWORD` (an app-specific password), and `APPLE_TEAM_ID` before running `scripts/build-macos.sh`, and Tauri notarizes the build.
@@ -62,7 +64,7 @@ On first launch, a checklist walks you through these:
 - **Microphone:** needed for your side of the conversation.
 - **Screen & System Audio Recording:** needed for the other side of your calls. The checklist asks for it up front. If you decline, recording continues with only your microphone and says how to turn it on.
 
-If recording goes silent after you install a new build, open **System Settings** > **Privacy & Security**, and turn **Earshot** off and on again under **Microphone** and **Screen & System Audio Recording**.
+If recording goes silent after you install a new build, open **System Settings** > **Privacy & Security**, and turn **Earshot Notes** off and on again under **Microphone** and **Screen & System Audio Recording**.
 
 ## Summaries
 
@@ -70,6 +72,6 @@ Summaries need a local model. In **Settings**, or on a meeting's **Summary** tab
 
 ## License
 
-Earshot is free software, licensed under the [GNU General Public License, version 3](LICENSE) only (`GPL-3.0-only`). You can use, study, change, and share it. If you distribute a modified version, you must make its source available under the same license.
+Earshot Notes is free software, licensed under the [GNU General Public License, version 3](LICENSE) only (`GPL-3.0-only`). You can use, study, change, and share it. If you distribute a modified version, you must make its source available under the same license.
 
 The app bundles the needle engine and Whistle model (Apache 2.0) and links llama.cpp (MIT), both compatible with GPL 3.0. The `needle-sys` crate, which includes needle's C header, stays under Apache 2.0. All of these license texts, including Earshot's, are in the app bundle under `Contents/Resources/licenses`, along with `third-party-notices.txt`, which holds the license notices for every Rust crate and JavaScript package compiled into the app.

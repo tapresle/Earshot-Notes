@@ -1,8 +1,8 @@
-Earshot third-party notices
-===========================
+Earshot Notes third-party notices
+=================================
 
-Earshot includes the third-party software listed below. Each entry gives the
-license it's distributed under and that license's text with its copyright
+Earshot Notes includes the third-party software listed below. Each entry gives
+the license it's distributed under and that license's text with its copyright
 notices. The licenses for needle, Whistle and llama.cpp are in their own files
 next to this one.
 

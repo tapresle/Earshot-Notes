@@ -32,7 +32,7 @@ const WHISTLE_FILE: &str = "models/whistle.cact";
 const MAX_LOG_BYTES: u128 = 1_000_000;
 
 /// Logs to stderr and to a file in the system log folder
-/// (`~/Library/Logs/<bundle id>/Earshot.log` on macOS). Nothing is sent anywhere else.
+/// (`~/Library/Logs/<bundle id>/Earshot Notes.log` on macOS, named after the product). Nothing is sent anywhere else.
 fn logger() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri_plugin_log::Builder::new()
         .clear_targets()

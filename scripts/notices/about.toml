@@ -4,8 +4,8 @@
 targets = ["aarch64-apple-darwin"]
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
-# Earshot's own workspace crates (`publish = false`) are covered by the bundled
-# Earshot and needle licenses.
+# Earshot Notes' own workspace crates (`publish = false`) are covered by the bundled
+# Earshot Notes and needle licenses.
 private = { ignore = true }
 # Licenses a dependency may use. A new dependency under any other license makes
 # the script fail, so the license gets a look before it ships.

@@ -97,7 +97,7 @@ void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_
         CATapDescription *description =
             [[CATapDescription alloc] initStereoGlobalTapButExcludeProcesses:own_process()];
         description.UUID = [NSUUID UUID];
-        description.name = @"Earshot system audio";
+        description.name = @"Earshot Notes system audio";
         description.privateTap = YES;
         description.muteBehavior = CATapUnmuted;
 
@@ -146,7 +146,7 @@ void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_
         }
 
         NSDictionary *aggregate = @{
-            @kAudioAggregateDeviceNameKey : @"Earshot capture",
+            @kAudioAggregateDeviceNameKey : @"Earshot Notes capture",
             @kAudioAggregateDeviceUIDKey : [NSUUID UUID].UUIDString,
             @kAudioAggregateDeviceMainSubDeviceKey : outputUID,
             @kAudioAggregateDeviceIsPrivateKey : @YES,

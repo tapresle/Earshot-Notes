@@ -1,4 +1,4 @@
-// Draws the Earshot app icon: white sound wave arcs on a violet gradient, in
+// Draws the Earshot Notes app icon: white sound wave arcs on a violet gradient, in
 // the macOS icon grid's rounded square (824 points with 100-point margins on
 // a 1024 x 1024 canvas). Regenerate every icon size with:
 //
