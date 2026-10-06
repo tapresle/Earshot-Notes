@@ -36,6 +36,17 @@ Run all commands from the repository root unless noted.
 
 Before you hand off work, run the lint, typecheck, test, and format commands. All of them must pass.
 
+## Continuous integration
+
+GitHub Actions runs these checks on every pull request to `main` and every push to `main`:
+
+| Workflow | Runner | Jobs |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | `ubuntu-latest` | Frontend lint, typecheck, and tests; `./scripts/generate-notices.sh --check` |
+| `.github/workflows/rust.yml` | `macos-26` (Apple Silicon) | `./scripts/fetch-native.sh`, then `cargo fmt --check`, clippy, and `cargo test --workspace` |
+
+The Rust workflow needs macOS 26 on Apple Silicon, because the prebuilt needle engine supports nothing else. macOS minutes cost more, so it runs only when `src-tauri/`, `scripts/fetch-native.sh`, or the workflow itself changes. It caches the fetched native files (keyed on `fetch-native.sh`, whose checksums are still verified) and the cargo build (keyed on the Rust version and `Cargo.lock`). A newer run on the same pull request cancels the older one. To rerun a failed job, use **Re-run failed jobs** on the run's page, or `gh run rerun <run id> --failed`. Workflows keep `permissions: contents: read` and pin each action to a full commit SHA, with its version in a comment.
+
 ## Conventions
 
 - **UI features** live under `src/features/<feature>/`. Each feature keeps its components, hooks, and tests together.
