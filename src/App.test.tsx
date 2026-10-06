@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { CONSENT_NOTICE } from "./features/recording/consent";
 import type { MeetingDetail, ModelRecord, Summary, TranscriptSegment } from "./lib/api";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -731,6 +732,19 @@ describe("App", () => {
     expect(screen.queryByText(/Use headphones/)).not.toBeInTheDocument();
   });
 
+  it("reminds you about recording consent before recording starts", async () => {
+    fakeBackend([seedMeeting(1, "Call")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Call/ }));
+
+    expect(await screen.findByText(CONSENT_NOTICE)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Start recording" }));
+
+    await screen.findByRole("button", { name: "Stop recording" });
+    expect(screen.queryByText(CONSENT_NOTICE)).not.toBeInTheDocument();
+  });
+
   describe("summaries", () => {
     async function openMeeting(title: string) {
       const user = userEvent.setup();
@@ -1303,6 +1317,14 @@ describe("App", () => {
 
       expect(await screen.findByRole("heading", { name: "Start your first meeting" })).toBeInTheDocument();
       expect(backend.state.setupComplete).toBe(true);
+    });
+
+    it("includes a reminder about recording consent", async () => {
+      firstRun();
+
+      const item = (await screen.findByRole("heading", { level: 2, name: "Recording consent" })).closest("li");
+      expect(item).not.toBeNull();
+      expect(within(item as HTMLElement).getByText(CONSENT_NOTICE)).toBeInTheDocument();
     });
 
     it("asks for the microphone when macOS hasn't asked yet", async () => {
