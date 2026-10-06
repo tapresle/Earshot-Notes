@@ -815,6 +815,44 @@ describe("App", () => {
       expect(screen.getByRole("button", { name: "Summarize" })).toBeEnabled();
     });
 
+    it("shows the title a summary gives an untitled meeting", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Untitled meeting")]);
+      backend.state.model = testModel();
+      const user = await openMeeting("Untitled meeting");
+      await user.click(screen.getByRole("button", { name: "Summarize" }));
+
+      emit("summary:done", { meetingId: 1, summary: savedSummary(1, "- Cut travel"), title: "Budget review" });
+
+      await waitFor(() => expect(screen.getByLabelText("Meeting title")).toHaveValue("Budget review"));
+      expect(within(sidebar()).getByRole("button", { name: /Budget review/ })).toBeInTheDocument();
+    });
+
+    it("names a meeting in the sidebar while another meeting is open", async () => {
+      fakeBackend([seedMeeting(1, "Untitled meeting"), seedMeeting(2, "Standup")]);
+      await openMeeting("Standup");
+
+      emit("summary:done", { meetingId: 1, summary: savedSummary(1, "- Cut travel"), title: "Budget review" });
+
+      expect(await within(sidebar()).findByRole("button", { name: /Budget review/ })).toBeInTheDocument();
+      expect(screen.getByLabelText("Meeting title")).toHaveValue("Standup");
+    });
+
+    it("keeps a title you're typing when a summary names the meeting", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Untitled meeting")]);
+      const user = await openMeeting("Untitled meeting");
+      const field = screen.getByLabelText("Meeting title");
+      await user.clear(field);
+      await user.type(field, "Mine");
+
+      emit("summary:done", { meetingId: 1, summary: savedSummary(1, "- Cut travel"), title: "Budget review" });
+      await within(sidebar()).findByRole("button", { name: /Budget review/ });
+      expect(field).toHaveValue("Mine");
+      await user.tab();
+
+      expect(await within(sidebar()).findByRole("button", { name: /Mine/ })).toBeInTheDocument();
+      expect(backend.get(1)?.title).toBe("Mine");
+    });
+
     it("labels the button and the result as partial while recording", async () => {
       const backend = fakeBackend([seedMeeting(1, "Live")]);
       backend.state.model = testModel();

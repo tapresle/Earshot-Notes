@@ -129,6 +129,8 @@ export interface SummaryText {
 export interface SummaryDone {
   meetingId: number;
   summary: Summary;
+  /** The title the summary gave a meeting that was still untitled, if any. */
+  title: string | null;
 }
 
 export interface SummaryFailed {

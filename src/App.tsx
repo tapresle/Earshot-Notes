@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "./lib/api";
 import { MeetingList } from "./features/meetings/MeetingList";
 import { LoadMore } from "./features/meetings/LoadMore";
@@ -28,6 +28,10 @@ export default function App() {
   const [recordingMeetingId, setRecordingMeetingId] = useState<number | null>(null);
   const [selection, setSelection] = useState<Selection>({ ids: [], anchor: null });
   const [view, setView] = useState<View>("meetings");
+  const renameInList = useCallback(
+    (id: number, title: string) => updateMeetings((all) => all.map((m) => (m.id === id ? { ...m, title } : m))),
+    [updateMeetings],
+  );
 
   useEffect(() => {
     api
@@ -35,6 +39,16 @@ export default function App() {
       .then((complete) => !complete && setView("setup"))
       .catch((error) => console.error("couldn't read the setup state", error));
   }, []);
+
+  // A summary can name an untitled meeting, including one that isn't open.
+  useEffect(() => {
+    const unlisten = api.onSummaryDone(({ meetingId, title }) => {
+      if (title) renameInList(meetingId, title);
+    });
+    return () => {
+      unlisten.then((stop) => stop()).catch(() => {});
+    };
+  }, [renameInList]);
 
   useEffect(() => {
     api
@@ -155,7 +169,7 @@ export default function App() {
               meetingId={selectedId}
               recordingMeetingId={recordingMeetingId}
               onRecordingChange={setRecordingMeetingId}
-              onRenamed={(id, title) => updateMeetings((all) => all.map((m) => (m.id === id ? { ...m, title } : m)))}
+              onRenamed={renameInList}
               onDeleted={(id) => {
                 updateMeetings((all) => all.filter((m) => m.id !== id));
                 setSelectedId(null);
