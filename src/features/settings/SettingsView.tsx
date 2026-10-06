@@ -7,6 +7,9 @@ import {
   type InstalledModels,
   type InstalledModel as InstalledModelInfo,
   type ModelRecord,
+  type Sensitivity,
+  type Source,
+  type SpeechSensitivity,
   type TranscriptionModel,
 } from "../../lib/api";
 import { ModelOrigin } from "../summary/ModelOrigin";
@@ -28,6 +31,7 @@ export function SettingsView({ onShowSetup }: { onShowSetup: () => void }) {
     <article className="settings">
       <h1>Settings</h1>
       <MicrophoneSection />
+      <SpeechDetectionSection />
       <SummaryModelSection />
       <TranscriptionSection />
       <section className="settings-section">
@@ -106,6 +110,80 @@ function MicrophoneSection() {
       {missing && (
         <p className="field-warning">That microphone isn't connected. Recordings use the system default until it is.</p>
       )}
+      {saved && (
+        <p className="settings-saved" role="status">
+          Saved
+        </p>
+      )}
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+const SENSITIVITY_LEVELS: { value: Sensitivity; label: string }[] = [
+  { value: "low", label: "Low" },
+  { value: "normal", label: "Normal" },
+  { value: "high", label: "High" },
+];
+
+const SENSITIVITY_SOURCES: { source: Source; label: string }[] = [
+  { source: "me", label: "My voice" },
+  { source: "them", label: "Meeting Participants" },
+];
+
+function SpeechDetectionSection() {
+  const [levels, setLevels] = useState<SpeechSensitivity | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api
+      .speechSensitivity()
+      .then(setLevels)
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
+
+  async function choose(source: Source, level: Sensitivity) {
+    setSaved(false);
+    setError(null);
+    try {
+      await api.setSpeechSensitivity(source, level);
+      setLevels((current) => (current ? { ...current, [source]: level } : current));
+      setSaved(true);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  return (
+    <section className="settings-section" aria-labelledby="speech-detection-heading">
+      <h2 id="speech-detection-heading">Speech detection</h2>
+      <p className="settings-help">
+        Raise this if quiet speech is missed. Lower it if background noise is transcribed. Changes apply to the next
+        recording.
+      </p>
+      {levels === null && !error && <p className="empty-hint">Loading…</p>}
+      {levels !== null &&
+        SENSITIVITY_SOURCES.map(({ source, label }) => (
+          <div className="settings-row" key={source}>
+            <label htmlFor={`sensitivity-${source}`}>{label}</label>
+            <select
+              id={`sensitivity-${source}`}
+              value={levels[source]}
+              onChange={(e) => void choose(source, e.target.value as Sensitivity)}
+            >
+              {SENSITIVITY_LEVELS.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
       {saved && (
         <p className="settings-saved" role="status">
           Saved

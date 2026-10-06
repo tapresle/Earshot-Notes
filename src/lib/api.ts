@@ -44,6 +44,14 @@ export interface TranscriptSegment {
 
 export type Source = TranscriptSegment["source"];
 
+/** How readily quiet audio counts as speech. Changes apply to the next recording. */
+export type Sensitivity = "low" | "normal" | "high";
+
+export interface SpeechSensitivity {
+  me: Sensitivity;
+  them: Sensitivity;
+}
+
 export interface SourceProblem {
   source: Source;
   message: string;
@@ -267,6 +275,9 @@ export const api = {
   inputDevices: () => invoke<InputDevice[]>("input_devices"),
   inputDevice: () => invoke<string | null>("input_device"),
   setInputDevice: (deviceId: string | null) => invoke<void>("set_input_device", { deviceId }),
+  speechSensitivity: () => invoke<SpeechSensitivity>("speech_sensitivity"),
+  setSpeechSensitivity: (source: Source, level: Sensitivity) =>
+    invoke<void>("set_speech_sensitivity", { source, level }),
   installedModels: () => invoke<InstalledModels>("installed_models"),
   selectSummaryModel: (modelId: string) => invoke<void>("select_summary_model", { modelId }),
   openModelPage: (modelId: string) => invoke<void>("open_model_page", { modelId }),
