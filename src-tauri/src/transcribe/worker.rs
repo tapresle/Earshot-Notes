@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
 
+use super::phantom::is_phantom;
 use super::whistle::{Transcription, Whistle, WhistleError};
+use crate::chunker::Speech;
 use crate::store::Source;
 
 /// A speech segment waiting for transcription.
@@ -16,6 +18,7 @@ pub struct Job {
     pub start_ms: i64,
     pub end_ms: i64,
     pub samples: Vec<f32>,
+    pub speech: Speech,
 }
 
 /// Where the worker loaded its model from.
@@ -35,7 +38,8 @@ pub struct WorkerStopped;
 
 impl TranscriptionWorker {
     /// Loads the first candidate model that works, then starts the worker.
-    /// `on_result` runs on the worker thread for every segment that contains speech.
+    /// `on_result` runs on the worker thread for every segment that contains
+    /// speech, except likely phantom phrases (see `phantom`).
     pub fn spawn<F>(
         candidates: Vec<PathBuf>,
         mut on_result: F,
@@ -63,6 +67,13 @@ impl TranscriptionWorker {
                     let samples = std::mem::take(&mut job.samples);
                     match whistle.transcribe(&samples) {
                         Ok(t) if t.text.is_empty() => {}
+                        // Never log the text itself.
+                        Ok(t) if is_phantom(&t.text, job.speech) => log::debug!(
+                            "dropped a likely phantom phrase for meeting {} at {} ms ({} ms of speech)",
+                            job.meeting_id,
+                            job.start_ms,
+                            job.speech.ms
+                        ),
                         Ok(t) => on_result(job, t),
                         Err(error) => log::warn!(
                             "transcription failed for meeting {} at {} ms: {error}",

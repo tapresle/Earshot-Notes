@@ -136,6 +136,7 @@ fn rejects_a_file_that_is_not_a_model() {
 
 mod worker {
     use super::*;
+    use earshot_lib::chunker::Speech;
     use earshot_lib::store::Source;
     use earshot_lib::transcribe::worker::{Job, TranscriptionWorker, load_first};
     use std::path::PathBuf;
@@ -183,6 +184,10 @@ mod worker {
             start_ms,
             end_ms: start_ms + 5000,
             samples,
+            speech: Speech {
+                ms: 5000,
+                margin: 10.0,
+            },
         };
 
         worker.submit(job(0, vec![0.0; 16_000])).unwrap();
