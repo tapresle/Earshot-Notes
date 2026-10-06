@@ -7,7 +7,7 @@ import { SearchField } from "./features/meetings/SearchField";
 import { useDebounced } from "./features/meetings/useDebounced";
 import { MeetingView } from "./features/meetings/MeetingView";
 import { TranscriptPanel } from "./features/transcript/TranscriptPanel";
-import { ExportBar } from "./features/export/ExportBar";
+import { ExportSelectionBar } from "./features/export/ExportBar";
 import { SettingsView } from "./features/settings/SettingsView";
 import { SetupChecklist } from "./features/setup/SetupChecklist";
 import { select, type Selection } from "./features/meetings/selection";
@@ -116,14 +116,13 @@ export default function App() {
                 onLoadMore={loadMore}
               />
             )}
-            <ExportBar
+            <ExportSelectionBar
               selectedIds={selection.ids}
-              meetingCount={meetings.length}
               onClearSelection={() => setSelection({ ids: selectedId === null ? [] : [selectedId], anchor: selectedId })}
             />
             <button
               type="button"
-              className={`button subtle settings-button ${meetings.length === 0 ? "pinned-bottom" : ""}`}
+              className="button subtle settings-button"
               aria-current={view === "settings" ? "page" : undefined}
               onClick={() => setView("settings")}
             >

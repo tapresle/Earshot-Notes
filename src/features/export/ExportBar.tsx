@@ -11,16 +11,8 @@ function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
-/** The sidebar footer: export the selected meetings, or all of them, as Markdown files. */
-export function ExportBar({
-  selectedIds,
-  meetingCount,
-  onClearSelection,
-}: {
-  selectedIds: number[];
-  meetingCount: number;
-  onClearSelection: () => void;
-}) {
+/** Exports meetings to a folder the user picks, and tracks how it went. */
+function useFolderExport() {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
   async function exportTo(ids: number[] | null) {
@@ -35,8 +27,19 @@ export function ExportBar({
     }
   }
 
-  if (meetingCount === 0) return null;
-  const busy = status.kind === "exporting";
+  return { status, exportTo, busy: status.kind === "exporting" };
+}
+
+/** The sidebar footer while several meetings are selected: export them as Markdown files. */
+export function ExportSelectionBar({
+  selectedIds,
+  onClearSelection,
+}: {
+  selectedIds: number[];
+  onClearSelection: () => void;
+}) {
+  const { status, exportTo, busy } = useFolderExport();
+  if (selectedIds.length < 2 && status.kind === "idle") return null;
 
   return (
     <div className="export-bar">
@@ -44,15 +47,26 @@ export function ExportBar({
         <div className="selection-bar">
           <span>{plural(selectedIds.length, "meeting")} selected</span>
           <button type="button" className="button" onClick={() => void exportTo(selectedIds)} disabled={busy}>
-            Export selected
+            {busy ? "Exporting…" : "Export selected"}
           </button>
           <button type="button" className="button subtle" onClick={onClearSelection}>
             Clear
           </button>
         </div>
       )}
-      <button type="button" className="button full-width" onClick={() => void exportTo(null)} disabled={busy}>
-        {busy ? "Exporting…" : "Export all"}
+      <ExportStatus status={status} />
+    </div>
+  );
+}
+
+/** Exports every meeting, whatever the sidebar shows. */
+export function ExportAllButton() {
+  const { status, exportTo, busy } = useFolderExport();
+
+  return (
+    <div className="export-all">
+      <button type="button" className="button" onClick={() => void exportTo(null)} disabled={busy}>
+        {busy ? "Exporting…" : "Export all meetings"}
       </button>
       <ExportStatus status={status} />
     </div>
@@ -69,6 +83,13 @@ function ExportStatus({ status }: { status: Status }) {
   }
   if (status.kind !== "done") return null;
   const { written, failed } = status.report;
+  if (written.length === 0 && failed.length === 0) {
+    return (
+      <p role="status" className="export-status">
+        There are no meetings to export yet.
+      </p>
+    );
+  }
   return (
     <div role="status" className="export-status">
       <p>

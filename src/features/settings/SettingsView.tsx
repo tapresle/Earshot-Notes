@@ -9,6 +9,7 @@ import {
   type ModelRecord,
   type TranscriptionModel,
 } from "../../lib/api";
+import { ExportAllButton } from "../export/ExportBar";
 import { ModelOrigin } from "../summary/ModelOrigin";
 import { ModelSetup } from "../summary/ModelSetup";
 
@@ -30,6 +31,11 @@ export function SettingsView({ onShowSetup }: { onShowSetup: () => void }) {
       <MicrophoneSection />
       <SummaryModelSection />
       <TranscriptionSection />
+      <section className="settings-section" aria-labelledby="export-heading">
+        <h2 id="export-heading">Export</h2>
+        <p className="settings-help">Saves every meeting as a Markdown file in a folder you choose.</p>
+        <ExportAllButton />
+      </section>
       <section className="settings-section">
         <button type="button" className="link-button" onClick={() => void showSetup()}>
           Show the setup checklist again
