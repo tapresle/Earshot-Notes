@@ -7,6 +7,7 @@ pub mod commands;
 pub mod export;
 pub mod models;
 pub mod recording;
+pub mod recordings;
 pub mod store;
 pub mod summarize;
 pub mod transcribe;
@@ -19,6 +20,7 @@ use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
 use commands::recording::{Transcription, TranscriptionModel};
 use recording::Recorder;
+use recordings::Recordings;
 use serde_json::json;
 use store::{NewSegment, Store};
 use summarize::llama::LlamaGenerator;
@@ -28,6 +30,8 @@ use transcribe::worker::TranscriptionWorker;
 
 const DATABASE_FILE: &str = "earshot.db";
 const WHISTLE_FILE: &str = "models/whistle.cact";
+/// Kept audio, when the setting is on.
+const RECORDINGS_DIR: &str = "recordings";
 /// The log file rolls over at this size, keeping only the newest file.
 const MAX_LOG_BYTES: u128 = 1_000_000;
 
@@ -88,6 +92,7 @@ pub fn run() {
 
             app.manage(store);
             app.manage(Arc::new(Recorder::default()));
+            app.manage(Arc::new(Recordings::new(data_dir.join(RECORDINGS_DIR))));
             app.manage(Arc::new(Transcription(worker)));
             app.manage(Arc::new(summarizer));
             app.manage(models::manager::Downloads::default());
@@ -103,6 +108,11 @@ pub fn run() {
             commands::recording::start_recording,
             commands::recording::stop_recording,
             commands::recording::active_recording,
+            commands::recordings::keep_audio,
+            commands::recordings::set_keep_audio,
+            commands::recordings::recordings_size,
+            commands::recordings::delete_all_recordings,
+            commands::recordings::show_recordings,
             commands::recording::list_transcript,
             commands::summaries::summarize_meeting,
             commands::summaries::cancel_summary,

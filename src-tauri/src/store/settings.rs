@@ -4,6 +4,10 @@ use super::{Source, Store, StoreError};
 
 /// The microphone to record from; absent means the system default.
 pub const INPUT_DEVICE: &str = "input_device_id";
+/// Whether recordings keep their audio; "on" keeps it, absent means off.
+pub const KEEP_AUDIO: &str = "keep_audio_recordings";
+/// The stored value of `KEEP_AUDIO` when it's on.
+pub const ON: &str = "on";
 /// How readily quiet microphone audio counts as speech; absent means normal.
 pub const MIC_SENSITIVITY: &str = "mic_speech_sensitivity";
 /// How readily quiet system audio counts as speech; absent means normal.

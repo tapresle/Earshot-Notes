@@ -5,6 +5,7 @@ use tauri::{AppHandle, Emitter, State};
 use super::{CommandResult, blocking};
 use crate::audio::{Capture, mic, system};
 use crate::recording::{self, CaptureStarter, IssueSink, Recorder, SourceProblem, StartReport};
+use crate::recordings::Recordings;
 use crate::store::settings::INPUT_DEVICE;
 use crate::store::{Source, Store, TranscriptSegment};
 use crate::transcribe::worker::TranscriptionWorker;
@@ -38,12 +39,14 @@ pub async fn start_recording(
     store: State<'_, Arc<Store>>,
     recorder: State<'_, Arc<Recorder>>,
     transcription: State<'_, Arc<Transcription>>,
+    recordings: State<'_, Arc<Recordings>>,
     meeting_id: i64,
 ) -> CommandResult<StartReport> {
-    let (store, recorder, transcription) = (
+    let (store, recorder, transcription, recordings) = (
         Arc::clone(&store),
         Arc::clone(&recorder),
         Arc::clone(&transcription),
+        Arc::clone(&recordings),
     );
     let on_issue: IssueSink = Arc::new(move |meeting_id, problem| {
         if let Err(error) = app.emit(
@@ -86,6 +89,7 @@ pub async fn start_recording(
             meeting_id,
             sources,
             on_issue,
+            &recordings,
         )?)
     })
     .await

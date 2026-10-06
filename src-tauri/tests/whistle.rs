@@ -265,6 +265,7 @@ mod pipeline {
             },
             To16k::new(48_000).unwrap(),
             pipeline(Source::Me),
+            None,
             |job| jobs.push(job),
         );
 
@@ -308,6 +309,7 @@ mod pipeline {
             },
             To16k::new(48_000).unwrap(),
             pipeline(Source::Them),
+            None,
             |job| jobs.push(job),
         );
 
@@ -364,6 +366,7 @@ mod pipeline {
             },
             To16k::new(48_000).unwrap(),
             pipeline(Source::Me),
+            None,
             |job| jobs.push(job),
         );
 
