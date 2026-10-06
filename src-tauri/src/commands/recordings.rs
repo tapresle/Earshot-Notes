@@ -119,7 +119,7 @@ mod tests {
         // A capture that stays open until the recording stops.
         let starter: CaptureStarter = Box::new(|tx, _| {
             Ok((
-                Box::new(HeldCapture(tx)),
+                Box::new(HeldCapture { _frames: tx }),
                 crate::audio::CaptureFormat {
                     sample_rate: 48_000,
                     channels: 1,
@@ -145,6 +145,9 @@ mod tests {
         stop_recording(&store, &recorder).unwrap();
     }
 
-    struct HeldCapture(#[allow(dead_code)] std::sync::mpsc::SyncSender<crate::audio::Buffer>);
+    /// Holds the capture's sender, so the pipeline runs until the recording stops.
+    struct HeldCapture {
+        _frames: std::sync::mpsc::SyncSender<crate::audio::Buffer>,
+    }
     impl crate::audio::Capture for HeldCapture {}
 }
