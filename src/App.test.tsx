@@ -54,6 +54,7 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
       { id: "usb", name: "USB Podcast Mic", isDefault: false },
     ],
     inputDevice: null as string | null,
+    sensitivity: { me: "normal", them: "normal" } as Record<string, string>,
     installed: [] as ModelRecord[],
     transcriptionError: null as unknown,
     setupComplete: true,
@@ -187,6 +188,10 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     },
     input_devices: () => state.devices,
     input_device: () => state.inputDevice,
+    speech_sensitivity: () => ({ ...state.sensitivity }),
+    set_speech_sensitivity: ({ source, level }) => {
+      state.sensitivity[String(source)] = String(level);
+    },
     set_input_device: ({ deviceId }) => {
       state.inputDevice = (deviceId as string | null) ?? null;
     },
@@ -1050,16 +1055,33 @@ describe("App", () => {
       expect(screen.queryByText(/Saved to/)).not.toBeInTheDocument();
     });
 
-    it("exports all meetings to a folder", async () => {
+    it("exports all meetings from Settings", async () => {
       const backend = fakeBackend([seedMeeting(1, "One"), seedMeeting(2, "Two")]);
       vi.mocked(open).mockResolvedValue("/Users/me/Exports");
       const user = userEvent.setup();
       render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
-      await user.click(await within(sidebar()).findByRole("button", { name: "Export all" }));
+      await user.click(await screen.findByRole("button", { name: "Export all meetings" }));
 
-      expect(await within(sidebar()).findByText(/Exported 2 meetings to/)).toBeInTheDocument();
+      expect(await screen.findByText(/Exported 2 meetings to/)).toBeInTheDocument();
       expect(backend.state.exports).toEqual([{ ids: null, folder: "/Users/me/Exports" }]);
+    });
+
+    it("exports every meeting from Settings while a search filters the sidebar", async () => {
+      const backend = fakeBackend([seedMeeting(1, "One"), seedMeeting(2, "Two")]);
+      vi.mocked(open).mockResolvedValue("/out");
+      const user = userEvent.setup();
+      render(<App />);
+      await user.type(await screen.findByRole("searchbox", { name: "Search meetings" }), "nothing matches this");
+      await within(sidebar()).findByText(/No meetings match/);
+
+      expect(within(sidebar()).queryByRole("button", { name: /Export all/ })).not.toBeInTheDocument();
+      await user.click(within(sidebar()).getByRole("button", { name: "Settings" }));
+      await user.click(await screen.findByRole("button", { name: "Export all meetings" }));
+
+      expect(await screen.findByText(/Exported 2 meetings to/)).toBeInTheDocument();
+      expect(backend.state.exports).toEqual([{ ids: null, folder: "/out" }]);
     });
 
     it("selects meetings with Cmd-click and exports the selection", async () => {
@@ -1104,20 +1126,25 @@ describe("App", () => {
       vi.mocked(open).mockResolvedValue("/locked");
       const user = userEvent.setup();
       render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
-      await user.click(await within(sidebar()).findByRole("button", { name: "Export all" }));
+      await user.click(await screen.findByRole("button", { name: "Export all meetings" }));
 
-      expect(await within(sidebar()).findByText(/Exported 1 meeting to/)).toBeInTheDocument();
-      expect(within(sidebar()).getByText("Couldn't export 1 meeting:")).toBeInTheDocument();
-      expect(within(sidebar()).getByText("Two: permission denied")).toBeInTheDocument();
+      expect(await screen.findByText(/Exported 1 meeting to/)).toBeInTheDocument();
+      expect(screen.getByText("Couldn't export 1 meeting:")).toBeInTheDocument();
+      expect(screen.getByText("Two: permission denied")).toBeInTheDocument();
     });
 
-    it("hides export when there are no meetings", async () => {
+    it("says when there are no meetings to export", async () => {
       fakeBackend();
+      vi.mocked(open).mockResolvedValue("/out");
+      const user = userEvent.setup();
       render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
-      await screen.findByRole("heading", { name: "Start your first meeting" });
-      expect(screen.queryByRole("button", { name: "Export all" })).not.toBeInTheDocument();
+      await user.click(await screen.findByRole("button", { name: "Export all meetings" }));
+
+      expect(await screen.findByText("There are no meetings to export yet.")).toBeInTheDocument();
     });
   });
 
@@ -1151,6 +1178,26 @@ describe("App", () => {
       expect(backend.state.inputDevice).toBe("usb");
       await user.selectOptions(select, "System default (MacBook Pro Microphone)");
       await waitFor(() => expect(backend.state.inputDevice).toBeNull());
+    });
+
+    it("shows and saves the speech detection levels", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.sensitivity = { me: "normal", them: "high" };
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+      const myVoice = await screen.findByLabelText("My voice");
+      const participants = screen.getByLabelText("Meeting Participants");
+
+      expect(myVoice).toHaveValue("normal");
+      expect(participants).toHaveValue("high");
+      await user.selectOptions(myVoice, "High");
+      await user.selectOptions(participants, "Low");
+
+      expect(await screen.findByText("Saved")).toBeInTheDocument();
+      expect(backend.state.sensitivity).toEqual({ me: "high", them: "low" });
+      expect(myVoice).toHaveValue("high");
+      expect(participants).toHaveValue("low");
     });
 
     it("warns when the chosen microphone isn't connected", async () => {

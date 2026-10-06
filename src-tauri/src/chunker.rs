@@ -7,6 +7,8 @@
 
 use std::collections::VecDeque;
 
+use serde::{Deserialize, Serialize};
+
 use crate::transcribe::whistle::SAMPLE_RATE;
 
 const FRAME: usize = SAMPLE_RATE as usize / 50; // 20 ms
@@ -26,6 +28,57 @@ pub const MIC_MIN_SPEECH_RMS: f32 = 0.01;
 pub const SYSTEM_MIN_SPEECH_RMS: f32 = 0.003;
 /// Speech must be this many times louder than the tracked background noise.
 const NOISE_MULTIPLIER: f32 = 3.0;
+
+/// How readily quiet audio counts as speech. Each level sets the absolute
+/// floor; `Normal` uses `MIC_MIN_SPEECH_RMS` and `SYSTEM_MIN_SPEECH_RMS`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Sensitivity {
+    /// Ignores quieter audio, for a noisy room.
+    Low,
+    #[default]
+    Normal,
+    /// Hears quieter speech, at the risk of transcribing background noise.
+    High,
+}
+
+impl Sensitivity {
+    /// Reads a stored level. A missing or unknown value is `Normal`.
+    pub fn from_setting(value: Option<&str>) -> Self {
+        match value {
+            Some("low") => Sensitivity::Low,
+            Some("high") => Sensitivity::High,
+            _ => Sensitivity::Normal,
+        }
+    }
+
+    /// The value stored for this level.
+    pub fn as_setting(self) -> &'static str {
+        match self {
+            Sensitivity::Low => "low",
+            Sensitivity::Normal => "normal",
+            Sensitivity::High => "high",
+        }
+    }
+
+    /// The microphone's absolute speech floor at this level.
+    pub fn mic_floor(self) -> f32 {
+        match self {
+            Sensitivity::Low => 0.014,
+            Sensitivity::Normal => MIC_MIN_SPEECH_RMS,
+            Sensitivity::High => 0.007,
+        }
+    }
+
+    /// System audio's absolute speech floor at this level.
+    pub fn system_floor(self) -> f32 {
+        match self {
+            Sensitivity::Low => 0.0045,
+            Sensitivity::Normal => SYSTEM_MIN_SPEECH_RMS,
+            Sensitivity::High => 0.002,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Segment {
@@ -414,5 +467,16 @@ mod tests {
 
         assert_eq!(segments.len(), 1);
         assert!(segments[0].start_ms() >= 2500);
+    }
+
+    #[test]
+    fn reads_stored_sensitivity_and_defaults_to_normal() {
+        for level in [Sensitivity::Low, Sensitivity::Normal, Sensitivity::High] {
+            assert_eq!(Sensitivity::from_setting(Some(level.as_setting())), level);
+        }
+        assert_eq!(Sensitivity::from_setting(None), Sensitivity::Normal);
+        assert_eq!(Sensitivity::from_setting(Some("loud")), Sensitivity::Normal);
+        assert_eq!(Sensitivity::Normal.mic_floor(), MIC_MIN_SPEECH_RMS);
+        assert_eq!(Sensitivity::Normal.system_floor(), SYSTEM_MIN_SPEECH_RMS);
     }
 }

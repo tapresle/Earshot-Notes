@@ -1,9 +1,21 @@
 use rusqlite::{OptionalExtension, params};
 
-use super::{Store, StoreError};
+use super::{Source, Store, StoreError};
 
 /// The microphone to record from; absent means the system default.
 pub const INPUT_DEVICE: &str = "input_device_id";
+/// How readily quiet microphone audio counts as speech; absent means normal.
+pub const MIC_SENSITIVITY: &str = "mic_speech_sensitivity";
+/// How readily quiet system audio counts as speech; absent means normal.
+pub const SYSTEM_SENSITIVITY: &str = "system_speech_sensitivity";
+
+/// The setting that holds a source's speech sensitivity.
+pub fn sensitivity_key(source: Source) -> &'static str {
+    match source {
+        Source::Me => MIC_SENSITIVITY,
+        Source::Them => SYSTEM_SENSITIVITY,
+    }
+}
 
 impl Store {
     pub fn setting(&self, key: &str) -> Result<Option<String>, StoreError> {
@@ -48,5 +60,27 @@ mod tests {
 
         store.set_setting(INPUT_DEVICE, None).unwrap();
         assert_eq!(store.setting(INPUT_DEVICE).unwrap(), None);
+    }
+
+    #[test]
+    fn keeps_each_source_s_sensitivity_under_its_own_key() {
+        let store = Store::open_in_memory().unwrap();
+        assert_eq!(store.setting(sensitivity_key(Source::Me)).unwrap(), None);
+
+        store
+            .set_setting(sensitivity_key(Source::Me), Some("high"))
+            .unwrap();
+        store
+            .set_setting(sensitivity_key(Source::Them), Some("low"))
+            .unwrap();
+
+        assert_eq!(
+            store.setting(MIC_SENSITIVITY).unwrap().as_deref(),
+            Some("high")
+        );
+        assert_eq!(
+            store.setting(SYSTEM_SENSITIVITY).unwrap().as_deref(),
+            Some("low")
+        );
     }
 }
