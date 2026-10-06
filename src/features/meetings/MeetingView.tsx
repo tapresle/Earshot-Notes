@@ -136,16 +136,30 @@ function LoadedMeeting({
 }
 
 function TitleField({ meeting, onRenamed }: { meeting: MeetingDetail; onRenamed: MeetingViewProps["onRenamed"] }) {
-  const [title, setTitle] = useState(meeting.title);
-  const [savedTitle, setSavedTitle] = useState(meeting.title);
+  // The text in the field and the stored title, kept together so a title from a
+  // summary can tell whether you've started typing.
+  const [field, setField] = useState({ value: meeting.title, saved: meeting.title });
   const [error, setError] = useState<string | null>(null);
+  const setTitle = (value: string) => setField((current) => ({ ...current, value }));
+
+  // A summary can name an untitled meeting. Anything you're typing stays, and
+  // replaces that title when you commit it.
+  useEffect(() => {
+    const unlisten = api.onSummaryDone(({ meetingId, title }) => {
+      if (meetingId !== meeting.id || !title) return;
+      setField((current) => ({ value: current.value === current.saved ? title : current.value, saved: title }));
+    });
+    return () => {
+      unlisten.then((stop) => stop()).catch(() => {});
+    };
+  }, [meeting.id]);
 
   async function commit() {
-    if (title === savedTitle) return;
+    const { value: title, saved } = field;
+    if (title === saved) return;
     try {
       const stored = await api.renameMeeting(meeting.id, title);
-      setTitle(stored);
-      setSavedTitle(stored);
+      setField({ value: stored, saved: stored });
       setError(null);
       onRenamed(meeting.id, stored);
     } catch (e) {
@@ -161,12 +175,12 @@ function TitleField({ meeting, onRenamed }: { meeting: MeetingDetail; onRenamed:
       <input
         id="meeting-title"
         className="title-input"
-        value={title}
+        value={field.value}
         onChange={(event) => setTitle(event.target.value)}
         onBlur={() => void commit()}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
-          if (event.key === "Escape") setTitle(savedTitle);
+          if (event.key === "Escape") setTitle(field.saved);
         }}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? "meeting-title-error" : undefined}
