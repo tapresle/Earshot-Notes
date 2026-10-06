@@ -22,6 +22,13 @@ Rules:
 - Only state what the transcript supports.
 - Reply with bullet points only.";
 
+const TITLE_SYSTEM: &str = "You name meetings from their notes.
+
+Rules:
+- Reply with a title of at most 6 words, and nothing else.
+- Name the main topic, using only what the notes say.
+- No quotes, no Markdown, and no punctuation at the end.";
+
 /// Formats one transcript line, such as `[12:05] Meeting Participants: Let's ship it.`
 pub fn transcript_line(segment: &TranscriptSegment) -> String {
     let speaker = segment.source.label();
@@ -82,6 +89,17 @@ pub fn combine_messages(title: &str, notes_markdown: &str, parts: &[String]) -> 
         Message::user(format!(
             "Meeting: {title}\n\n{}\n\nThe transcript was long, so here it is condensed in order:\n<transcript>\n{condensed}\n</transcript>",
             notes_section(notes_markdown)
+        )),
+    ]
+}
+
+/// Asks for a short title for a finished summary.
+pub fn title_messages(summary_markdown: &str) -> Vec<Message> {
+    vec![
+        Message::system(TITLE_SYSTEM),
+        Message::user(format!(
+            "Meeting notes:\n<notes>\n{}\n</notes>",
+            summary_markdown.trim()
         )),
     ]
 }

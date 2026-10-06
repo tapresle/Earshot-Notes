@@ -8,7 +8,10 @@ use std::thread;
 use serde::Serialize;
 
 use super::run::{Generator, Progress, Request, SummaryError, summarize};
-use crate::store::{ModelRecord, NewSummary, Store, StoreError, Summary, TranscriptSegment};
+use super::title::suggest_title;
+use crate::store::{
+    DEFAULT_TITLE, ModelRecord, NewSummary, Store, StoreError, Summary, TranscriptSegment,
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "stage")]
@@ -34,6 +37,8 @@ pub enum SummaryEvent {
     Done {
         meeting_id: i64,
         summary: Summary,
+        /// The title given to a meeting that was still untitled, if any.
+        title: Option<String>,
     },
     Failed {
         meeting_id: i64,
@@ -94,9 +99,10 @@ impl Summarizer {
                 for job in inbox {
                     let meeting_id = job.meeting_id;
                     let event = match run_job(&store, &mut load, job, &on_event) {
-                        Ok(summary) => SummaryEvent::Done {
+                        Ok((summary, title)) => SummaryEvent::Done {
                             meeting_id,
                             summary,
+                            title,
                         },
                         Err(error) => SummaryEvent::Failed {
                             meeting_id,
@@ -185,12 +191,14 @@ enum JobError {
     Store(#[from] StoreError),
 }
 
+/// Writes and saves the summary, then names the meeting if it's still untitled.
+/// Returns the summary and the new title, if any.
 fn run_job(
     store: &Store,
     load: &mut ModelLoader,
     job: Job,
     on_event: &dyn Fn(SummaryEvent),
-) -> Result<Summary, JobError> {
+) -> Result<(Summary, Option<String>), JobError> {
     let meeting_id = job.meeting_id;
     on_event(SummaryEvent::Progress {
         meeting_id,
@@ -223,14 +231,49 @@ fn run_job(
             })
         },
     )?;
-    drop(generator);
-    Ok(store.insert_summary(NewSummary {
+    let summary = store.insert_summary(NewSummary {
         meeting_id,
         upto_ms: job.upto_ms,
         is_final: job.is_final,
         body_markdown: body,
         model_id: job.model.id,
-    })?)
+    })?;
+    let title = name_untitled(
+        store,
+        generator.as_mut(),
+        meeting_id,
+        &summary.body_markdown,
+        &job.cancel,
+    );
+    Ok((summary, title))
+}
+
+/// Names a meeting that still has the default title from its saved summary, and
+/// returns the new title. Never fails the summary: a problem is logged and the
+/// meeting keeps the default title.
+fn name_untitled(
+    store: &Store,
+    generator: &mut dyn Generator,
+    meeting_id: i64,
+    summary_markdown: &str,
+    cancel: &AtomicBool,
+) -> Option<String> {
+    let named = (|| -> Result<Option<String>, Box<dyn std::error::Error>> {
+        // Re-read the title, since you may have renamed the meeting while the summary ran.
+        if store.get_meeting(meeting_id)?.meeting.title != DEFAULT_TITLE {
+            return Ok(None);
+        }
+        match suggest_title(generator, summary_markdown, cancel)? {
+            // Saved only if the title is still the default, so a rename made
+            // during generation wins.
+            Some(title) => Ok(store.name_untitled_meeting(meeting_id, &title)?),
+            None => Ok(None),
+        }
+    })();
+    named.unwrap_or_else(|error| {
+        log::warn!("couldn't name meeting {meeting_id} from its summary: {error}");
+        None
+    })
 }
 
 #[cfg(test)]
@@ -238,11 +281,15 @@ mod tests {
     use super::*;
     use crate::store::{ModelSource, NewSegment, Source};
     use crate::summarize::template::Message;
+    use std::sync::atomic::AtomicUsize;
     use std::time::Duration;
 
-    /// Streams two pieces, optionally waiting for permission between them.
+    /// Streams two pieces for the summary, optionally waiting for permission
+    /// between them, then replies to the title request with `title_reply`.
     struct FakeModel {
         gate: Option<mpsc::Receiver<()>>,
+        generations: Arc<AtomicUsize>,
+        title_reply: Result<&'static str, ()>,
     }
 
     impl Generator for FakeModel {
@@ -262,8 +309,14 @@ mod tests {
             cancel: &AtomicBool,
             on_text: &mut dyn FnMut(&str),
         ) -> Result<String, SummaryError> {
+            if self.generations.fetch_add(1, Ordering::Relaxed) > 0 {
+                return self
+                    .title_reply
+                    .map(String::from)
+                    .map_err(|()| SummaryError::Model("title failed".into()));
+            }
             on_text("## Notes");
-            if let Some(gate) = &self.gate {
+            if let Some(gate) = self.gate.take() {
                 gate.recv_timeout(Duration::from_secs(5)).unwrap();
             }
             if cancel.load(Ordering::Relaxed) {
@@ -279,11 +332,45 @@ mod tests {
         summarizer: Summarizer,
         events: mpsc::Receiver<SummaryEvent>,
         meeting_id: i64,
+        /// Calls to `generate` across all jobs: the summary, then any title.
+        generations: Arc<AtomicUsize>,
+    }
+
+    struct Setup {
+        gate: Option<mpsc::Receiver<()>>,
+        with_model: bool,
+        meeting_title: &'static str,
+        title_reply: Result<&'static str, ()>,
+    }
+
+    impl Default for Setup {
+        fn default() -> Self {
+            Self {
+                gate: None,
+                with_model: true,
+                meeting_title: "Sync",
+                title_reply: Ok("Budget review"),
+            }
+        }
     }
 
     fn harness(gate: Option<mpsc::Receiver<()>>, with_model: bool) -> Harness {
+        harness_with(Setup {
+            gate,
+            with_model,
+            ..Setup::default()
+        })
+    }
+
+    fn harness_with(setup: Setup) -> Harness {
+        let Setup {
+            gate,
+            with_model,
+            meeting_title,
+            title_reply,
+        } = setup;
         let store = Arc::new(Store::open_in_memory().unwrap());
-        let meeting = store.create_meeting("Sync").unwrap();
+        let meeting = store.create_meeting(meeting_title).unwrap();
         store
             .insert_segment(NewSegment {
                 meeting_id: meeting.id,
@@ -311,12 +398,16 @@ mod tests {
                 .unwrap();
         }
         let gate = Mutex::new(gate);
+        let generations = Arc::new(AtomicUsize::new(0));
+        let counter = generations.clone();
         let loader: ModelLoader = Box::new(move |model| {
             if model.id == "broken" {
                 return Err(SummaryError::Model("bad file".into()));
             }
             Ok(Box::new(FakeModel {
                 gate: gate.lock().unwrap().take(),
+                generations: counter.clone(),
+                title_reply,
             }))
         });
         let (tx, events) = mpsc::channel();
@@ -329,11 +420,117 @@ mod tests {
             summarizer,
             events,
             meeting_id: meeting.id,
+            generations,
         }
     }
 
     fn next(events: &mpsc::Receiver<SummaryEvent>) -> SummaryEvent {
         events.recv_timeout(Duration::from_secs(5)).unwrap()
+    }
+
+    /// Waits for the job to finish, and returns its summary and new title.
+    fn done(events: &mpsc::Receiver<SummaryEvent>) -> (Summary, Option<String>) {
+        loop {
+            match next(events) {
+                SummaryEvent::Done { summary, title, .. } => return (summary, title),
+                SummaryEvent::Failed { message, .. } => panic!("the summary failed: {message}"),
+                _ => {}
+            }
+        }
+    }
+
+    fn title_of(h: &Harness) -> String {
+        h.store.get_meeting(h.meeting_id).unwrap().meeting.title
+    }
+
+    fn untitled() -> Setup {
+        Setup {
+            meeting_title: "",
+            ..Setup::default()
+        }
+    }
+
+    #[test]
+    fn names_an_untitled_meeting_from_its_summary() {
+        let h = harness_with(untitled());
+
+        h.summarizer.start(&h.store, h.meeting_id, true).unwrap();
+
+        let (summary, title) = done(&h.events);
+        assert_eq!(title.as_deref(), Some("Budget review"));
+        assert_eq!(title_of(&h), "Budget review");
+        assert_eq!(h.store.latest_summary(h.meeting_id).unwrap(), Some(summary));
+    }
+
+    #[test]
+    fn names_an_untitled_meeting_from_a_partial_summary() {
+        let h = harness_with(untitled());
+
+        h.summarizer.start(&h.store, h.meeting_id, false).unwrap();
+
+        let (summary, title) = done(&h.events);
+        assert!(!summary.is_final);
+        assert_eq!(title.as_deref(), Some("Budget review"));
+        assert_eq!(title_of(&h), "Budget review");
+    }
+
+    #[test]
+    fn keeps_a_title_of_its_own_without_generating_one() {
+        let h = harness_with(Setup::default());
+
+        h.summarizer.start(&h.store, h.meeting_id, true).unwrap();
+
+        let (_, title) = done(&h.events);
+        assert_eq!(title, None);
+        assert_eq!(title_of(&h), "Sync");
+        assert_eq!(h.generations.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn keeps_a_rename_made_while_the_summary_ran() {
+        let (release, gate) = mpsc::channel();
+        let h = harness_with(Setup {
+            gate: Some(gate),
+            ..untitled()
+        });
+        h.summarizer.start(&h.store, h.meeting_id, true).unwrap();
+
+        h.store.rename_meeting(h.meeting_id, "Mine").unwrap();
+        release.send(()).unwrap();
+
+        let (_, title) = done(&h.events);
+        assert_eq!(title, None);
+        assert_eq!(title_of(&h), "Mine");
+    }
+
+    #[test]
+    fn keeps_the_summary_when_naming_fails() {
+        let h = harness_with(Setup {
+            title_reply: Err(()),
+            ..untitled()
+        });
+
+        h.summarizer.start(&h.store, h.meeting_id, true).unwrap();
+
+        let (summary, title) = done(&h.events);
+        assert_eq!(title, None);
+        assert_eq!(title_of(&h), DEFAULT_TITLE);
+        assert_eq!(h.store.latest_summary(h.meeting_id).unwrap(), Some(summary));
+        assert_eq!(h.generations.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn keeps_the_default_when_the_reply_is_empty() {
+        let h = harness_with(Setup {
+            title_reply: Ok("  \n"),
+            ..untitled()
+        });
+
+        h.summarizer.start(&h.store, h.meeting_id, true).unwrap();
+
+        let (_, title) = done(&h.events);
+        assert_eq!(title, None);
+        assert_eq!(title_of(&h), DEFAULT_TITLE);
     }
 
     #[test]

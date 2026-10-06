@@ -201,6 +201,25 @@ impl Store {
         Ok(title)
     }
 
+    /// Names a meeting that still has the default title, and returns the stored
+    /// title. Returns `None` when the meeting already has a title of its own, for
+    /// example from a rename, or when `title` normalizes to the default.
+    pub fn name_untitled_meeting(
+        &self,
+        id: i64,
+        title: &str,
+    ) -> Result<Option<String>, StoreError> {
+        let title = normalize_title(title);
+        if title == DEFAULT_TITLE {
+            return Ok(None);
+        }
+        let changed = self.conn().execute(
+            "UPDATE meetings SET title = ?1 WHERE id = ?2 AND title = ?3",
+            params![title, id, DEFAULT_TITLE],
+        )?;
+        Ok((changed > 0).then_some(title))
+    }
+
     /// Returns the new `updated_at` timestamp.
     pub fn update_notes(&self, id: i64, body_markdown: &str) -> Result<i64, StoreError> {
         let now = now_ms();
@@ -391,6 +410,51 @@ mod tests {
 
         assert_eq!(stored, "New");
         assert_eq!(store.get_meeting(meeting.id).unwrap().meeting.title, "New");
+    }
+
+    #[test]
+    fn names_an_untitled_meeting() {
+        let store = store();
+        let meeting = store.create_meeting("").unwrap();
+
+        let stored = store
+            .name_untitled_meeting(meeting.id, "  Budget review  ")
+            .unwrap();
+
+        assert_eq!(stored.as_deref(), Some("Budget review"));
+        assert_eq!(
+            store.get_meeting(meeting.id).unwrap().meeting.title,
+            "Budget review"
+        );
+    }
+
+    #[test]
+    fn keeps_a_title_of_its_own() {
+        let store = store();
+        let meeting = store.create_meeting("").unwrap();
+        store.rename_meeting(meeting.id, "Mine").unwrap();
+
+        let stored = store
+            .name_untitled_meeting(meeting.id, "Generated")
+            .unwrap();
+
+        assert_eq!(stored, None);
+        assert_eq!(store.get_meeting(meeting.id).unwrap().meeting.title, "Mine");
+    }
+
+    #[test]
+    fn keeps_the_default_for_an_empty_name() {
+        let store = store();
+        let meeting = store.create_meeting("").unwrap();
+
+        assert_eq!(
+            store.name_untitled_meeting(meeting.id, "   ").unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_meeting(meeting.id).unwrap().meeting.title,
+            DEFAULT_TITLE
+        );
     }
 
     #[test]

@@ -5,3 +5,4 @@ pub mod prompt;
 pub mod run;
 pub mod service;
 pub mod template;
+pub mod title;

@@ -210,9 +210,10 @@ fn spawn_summarizer(app: &App, store: Arc<Store>) -> Summarizer {
             SummaryEvent::Done {
                 meeting_id,
                 summary,
+                title,
             } => (
                 "summary:done",
-                json!({ "meetingId": meeting_id, "summary": summary }),
+                json!({ "meetingId": meeting_id, "summary": summary, "title": title }),
             ),
             SummaryEvent::Failed {
                 meeting_id,
