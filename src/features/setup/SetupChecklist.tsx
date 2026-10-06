@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage, type ModelRecord, type Permission, type PrivacyPane } from "../../lib/api";
+import { CONSENT_NOTICE } from "../recording/consent";
 
-/** Shown on first launch: permissions, a summary model, and a headphones tip. */
+/** Shown on first launch: permissions, a summary model, a headphones tip, and a consent reminder. */
 export function SetupChecklist({ onOpenSettings, onFinish }: { onOpenSettings: () => void; onFinish: () => void }) {
   const [mic, setMic] = useState<Permission | null>(null);
   // undefined while loading; null when macOS doesn't let the app check.
@@ -126,6 +127,10 @@ export function SetupChecklist({ onOpenSettings, onFinish }: { onOpenSettings: (
         <li>
           <h2>Headphones</h2>
           <p>Use headphones in calls. With speakers, your microphone also picks up the other side.</p>
+        </li>
+        <li>
+          <h2>Recording consent</h2>
+          <p>{CONSENT_NOTICE}</p>
         </li>
       </ol>
       {error && (

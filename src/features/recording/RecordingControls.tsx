@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage, type Source, type SourceProblem } from "../../lib/api";
+import { CONSENT_NOTICE } from "./consent";
 
 interface RecordingControlsProps {
   meetingId: number;
@@ -80,9 +81,12 @@ export function RecordingControls({ meetingId, recordingMeetingId, onRecordingCh
         </span>
       )}
       {!isRecording && !pending && (
-        <p className="recording-hint">
-          Use headphones for the best transcript. With speakers, your microphone also picks up the other side.
-        </p>
+        <>
+          <p className="recording-hint">
+            Use headphones for the best transcript. With speakers, your microphone also picks up the other side.
+          </p>
+          <p className="recording-hint">{CONSENT_NOTICE}</p>
+        </>
       )}
       {isRecording &&
         problems.map((problem) => (
