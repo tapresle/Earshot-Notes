@@ -41,7 +41,7 @@ pub enum CaptureError {
     #[error("system audio couldn't start: {0}")]
     SystemAudio(String),
     #[error(
-        "system audio recording is off, so only your side is transcribed. Turn on Earshot in System Settings > Privacy & Security > Screen & System Audio Recording"
+        "system audio recording is off, so only your side is transcribed. Turn on Earshot Notes in System Settings > Privacy & Security > Screen & System Audio Recording"
     )]
     SystemAudioPermissionDenied,
 }
@@ -60,6 +60,15 @@ pub fn downmix(interleaved: &[f32], channels: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_the_app_in_the_system_audio_permission_message() {
+        assert!(
+            CaptureError::SystemAudioPermissionDenied
+                .to_string()
+                .contains("Turn on Earshot Notes in System Settings")
+        );
+    }
 
     #[test]
     fn passes_mono_through() {

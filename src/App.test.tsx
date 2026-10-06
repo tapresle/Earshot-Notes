@@ -182,7 +182,7 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     },
     transcription_model: () => {
       if (state.transcriptionError) throw state.transcriptionError;
-      return { engine: "Whistle", path: "/Applications/Earshot.app/Contents/Resources/models/whistle.cact", bundled: true };
+      return { engine: "Whistle", path: "/Applications/Earshot Notes.app/Contents/Resources/models/whistle.cact", bundled: true };
     },
     input_devices: () => state.devices,
     input_device: () => state.inputDevice,
@@ -712,7 +712,7 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: "Start recording" }));
     const transcript = screen.getByRole("complementary", { name: "Transcript" });
 
-    expect(await within(transcript).findByText(/Not seeing the other side/)).toBeInTheDocument();
+    expect(await within(transcript).findByText(/Allow Earshot Notes in System Settings/)).toBeInTheDocument();
     emit("transcript:segment", segment(5, 1, "them", 1000, "Can you hear me?"));
 
     await waitFor(() => expect(within(transcript).queryByText(/Not seeing the other side/)).not.toBeInTheDocument());
@@ -1321,7 +1321,8 @@ describe("App", () => {
         state.micPermission = "denied";
       });
 
-      await user.click(await screen.findByRole("button", { name: "Open Microphone settings" }));
+      expect(await screen.findByText(/Turn on Earshot Notes in Privacy & Security > Microphone/)).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Open Microphone settings" }));
 
       expect(backend.state.openedPanes).toEqual(["microphone"]);
     });
@@ -1344,7 +1345,7 @@ describe("App", () => {
       });
 
       await user.click(await screen.findByRole("button", { name: "Allow system audio" }));
-      expect(await screen.findByText(/System audio recording is off/)).toBeInTheDocument();
+      expect(await screen.findByText(/System audio recording is off\. Turn on Earshot Notes in/)).toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "Open audio recording settings" }));
 
       expect(backend.state.openedPanes).toEqual(["systemAudio"]);
@@ -1358,7 +1359,7 @@ describe("App", () => {
 
       await user.click(await screen.findByRole("button", { name: "Allow system audio" }));
 
-      expect(await screen.findByText(/macOS asked for permission/)).toBeInTheDocument();
+      expect(await screen.findByText(/macOS asked for permission\. If you declined, turn on Earshot Notes in/)).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Allow system audio" })).not.toBeInTheDocument();
     });
 

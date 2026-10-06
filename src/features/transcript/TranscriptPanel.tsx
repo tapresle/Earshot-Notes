@@ -118,7 +118,7 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
       </ol>
       {recording && !systemAudioAllowed && !segments.some((s) => s.source === "them") && (
         <p className="empty-hint transcript-hint">
-          Not seeing the other side? macOS may be blocking system audio. Allow Earshot in System Settings &gt;
+          Not seeing the other side? macOS may be blocking system audio. Allow Earshot Notes in System Settings &gt;
           Privacy &amp; Security &gt; Screen &amp; System Audio Recording.
         </p>
       )}

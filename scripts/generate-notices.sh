@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Writes the license notices for every third-party Rust crate and JavaScript
 # package that ships in the app to src-tauri/resources/licenses/third-party-notices.txt.
-# The app bundles that file next to the Earshot, needle, Whistle and llama.cpp licenses.
+# The app bundles that file next to the Earshot Notes, needle, Whistle and llama.cpp licenses.
 #
 # Rust: cargo-about lists the normal dependencies of the app for the macOS
 # Apple Silicon target (see scripts/notices/about.toml). Install it with
@@ -44,11 +44,11 @@ cargo about generate \
 node scripts/notices/js-notices.mjs > "$TMP/js.txt"
 
 {
-  echo "Earshot third-party notices"
-  echo "==========================="
+  echo "Earshot Notes third-party notices"
+  echo "================================="
   echo
-  echo "Earshot includes the third-party software listed below. Each entry gives the"
-  echo "license it's distributed under and that license's text with its copyright"
+  echo "Earshot Notes includes the third-party software listed below. Each entry gives"
+  echo "the license it's distributed under and that license's text with its copyright"
   echo "notices. The licenses for needle, Whistle and llama.cpp are in their own files"
   echo "next to this one."
   echo

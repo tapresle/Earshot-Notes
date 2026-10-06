@@ -59,7 +59,7 @@ export function SetupChecklist({ onOpenSettings, onFinish }: { onOpenSettings: (
           {(mic === "denied" || mic === "restricted") && (
             <>
               <p className="field-warning">
-                Microphone access is off. Turn on Earshot in Privacy &amp; Security &gt; Microphone.
+                Microphone access is off. Turn on Earshot Notes in Privacy &amp; Security &gt; Microphone.
               </p>
               <button type="button" className="button" onClick={openSettings("microphone")}>
                 Open Microphone settings
@@ -90,7 +90,7 @@ export function SetupChecklist({ onOpenSettings, onFinish }: { onOpenSettings: (
           {(systemAudio === "denied" || systemAudio === "restricted") && (
             <>
               <p className="field-warning">
-                System audio recording is off. Turn on Earshot in Privacy &amp; Security &gt; Screen &amp; System Audio
+                System audio recording is off. Turn on Earshot Notes in Privacy &amp; Security &gt; Screen &amp; System Audio
                 Recording.
               </p>
               <button type="button" className="button" onClick={openSettings("systemAudio")}>
@@ -101,7 +101,7 @@ export function SetupChecklist({ onOpenSettings, onFinish }: { onOpenSettings: (
           {systemAudio === null && askedSystemAudio && (
             <>
               <p>
-                macOS asked for permission. If you declined, turn on Earshot in Privacy &amp; Security &gt; Screen
+                macOS asked for permission. If you declined, turn on Earshot Notes in Privacy &amp; Security &gt; Screen
                 &amp; System Audio Recording.
               </p>
               <button type="button" className="button" onClick={openSettings("systemAudio")}>

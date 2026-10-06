@@ -1,6 +1,8 @@
-# Earshot
+# Earshot Notes
 
-A local-first meeting notes app. It transcribes your microphone and system audio on the device with Cactus Whistle, gives you a notepad during the meeting, and on request summarizes your notes and the transcript with a local LLM. It makes no network calls at runtime.
+Earshot Notes is a local-first meeting notes app. It transcribes your microphone and system audio on the device with Cactus Whistle, gives you a notepad during the meeting, and on request summarizes your notes and the transcript with a local LLM. It makes no network calls at runtime.
+
+**Naming:** the app is "Earshot Notes", always in full in anything the app shows, including permission prompts and error messages. Docs may shorten it to "Earshot" after the first mention. The bundle identifier stays `com.tedpresley.earshot`, because the app data folder, the log folder, and macOS privacy permissions are keyed by it; changing it would hide existing meetings and models and ask for permissions again. Crate, binary, package, and repository names stay `earshot`.
 
 macOS (Apple Silicon) is the first target. Windows and Linux follow.
 
@@ -50,7 +52,7 @@ Before you hand off work, run the lint, typecheck, test, and format commands. Al
 - **Markdown storage:** notes and summaries are stored as Markdown.
 - **Export format:** each file has YAML front matter (title, local date with offset, duration), then `# Title`, `## Summary`, `## My notes`, and `## Transcript`, in that order. Headings inside the summary and notes are moved down one level. Folder exports never overwrite existing files; they add a numeric suffix. Times use the system time zone through `jiff`.
 - **Offline only:** the app must not make network requests at runtime. The CSP in `src-tauri/tauri.conf.json` enforces this for the UI. The one exception is the user-started model download in `src-tauri/src/models/download.rs`. It fetches only entries from the pinned registry in `src-tauri/src/models/mod.rs` (the UI passes a model ID, never a URL) and verifies size and SHA-256 before use. Don't add other network calls.
-- **Logging:** Rust code logs with the `log` macros (`log::error!`, `log::warn!`, `log::info!`, `log::debug!`), never `eprintln!`. `tauri-plugin-log`, set up in `src-tauri/src/lib.rs`, writes to stderr and to `~/Library/Logs/com.tedpresley.earshot/Earshot.log`, keeping one file of at most 1 MB. Logs stay on the device: don't add network or webview targets, and don't log transcript, notes, or summary text.
+- **Logging:** Rust code logs with the `log` macros (`log::error!`, `log::warn!`, `log::info!`, `log::debug!`), never `eprintln!`. `tauri-plugin-log`, set up in `src-tauri/src/lib.rs`, writes to stderr and to `~/Library/Logs/com.tedpresley.earshot/Earshot Notes.log` (named after `productName`), keeping one file of at most 1 MB. Logs stay on the device: don't add network or webview targets, and don't log transcript, notes, or summary text.
 - **Network test:** `cargo test --lib -- --ignored resumes_from_hugging_face` checks a real ranged download from Hugging Face. It's ignored by default because it needs the network.
 - **Styling** uses the CSS custom properties in `src/styles.css`. Every color needs a dark mode value.
 - **Summary tests:** `src-tauri/tests/summarize.rs` runs a tiny real model (SmolLM2 135M, fetched by `scripts/fetch-native.sh`) to test plumbing such as streaming, limits, and cancellation, not summary quality. Logic above the model is tested through the `Generator` trait with fakes.
@@ -67,10 +69,12 @@ Each release has notes in `docs/releases/vX.Y.Z.md`. To make a release:
 1. Set the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`. They must match.
 2. Run `./scripts/generate-notices.sh` to regenerate `src-tauri/resources/licenses/third-party-notices.txt`, and commit the result.
 3. Write the release notes. The first release, `v0.1.0`, describes everything in the app. Later releases describe what changed since the previous one, grouped as new, improved, and fixed, and keep a known limitations section current. Use absolute links, such as `https://github.com/tapresle/Earshot/blob/main/LICENSE`, because the notes also become the GitHub release description, where relative links break.
-4. Build with `scripts/build-macos.sh`. The disk image is `src-tauri/target/release/bundle/dmg/Earshot_X.Y.Z_aarch64.dmg`.
+4. Build with `scripts/build-macos.sh`. The disk image is `src-tauri/target/release/bundle/dmg/Earshot Notes_X.Y.Z_aarch64.dmg`.
 5. After the release branch is merged, tag the merge on `main` as `vX.Y.Z` with an annotated tag.
 6. Push `main` and the tag to `origin`, then publish a GitHub release for the tag with the disk image attached. Use the release notes without their title line as the description, and add a **Download** section with the disk image's SHA-256. For example:
 
    ```bash
-   gh release create vX.Y.Z src-tauri/target/release/bundle/dmg/Earshot_X.Y.Z_aarch64.dmg --title "Earshot X.Y.Z" --notes-file <notes> --verify-tag
+   gh release create vX.Y.Z <copy>/Earshot-Notes_X.Y.Z_aarch64.dmg --title "Earshot Notes X.Y.Z" --notes-file <notes> --verify-tag
    ```
+
+   Upload a copy named `Earshot-Notes_X.Y.Z_aarch64.dmg`, not the build's own `Earshot Notes_X.Y.Z_aarch64.dmg`. GitHub replaces spaces in asset names with periods, and the hyphenated name keeps download links predictable.
