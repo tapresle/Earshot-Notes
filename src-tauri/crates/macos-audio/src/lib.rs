@@ -69,6 +69,35 @@ impl Drop for SystemAudioTap {
     }
 }
 
+type ChangeCallback = Box<dyn Fn() + Send + Sync>;
+
+/// Watches the default output device, the one calls play through. Dropping it
+/// stops watching; after drop returns, the callback has finished its last call.
+pub struct OutputDeviceWatcher {
+    handle: *mut c_void,
+    // Owned here and freed only after the native side has stopped calling it.
+    callback: *mut ChangeCallback,
+}
+
+// The handle is only touched in `drop`, and the native side serializes its callbacks.
+unsafe impl Send for OutputDeviceWatcher {}
+
+impl OutputDeviceWatcher {
+    /// Calls `on_change` on a background thread each time the default output
+    /// device changes. `on_change` must not block.
+    pub fn start(on_change: impl Fn() + Send + Sync + 'static) -> Result<Self, String> {
+        imp::watch(Box::new(on_change))
+    }
+}
+
+impl Drop for OutputDeviceWatcher {
+    fn drop(&mut self) {
+        imp::unwatch(self.handle);
+        // SAFETY: the native side has stopped and drained its callback queue.
+        drop(unsafe { Box::from_raw(self.callback) });
+    }
+}
+
 pub fn mic_permission() -> Permission {
     imp::mic_permission()
 }
@@ -115,6 +144,13 @@ mod imp {
             error_len: usize,
         ) -> *mut c_void;
         fn gc_system_audio_stop(handle: *mut c_void);
+        fn gc_output_device_watch(
+            callback: unsafe extern "C" fn(*mut c_void),
+            context: *mut c_void,
+            error: *mut c_char,
+            error_len: usize,
+        ) -> *mut c_void;
+        fn gc_output_device_unwatch(handle: *mut c_void);
         fn gc_mic_authorization_status() -> i32;
         fn gc_mic_request_access() -> i32;
         fn gc_system_audio_authorization_status() -> i32;
@@ -182,6 +218,36 @@ mod imp {
         unsafe { gc_system_audio_stop(handle) };
     }
 
+    unsafe extern "C" fn change_trampoline(context: *mut c_void) {
+        // SAFETY: `context` is the `*mut ChangeCallback` passed to watch, alive until
+        // unwatch returns, and the native side never calls this concurrently.
+        let callback = unsafe { &*(context as *const ChangeCallback) };
+        callback();
+    }
+
+    pub fn watch(callback: ChangeCallback) -> Result<OutputDeviceWatcher, String> {
+        let callback = Box::into_raw(Box::new(callback));
+        let mut error = [0 as c_char; 512];
+        let handle = unsafe {
+            gc_output_device_watch(
+                change_trampoline,
+                callback.cast(),
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        if handle.is_null() {
+            drop(unsafe { Box::from_raw(callback) });
+            let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) };
+            return Err(message.to_string_lossy().into_owned());
+        }
+        Ok(OutputDeviceWatcher { handle, callback })
+    }
+
+    pub fn unwatch(handle: *mut c_void) {
+        unsafe { gc_output_device_unwatch(handle) };
+    }
+
     pub fn mic_permission() -> Permission {
         Permission::from_code(unsafe { gc_mic_authorization_status() })
     }
@@ -214,6 +280,12 @@ mod imp {
     }
 
     pub fn stop(_handle: *mut c_void) {}
+
+    pub fn watch(_callback: ChangeCallback) -> Result<OutputDeviceWatcher, String> {
+        Err("watching the output device isn't supported on this platform yet".into())
+    }
+
+    pub fn unwatch(_handle: *mut c_void) {}
 
     pub fn mic_permission() -> Permission {
         Permission::Authorized
@@ -250,6 +322,14 @@ mod tests {
             system_audio_permission().is_some(),
             "TCC preflight is unavailable"
         );
+    }
+
+    #[test]
+    fn watches_and_stops_watching_the_output_device() {
+        // No device changes during the test; this proves the listener installs and
+        // that dropping it returns, so the callback can be freed safely.
+        let watcher = OutputDeviceWatcher::start(|| {}).unwrap();
+        drop(watcher);
     }
 
     #[test]

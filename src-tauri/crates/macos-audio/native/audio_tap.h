@@ -29,6 +29,18 @@ void *gc_system_audio_start(gc_audio_callback callback, void *context, gc_audio_
 // Stops capture. When this returns, the callback will not run again.
 void gc_system_audio_stop(void *handle);
 
+// Called on a private queue after the default output device changes, for
+// example when AirPods connect. Must not block.
+typedef void (*gc_device_change_callback)(void *context);
+
+// Starts watching the default output device. Returns an opaque handle, or NULL
+// with a message in `error` on failure.
+void *gc_output_device_watch(gc_device_change_callback callback, void *context, char *error,
+                             size_t error_len);
+
+// Stops watching. When this returns, the callback will not run again.
+void gc_output_device_unwatch(void *handle);
+
 // Microphone permission, matching AVAuthorizationStatus:
 // 0 not determined, 1 restricted, 2 denied, 3 authorized.
 int32_t gc_mic_authorization_status(void);

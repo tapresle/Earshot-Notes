@@ -249,6 +249,47 @@ void gc_system_audio_stop(void *handle) {
     if (handle) destroy((gc_tap *)handle);
 }
 
+typedef struct {
+    dispatch_queue_t queue;
+    AudioObjectPropertyListenerBlock listener;
+} gc_watch;
+
+static const AudioObjectPropertyAddress kDefaultOutputAddress = {
+    kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal,
+    kAudioObjectPropertyElementMain};
+
+void *gc_output_device_watch(gc_device_change_callback callback, void *context, char *error,
+                             size_t error_len) {
+    gc_watch *w = calloc(1, sizeof(gc_watch));
+    w->queue = dispatch_queue_create("earshot.output-device", DISPATCH_QUEUE_SERIAL);
+    w->listener = ^(UInt32 count, const AudioObjectPropertyAddress *addresses) {
+        (void)count; (void)addresses;
+        callback(context);
+    };
+    OSStatus status = AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject,
+                                                          &kDefaultOutputAddress, w->queue, w->listener);
+    if (status != noErr) {
+        set_error(error, error_len, @"Couldn't watch the default output device", status);
+        w->listener = nil;
+        w->queue = nil;
+        free(w);
+        return NULL;
+    }
+    return w;
+}
+
+void gc_output_device_unwatch(void *handle) {
+    if (!handle) return;
+    gc_watch *w = (gc_watch *)handle;
+    AudioObjectRemovePropertyListenerBlock(kAudioObjectSystemObject, &kDefaultOutputAddress, w->queue,
+                                           w->listener);
+    // Wait for a notification already queued so the callback never runs after this returns.
+    dispatch_sync(w->queue, ^{});
+    w->listener = nil;
+    w->queue = nil;
+    free(w);
+}
+
 int32_t gc_mic_authorization_status(void) {
     return (int32_t)[AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
 }
