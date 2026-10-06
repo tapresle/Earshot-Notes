@@ -475,6 +475,18 @@ mod tests {
     }
 
     #[test]
+    fn names_a_meeting_renamed_to_blank() {
+        let h = harness_with(Setup::default());
+        h.store.rename_meeting(h.meeting_id, " \t\n ").unwrap();
+
+        h.summarizer.start(&h.store, h.meeting_id, true).unwrap();
+
+        let (_, title) = done(&h.events);
+        assert_eq!(title.as_deref(), Some("Budget review"));
+        assert_eq!(title_of(&h), "Budget review");
+    }
+
+    #[test]
     fn keeps_a_title_of_its_own_without_generating_one() {
         let h = harness_with(Setup::default());
 
