@@ -55,6 +55,9 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     ],
     inputDevice: null as string | null,
     sensitivity: { me: "normal", them: "normal" } as Record<string, string>,
+    keepAudio: false,
+    recordingsSize: 0,
+    shownRecordings: false,
     installed: [] as ModelRecord[],
     transcriptionError: null as unknown,
     setupComplete: true,
@@ -188,6 +191,19 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     },
     input_devices: () => state.devices,
     input_device: () => state.inputDevice,
+    keep_audio: () => state.keepAudio,
+    set_keep_audio: ({ enabled }) => {
+      state.keepAudio = Boolean(enabled);
+    },
+    recordings_size: () => state.recordingsSize,
+    delete_all_recordings: () => {
+      if (state.recording !== null) throw { kind: "conflict", message: "stop recording to delete recordings" };
+      state.recordingsSize = 0;
+      return 0;
+    },
+    show_recordings: () => {
+      state.shownRecordings = true;
+    },
     speech_sensitivity: () => ({ ...state.sensitivity }),
     set_speech_sensitivity: ({ source, level }) => {
       state.sensitivity[String(source)] = String(level);
@@ -1176,6 +1192,82 @@ describe("App", () => {
       expect(backend.state.sensitivity).toEqual({ me: "high", them: "low" });
       expect(myVoice).toHaveValue("high");
       expect(participants).toHaveValue("low");
+    });
+
+    describe("audio recordings", () => {
+      async function openWith(setup: (state: ReturnType<typeof fakeBackend>["state"]) => void) {
+        const backend = fakeBackend([seedMeeting(1, "Sync")]);
+        setup(backend.state);
+        const user = userEvent.setup();
+        render(<App />);
+        await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+        await screen.findByRole("heading", { name: "Audio recordings" });
+        return { backend, user };
+      }
+
+      it("turns keeping audio on and off", async () => {
+        const { backend, user } = await openWith(() => {});
+        const keep = await screen.findByRole("checkbox", { name: "Keep audio recordings" });
+
+        expect(keep).not.toBeChecked();
+        await user.click(keep);
+        await waitFor(() => expect(backend.state.keepAudio).toBe(true));
+        expect(keep).toBeChecked();
+        await user.click(keep);
+        await waitFor(() => expect(backend.state.keepAudio).toBe(false));
+      });
+
+      it("deletes every recording after confirming and shows the new size", async () => {
+        const { backend, user } = await openWith((state) => {
+          state.recordingsSize = 1_234_000_000;
+        });
+
+        await user.click(await screen.findByRole("button", { name: "Delete all recordings (1.2 GB)" }));
+        const confirm = screen.getByRole("group", { name: "Delete all recordings" });
+        expect(within(confirm).getByRole("button", { name: "Cancel" })).toHaveFocus();
+        await user.click(within(confirm).getByRole("button", { name: "Delete" }));
+
+        expect(await screen.findByText("Deleted all recordings.")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "No recordings to delete" })).toBeDisabled();
+        expect(backend.state.recordingsSize).toBe(0);
+      });
+
+      it("keeps the recordings when the confirmation is cancelled", async () => {
+        const { backend, user } = await openWith((state) => {
+          state.recordingsSize = 230_000_000;
+        });
+
+        await user.click(await screen.findByRole("button", { name: "Delete all recordings (230 MB)" }));
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+        expect(screen.getByRole("button", { name: "Delete all recordings (230 MB)" })).toHaveFocus();
+        expect(backend.state.recordingsSize).toBe(230_000_000);
+      });
+
+      it("can't delete recordings while recording", async () => {
+        await openWith((state) => {
+          state.recording = 1;
+          state.recordingsSize = 5_000_000;
+        });
+
+        const button = await screen.findByRole("button", { name: "Delete all recordings (5 MB)" });
+        expect(button).toBeDisabled();
+        expect(button).toHaveAccessibleDescription("Stop recording to delete recordings.");
+      });
+
+      it("says when there are no recordings", async () => {
+        await openWith(() => {});
+
+        expect(await screen.findByRole("button", { name: "No recordings to delete" })).toBeDisabled();
+      });
+
+      it("shows the recordings folder in Finder", async () => {
+        const { backend, user } = await openWith(() => {});
+
+        await user.click(await screen.findByRole("button", { name: "Show in Finder" }));
+
+        await waitFor(() => expect(backend.state.shownRecordings).toBe(true));
+      });
     });
 
     it("warns when the chosen microphone isn't connected", async () => {

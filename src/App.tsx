@@ -139,7 +139,7 @@ export default function App() {
             Couldn't create the meeting. {createError}
           </p>
         )}
-        {view === "settings" && <SettingsView onShowSetup={() => setView("setup")} />}
+        {view === "settings" && <SettingsView recording={recordingMeetingId !== null} onShowSetup={() => setView("setup")} />}
         {view === "setup" && (
           <SetupChecklist onOpenSettings={() => setView("settings")} onFinish={() => setView("meetings")} />
         )}

@@ -275,6 +275,13 @@ export const api = {
   inputDevices: () => invoke<InputDevice[]>("input_devices"),
   inputDevice: () => invoke<string | null>("input_device"),
   setInputDevice: (deviceId: string | null) => invoke<void>("set_input_device", { deviceId }),
+  keepAudio: () => invoke<boolean>("keep_audio"),
+  setKeepAudio: (enabled: boolean) => invoke<void>("set_keep_audio", { enabled }),
+  /** The total size of the kept recordings, in bytes. */
+  recordingsSize: () => invoke<number>("recordings_size"),
+  /** Deletes every kept recording and resolves to the size left. Refused while recording. */
+  deleteAllRecordings: () => invoke<number>("delete_all_recordings"),
+  showRecordings: () => invoke<void>("show_recordings"),
   speechSensitivity: () => invoke<SpeechSensitivity>("speech_sensitivity"),
   setSpeechSensitivity: (source: Source, level: Sensitivity) =>
     invoke<void>("set_speech_sensitivity", { source, level }),

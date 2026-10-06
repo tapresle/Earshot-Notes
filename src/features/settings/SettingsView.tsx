@@ -15,7 +15,7 @@ import {
 import { ModelOrigin } from "../summary/ModelOrigin";
 import { ModelSetup } from "../summary/ModelSetup";
 
-export function SettingsView({ onShowSetup }: { onShowSetup: () => void }) {
+export function SettingsView({ recording, onShowSetup }: { recording: boolean; onShowSetup: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   async function showSetup() {
@@ -32,6 +32,7 @@ export function SettingsView({ onShowSetup }: { onShowSetup: () => void }) {
       <h1>Settings</h1>
       <MicrophoneSection />
       <SpeechDetectionSection />
+      <AudioRecordingsSection recording={recording} />
       <SummaryModelSection />
       <TranscriptionSection />
       <section className="settings-section">
@@ -187,6 +188,153 @@ function SpeechDetectionSection() {
       {saved && (
         <p className="settings-saved" role="status">
           Saved
+        </p>
+      )}
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function fileSize(bytes: number): string {
+  if (bytes >= 1e9) return gigabytes(bytes);
+  if (bytes >= 1e6) return `${Math.round(bytes / 1e6)} MB`;
+  return "less than 1 MB";
+}
+
+function AudioRecordingsSection({ recording }: { recording: boolean }) {
+  const [keep, setKeep] = useState<boolean | null>(null);
+  const [size, setSize] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const deleteRef = useRef<HTMLButtonElement>(null);
+  const opened = useRef(false);
+
+  useEffect(() => {
+    api
+      .keepAudio()
+      .then(setKeep)
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
+
+  // A recording that just ended may have added files.
+  useEffect(() => {
+    api
+      .recordingsSize()
+      .then(setSize)
+      .catch((e) => setError(errorMessage(e)));
+  }, [recording]);
+
+  // Focus Cancel when the confirmation opens, and return to the delete button when it closes.
+  useEffect(() => {
+    if (confirming) {
+      opened.current = true;
+      cancelRef.current?.focus();
+    } else if (opened.current) {
+      deleteRef.current?.focus();
+    }
+  }, [confirming]);
+
+  async function toggle(enabled: boolean) {
+    setError(null);
+    setStatus(null);
+    try {
+      await api.setKeepAudio(enabled);
+      setKeep(enabled);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function deleteAll() {
+    setError(null);
+    setDeleting(true);
+    try {
+      setSize(await api.deleteAllRecordings());
+      setStatus("Deleted all recordings.");
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setDeleting(false);
+      setConfirming(false);
+    }
+  }
+
+  async function show() {
+    setError(null);
+    try {
+      await api.showRecordings();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  const empty = size === 0;
+
+  return (
+    <section className="settings-section" aria-labelledby="audio-recordings-heading">
+      <h2 id="audio-recordings-heading">Audio recordings</h2>
+      {keep !== null && (
+        <label className="settings-row">
+          <input type="checkbox" checked={keep} onChange={(e) => void toggle(e.target.checked)} />
+          Keep audio recordings
+        </label>
+      )}
+      <p className="settings-help">Saves what each recording hears, for testing and review. Recordings stay on this Mac.</p>
+      {size !== null && (
+        <div className="settings-row">
+          {confirming ? (
+            <div className="model-remove-confirm" role="group" aria-label="Delete all recordings">
+              <span>Delete every kept recording and free {fileSize(size)}? This can't be undone.</span>
+              <button type="button" className="button danger" onClick={() => void deleteAll()} disabled={deleting}>
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+              <button
+                type="button"
+                className="button subtle"
+                ref={cancelRef}
+                onClick={() => setConfirming(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="button danger"
+                ref={deleteRef}
+                onClick={() => {
+                  setStatus(null);
+                  setConfirming(true);
+                }}
+                disabled={recording || empty}
+                aria-describedby={recording && !empty ? "recordings-busy" : undefined}
+              >
+                {empty ? "No recordings to delete" : `Delete all recordings (${fileSize(size)})`}
+              </button>
+              <button type="button" className="button subtle" onClick={() => void show()}>
+                Show in Finder
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {recording && !empty && !confirming && (
+        <p className="settings-help" id="recordings-busy">
+          Stop recording to delete recordings.
+        </p>
+      )}
+      {status && (
+        <p className="settings-saved" role="status">
+          {status}
         </p>
       )}
       {error && (
