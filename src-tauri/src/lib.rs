@@ -120,6 +120,8 @@ pub fn run() {
             commands::settings::input_devices,
             commands::settings::input_device,
             commands::settings::set_input_device,
+            commands::settings::speech_sensitivity,
+            commands::settings::set_speech_sensitivity,
             commands::settings::installed_models,
             commands::settings::select_summary_model,
             commands::settings::remove_summary_model,

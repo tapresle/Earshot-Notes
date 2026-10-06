@@ -54,6 +54,7 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
       { id: "usb", name: "USB Podcast Mic", isDefault: false },
     ],
     inputDevice: null as string | null,
+    sensitivity: { me: "normal", them: "normal" } as Record<string, string>,
     installed: [] as ModelRecord[],
     transcriptionError: null as unknown,
     setupComplete: true,
@@ -187,6 +188,10 @@ function fakeBackend(seed: MeetingDetail[] = [], segments: TranscriptSegment[] =
     },
     input_devices: () => state.devices,
     input_device: () => state.inputDevice,
+    speech_sensitivity: () => ({ ...state.sensitivity }),
+    set_speech_sensitivity: ({ source, level }) => {
+      state.sensitivity[String(source)] = String(level);
+    },
     set_input_device: ({ deviceId }) => {
       state.inputDevice = (deviceId as string | null) ?? null;
     },
@@ -1173,6 +1178,26 @@ describe("App", () => {
       expect(backend.state.inputDevice).toBe("usb");
       await user.selectOptions(select, "System default (MacBook Pro Microphone)");
       await waitFor(() => expect(backend.state.inputDevice).toBeNull());
+    });
+
+    it("shows and saves the speech detection levels", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.sensitivity = { me: "normal", them: "high" };
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+      const myVoice = await screen.findByLabelText("My voice");
+      const participants = screen.getByLabelText("Meeting Participants");
+
+      expect(myVoice).toHaveValue("normal");
+      expect(participants).toHaveValue("high");
+      await user.selectOptions(myVoice, "High");
+      await user.selectOptions(participants, "Low");
+
+      expect(await screen.findByText("Saved")).toBeInTheDocument();
+      expect(backend.state.sensitivity).toEqual({ me: "high", them: "low" });
+      expect(myVoice).toHaveValue("high");
+      expect(participants).toHaveValue("low");
     });
 
     it("warns when the chosen microphone isn't connected", async () => {

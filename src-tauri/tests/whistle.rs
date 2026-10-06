@@ -205,7 +205,8 @@ mod pipeline {
     use super::*;
     use earshot_lib::audio::resample::To16k;
     use earshot_lib::audio::{Buffer, CaptureFormat};
-    use earshot_lib::recording::run_pipeline;
+    use earshot_lib::chunker::Sensitivity;
+    use earshot_lib::recording::{Pipeline, run_pipeline};
     use earshot_lib::store::Source;
     use std::sync::mpsc::sync_channel;
 
@@ -220,6 +221,11 @@ mod pipeline {
             out.extend([s, s]);
         }
         out
+    }
+
+    /// A pipeline for meeting 1 from its start, at the default sensitivity.
+    fn pipeline(source: Source) -> Pipeline {
+        Pipeline::new(source, 1, 0, Sensitivity::Normal)
     }
 
     fn as_48k_stereo(samples_16k: &[f32]) -> Vec<f32> {
@@ -258,9 +264,7 @@ mod pipeline {
                 channels: 2,
             },
             To16k::new(48_000).unwrap(),
-            Source::Me,
-            1,
-            0,
+            pipeline(Source::Me),
             |job| jobs.push(job),
         );
 
@@ -303,9 +307,7 @@ mod pipeline {
                 channels: 2,
             },
             To16k::new(48_000).unwrap(),
-            Source::Them,
-            1,
-            0,
+            pipeline(Source::Them),
             |job| jobs.push(job),
         );
 
@@ -361,9 +363,7 @@ mod pipeline {
                 channels: 2,
             },
             To16k::new(48_000).unwrap(),
-            Source::Me,
-            1,
-            0,
+            pipeline(Source::Me),
             |job| jobs.push(job),
         );
 

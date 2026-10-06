@@ -9,7 +9,8 @@ use serde::Serialize;
 
 use crate::audio::resample::{ResampleError, To16k};
 use crate::audio::{Buffer, Capture, CaptureError, CaptureFormat, ErrorSink, downmix};
-use crate::chunker::{Chunker, MIC_MIN_SPEECH_RMS, SYSTEM_MIN_SPEECH_RMS};
+use crate::chunker::{Chunker, Sensitivity};
+use crate::store::settings::sensitivity_key;
 use crate::store::{Source, Store, StoreError};
 use crate::transcribe::worker::{Job, TranscriptionWorker};
 
@@ -108,6 +109,7 @@ pub fn start_recording(
     let mut started = Vec::new();
     let mut report = StartReport::default();
     for (source, start) in sources {
+        let sensitivity = sensitivity(store, source)?;
         let (frames_tx, frames) = sync_channel(CAPTURE_BACKLOG);
         let issues = on_issue.clone();
         let sink: ErrorSink =
@@ -119,7 +121,7 @@ pub fn start_recording(
         });
         match attempt {
             Ok((capture, format, resampler)) => {
-                started.push((source, capture, format, resampler, frames))
+                started.push((source, capture, format, resampler, frames, sensitivity))
             }
             Err(error) => report.unavailable.push(SourceProblem {
                 source,
@@ -134,12 +136,17 @@ pub fn start_recording(
 
     let mut captures = Vec::new();
     let mut pipelines = Vec::new();
-    for (source, capture, format, resampler, frames) in started {
+    for (source, capture, format, resampler, frames, sensitivity) in started {
+        let config = Pipeline::new(source, meeting_id, offset_ms, sensitivity);
+        log::info!(
+            "{source:?} speech sensitivity is {sensitivity:?} (floor {} RMS)",
+            config.min_speech_rms
+        );
         let worker = worker.clone();
         let pipeline = thread::Builder::new()
             .name(format!("audio-pipeline-{source:?}"))
             .spawn(move || {
-                run_pipeline(frames, format, resampler, source, meeting_id, offset_ms, |job| {
+                run_pipeline(frames, format, resampler, config, |job| {
                     if worker.submit(job).is_err() {
                         log::warn!(
                             "dropped a segment for meeting {meeting_id}: the transcription worker stopped"
@@ -169,6 +176,13 @@ pub fn start_recording(
     Ok(report)
 }
 
+/// A source's stored speech sensitivity.
+fn sensitivity(store: &Store, source: Source) -> Result<Sensitivity, StoreError> {
+    Ok(Sensitivity::from_setting(
+        store.setting(sensitivity_key(source))?.as_deref(),
+    ))
+}
+
 /// Stops the active recording, waits for its last segments to be queued for
 /// transcription, and returns the meeting it belonged to.
 pub fn stop_recording(store: &Store, recorder: &Recorder) -> Result<Option<i64>, RecordingError> {
@@ -188,6 +202,33 @@ pub fn stop_recording(store: &Store, recorder: &Recorder) -> Result<Option<i64>,
     Ok(Some(active.meeting_id))
 }
 
+/// What one source's pipeline records into, and how it detects speech.
+#[derive(Debug, Clone, Copy)]
+pub struct Pipeline {
+    pub source: Source,
+    pub meeting_id: i64,
+    /// Where this recording starts in the meeting's timeline.
+    pub offset_ms: i64,
+    /// The absolute floor below which audio isn't speech.
+    pub min_speech_rms: f32,
+}
+
+impl Pipeline {
+    /// A pipeline that detects speech at `sensitivity`, using the floor for its source.
+    pub fn new(source: Source, meeting_id: i64, offset_ms: i64, sensitivity: Sensitivity) -> Self {
+        let min_speech_rms = match source {
+            Source::Me => sensitivity.mic_floor(),
+            Source::Them => sensitivity.system_floor(),
+        };
+        Pipeline {
+            source,
+            meeting_id,
+            offset_ms,
+            min_speech_rms,
+        }
+    }
+}
+
 /// Converts captured buffers into transcription jobs until the capture closes.
 /// `resampler` starts at the capture's initial rate. When a buffer arrives at
 /// another rate, the pipeline replaces it, first flushing the old one so later
@@ -196,15 +237,16 @@ pub fn run_pipeline(
     frames: Receiver<Buffer>,
     format: CaptureFormat,
     resampler: To16k,
-    source: Source,
-    meeting_id: i64,
-    offset_ms: i64,
+    pipeline: Pipeline,
     mut submit: impl FnMut(Job),
 ) {
-    let mut chunker = Chunker::new(match source {
-        Source::Me => MIC_MIN_SPEECH_RMS,
-        Source::Them => SYSTEM_MIN_SPEECH_RMS,
-    });
+    let Pipeline {
+        source,
+        meeting_id,
+        offset_ms,
+        min_speech_rms,
+    } = pipeline;
+    let mut chunker = Chunker::new(min_speech_rms);
     let mut emit = |segment: crate::chunker::Segment| {
         submit(Job {
             meeting_id,
@@ -349,6 +391,16 @@ mod tests {
 
     /// Runs stereo buffers through a pipeline that starts at `rate` and collects its jobs.
     fn run_buffers(source: Source, rate: u32, buffers: Vec<Buffer>) -> Vec<Job> {
+        run_buffers_at(source, Sensitivity::Normal, rate, buffers)
+    }
+
+    /// Like `run_buffers`, detecting speech at `sensitivity`.
+    fn run_buffers_at(
+        source: Source,
+        sensitivity: Sensitivity,
+        rate: u32,
+        buffers: Vec<Buffer>,
+    ) -> Vec<Job> {
         let (tx, rx) = sync_channel(buffers.len().max(1));
         for buffer in buffers {
             tx.send(buffer).unwrap();
@@ -363,9 +415,7 @@ mod tests {
                 channels: 2,
             },
             To16k::new(rate).unwrap(),
-            source,
-            7,
-            60_000,
+            Pipeline::new(source, 7, 60_000, sensitivity),
             |job| jobs.push(job),
         );
         jobs
@@ -474,6 +524,42 @@ mod tests {
         assert!(pipeline_jobs(Source::Me, &audio).is_empty());
     }
 
+    /// Speech at about `rms` while speaking, with a second of silence either side.
+    fn speech_at_rms(rms: f32) -> Vec<f32> {
+        // The tone's RMS while speaking is about 0.212 (0.3 / sqrt 2).
+        let scale = rms / (0.3 / std::f32::consts::SQRT_2);
+        [silence(1000), tone(1500), silence(1000)]
+            .concat()
+            .iter()
+            .map(|s| s * scale)
+            .collect()
+    }
+
+    fn jobs_at(source: Source, sensitivity: Sensitivity, audio: &[f32]) -> usize {
+        run_buffers_at(source, sensitivity, RATE, stereo_buffers(audio)).len()
+    }
+
+    #[test]
+    fn high_sensitivity_hears_quieter_microphone_speech() {
+        let audio = speech_at_rms(0.008);
+        assert_eq!(jobs_at(Source::Me, Sensitivity::High, &audio), 1);
+        assert_eq!(jobs_at(Source::Me, Sensitivity::Normal, &audio), 0);
+    }
+
+    #[test]
+    fn high_sensitivity_hears_quieter_system_audio() {
+        let audio = speech_at_rms(0.0025);
+        assert_eq!(jobs_at(Source::Them, Sensitivity::High, &audio), 1);
+        assert_eq!(jobs_at(Source::Them, Sensitivity::Normal, &audio), 0);
+    }
+
+    #[test]
+    fn low_sensitivity_ignores_quiet_microphone_audio() {
+        let audio = speech_at_rms(0.012);
+        assert_eq!(jobs_at(Source::Me, Sensitivity::Low, &audio), 0);
+        assert_eq!(jobs_at(Source::Me, Sensitivity::Normal, &audio), 1);
+    }
+
     fn worker_unavailable() -> Result<&'static TranscriptionWorker, &'static str> {
         Err("no model")
     }
@@ -543,6 +629,42 @@ mod tests {
                 .meeting
                 .ended_at
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn the_next_recording_uses_the_stored_sensitivity() {
+        let store = Store::open_in_memory().unwrap();
+        let meeting = store.create_meeting("Quiet").unwrap();
+        let recorder = Recorder::default();
+        let (worker, jobs) = worker();
+        let record = |audio: &[f32]| {
+            start_recording(
+                &store,
+                &recorder,
+                Ok(&worker),
+                meeting.id,
+                mic_only(fake_capture(stereo_buffers(audio))),
+                ignore_issues(),
+            )
+            .unwrap();
+            stop_recording(&store, &recorder).unwrap();
+        };
+        let quiet = speech_at_rms(0.008);
+
+        record(&quiet);
+        assert!(jobs.recv_timeout(Duration::from_millis(500)).is_err());
+
+        store
+            .set_setting(
+                sensitivity_key(Source::Me),
+                Some(Sensitivity::High.as_setting()),
+            )
+            .unwrap();
+        record(&quiet);
+        assert_eq!(
+            jobs.recv_timeout(Duration::from_secs(5)).unwrap().source,
+            Source::Me
         );
     }
 

@@ -8,9 +8,10 @@ use super::recording::{Transcription, TranscriptionModel};
 use super::summaries::models_dir;
 use super::{CommandError, CommandResult, ErrorKind, blocking};
 use crate::audio::mic::{self, InputDevice};
+use crate::chunker::Sensitivity;
 use crate::models::{self, RemoveError};
-use crate::store::settings::INPUT_DEVICE;
-use crate::store::{ModelRecord, Store};
+use crate::store::settings::{INPUT_DEVICE, sensitivity_key};
+use crate::store::{ModelRecord, Source, Store};
 use crate::summarize::service::Summarizer;
 
 /// The transcription model in use, or why transcription is unavailable.
@@ -57,6 +58,52 @@ pub async fn set_input_device(
 ) -> CommandResult<()> {
     let store = Arc::clone(&store);
     blocking(move || Ok(store.set_setting(INPUT_DEVICE, device_id.as_deref())?)).await
+}
+
+/// How readily quiet audio counts as speech, for each side of the call.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechSensitivity {
+    me: Sensitivity,
+    them: Sensitivity,
+}
+
+fn speech_sensitivity_in(store: &Store) -> CommandResult<SpeechSensitivity> {
+    let level = |source| -> CommandResult<Sensitivity> {
+        Ok(Sensitivity::from_setting(
+            store.setting(sensitivity_key(source))?.as_deref(),
+        ))
+    };
+    Ok(SpeechSensitivity {
+        me: level(Source::Me)?,
+        them: level(Source::Them)?,
+    })
+}
+
+fn set_speech_sensitivity_in(
+    store: &Store,
+    source: Source,
+    level: Sensitivity,
+) -> CommandResult<()> {
+    Ok(store.set_setting(sensitivity_key(source), Some(level.as_setting()))?)
+}
+
+/// The speech sensitivity the next recording uses for each source.
+#[tauri::command]
+pub async fn speech_sensitivity(store: State<'_, Arc<Store>>) -> CommandResult<SpeechSensitivity> {
+    let store = Arc::clone(&store);
+    blocking(move || speech_sensitivity_in(&store)).await
+}
+
+/// Sets a source's speech sensitivity for future recordings.
+#[tauri::command]
+pub async fn set_speech_sensitivity(
+    store: State<'_, Arc<Store>>,
+    source: Source,
+    level: Sensitivity,
+) -> CommandResult<()> {
+    let store = Arc::clone(&store);
+    blocking(move || set_speech_sensitivity_in(&store, source, level)).await
 }
 
 #[derive(Serialize)]
@@ -181,6 +228,42 @@ mod tests {
         assert_eq!(
             serde_json::to_value(imported).unwrap()["huggingFace"],
             serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn speech_sensitivity_defaults_to_normal_and_keeps_what_is_set() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .set_setting(sensitivity_key(Source::Them), Some("unknown"))
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(speech_sensitivity_in(&store).unwrap()).unwrap(),
+            serde_json::json!({ "me": "normal", "them": "normal" })
+        );
+
+        set_speech_sensitivity_in(&store, Source::Me, Sensitivity::High).unwrap();
+        set_speech_sensitivity_in(&store, Source::Them, Sensitivity::Low).unwrap();
+
+        assert_eq!(
+            speech_sensitivity_in(&store).unwrap(),
+            SpeechSensitivity {
+                me: Sensitivity::High,
+                them: Sensitivity::Low,
+            }
+        );
+    }
+
+    #[test]
+    fn refuses_an_unknown_sensitivity_level_from_the_ui() {
+        assert_eq!(
+            serde_json::from_value::<Sensitivity>(serde_json::json!("high")).unwrap(),
+            Sensitivity::High
+        );
+        assert!(serde_json::from_value::<Sensitivity>(serde_json::json!("max")).is_err());
+        assert_eq!(
+            serde_json::from_value::<Source>(serde_json::json!("them")).unwrap(),
+            Source::Them
         );
     }
 }
