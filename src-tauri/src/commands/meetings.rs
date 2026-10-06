@@ -4,6 +4,7 @@ use tauri::State;
 
 use super::{CommandError, CommandResult, ErrorKind, blocking};
 use crate::recording::Recorder;
+use crate::recordings::Recordings;
 use crate::store::{Meeting, MeetingCursor, MeetingDetail, MeetingPage, Store};
 
 #[tauri::command]
@@ -56,10 +57,10 @@ pub async fn update_notes(
     blocking(move || Ok(store.update_notes(id, &body_markdown)?)).await
 }
 
-#[tauri::command]
-pub async fn delete_meeting(
-    store: State<'_, Arc<Store>>,
-    recorder: State<'_, Arc<Recorder>>,
+fn delete_meeting_in(
+    store: &Store,
+    recorder: &Recorder,
+    recordings: &Recordings,
     id: i64,
 ) -> CommandResult<()> {
     if recorder.active_meeting() == Some(id) {
@@ -68,6 +69,55 @@ pub async fn delete_meeting(
             message: "stop recording before deleting this meeting".into(),
         });
     }
-    let store = Arc::clone(&store);
-    blocking(move || Ok(store.delete_meeting(id)?)).await
+    store.delete_meeting(id)?;
+    recordings.delete_meeting(id).map_err(|error| {
+        log::error!("deleted meeting {id}, but not its kept recordings: {error}");
+        CommandError {
+            kind: ErrorKind::Internal,
+            message: format!(
+                "the meeting was deleted, but its audio recordings couldn't be: {error}"
+            ),
+        }
+    })
+}
+
+/// Deletes a meeting and any audio kept from its recordings.
+#[tauri::command]
+pub async fn delete_meeting(
+    store: State<'_, Arc<Store>>,
+    recorder: State<'_, Arc<Recorder>>,
+    recordings: State<'_, Arc<Recordings>>,
+    id: i64,
+) -> CommandResult<()> {
+    let (store, recorder, recordings) = (
+        Arc::clone(&store),
+        Arc::clone(&recorder),
+        Arc::clone(&recordings),
+    );
+    blocking(move || delete_meeting_in(&store, &recorder, &recordings, id)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::Source;
+
+    #[test]
+    fn deleting_a_meeting_deletes_its_kept_recordings() {
+        let dir = tempfile::tempdir().unwrap();
+        let recordings = Recordings::new(dir.path().to_path_buf());
+        let store = Store::open_in_memory().unwrap();
+        let (gone, kept) = (
+            store.create_meeting("Gone").unwrap(),
+            store.create_meeting("Kept").unwrap(),
+        );
+        for id in [gone.id, kept.id] {
+            recordings.keep(id, 0, Source::Me).unwrap().finish();
+        }
+
+        delete_meeting_in(&store, &Recorder::default(), &recordings, gone.id).unwrap();
+
+        assert!(!recordings.file_path(gone.id, 0, Source::Me).exists());
+        assert!(recordings.file_path(kept.id, 0, Source::Me).exists());
+    }
 }

@@ -8,6 +8,7 @@ pub mod export;
 pub mod meetings;
 pub mod models;
 pub mod recording;
+pub mod recordings;
 pub mod settings;
 pub mod setup;
 pub mod summaries;

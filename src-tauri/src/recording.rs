@@ -10,7 +10,8 @@ use serde::Serialize;
 use crate::audio::resample::{ResampleError, To16k};
 use crate::audio::{Buffer, Capture, CaptureError, CaptureFormat, ErrorSink, downmix};
 use crate::chunker::{Chunker, Sensitivity};
-use crate::store::settings::sensitivity_key;
+use crate::recordings::{KeptAudio, Recordings};
+use crate::store::settings::{KEEP_AUDIO, ON, sensitivity_key};
 use crate::store::{Source, Store, StoreError};
 use crate::transcribe::worker::{Job, TranscriptionWorker};
 
@@ -96,6 +97,7 @@ pub fn start_recording(
     meeting_id: i64,
     sources: Vec<(Source, CaptureStarter)>,
     on_issue: IssueSink,
+    recordings: &Recordings,
 ) -> Result<StartReport, RecordingError> {
     let worker = worker
         .map_err(|reason| RecordingError::TranscriptionUnavailable(reason.to_owned()))?
@@ -105,6 +107,7 @@ pub fn start_recording(
         return Err(RecordingError::AlreadyRecording(current.meeting_id));
     }
     let offset_ms = store.recording_offset(meeting_id)?;
+    let keep_audio = store.setting(KEEP_AUDIO)?.as_deref() == Some(ON);
 
     let mut started = Vec::new();
     let mut report = StartReport::default();
@@ -142,11 +145,30 @@ pub fn start_recording(
             "{source:?} speech sensitivity is {sensitivity:?} (floor {} RMS)",
             config.min_speech_rms
         );
+        let kept = keep_audio
+            .then(|| {
+                recordings
+                    .keep(meeting_id, offset_ms, source)
+                    .inspect_err(|error| {
+                        log::error!("couldn't keep {source:?} audio: {error}");
+                        on_issue(
+                            meeting_id,
+                            SourceProblem {
+                                source,
+                                message: format!(
+                                    "this recording's audio couldn't be saved: {error}"
+                                ),
+                            },
+                        );
+                    })
+                    .ok()
+            })
+            .flatten();
         let worker = worker.clone();
         let pipeline = thread::Builder::new()
             .name(format!("audio-pipeline-{source:?}"))
             .spawn(move || {
-                run_pipeline(frames, format, resampler, config, |job| {
+                run_pipeline(frames, format, resampler, config, kept, |job| {
                     if worker.submit(job).is_err() {
                         log::warn!(
                             "dropped a segment for meeting {meeting_id}: the transcription worker stopped"
@@ -229,7 +251,8 @@ impl Pipeline {
     }
 }
 
-/// Converts captured buffers into transcription jobs until the capture closes.
+/// Converts captured buffers into transcription jobs until the capture closes,
+/// handing the 16 kHz audio to `kept` first when the recording keeps its audio.
 /// `resampler` starts at the capture's initial rate. When a buffer arrives at
 /// another rate, the pipeline replaces it, first flushing the old one so later
 /// segments keep their timing.
@@ -238,6 +261,7 @@ pub fn run_pipeline(
     format: CaptureFormat,
     resampler: To16k,
     pipeline: Pipeline,
+    mut kept: Option<KeptAudio>,
     mut submit: impl FnMut(Job),
 ) {
     let Pipeline {
@@ -258,6 +282,9 @@ pub fn run_pipeline(
         });
     };
     let mut push = |samples: &[f32]| {
+        if let Some(kept) = kept.as_mut() {
+            kept.push(samples);
+        }
         for segment in chunker.push(samples) {
             emit(segment);
         }
@@ -289,6 +316,9 @@ pub fn run_pipeline(
     }
     if let Some(segment) = chunker.finish() {
         emit(segment);
+    }
+    if let Some(kept) = kept {
+        kept.finish();
     }
 }
 
@@ -385,6 +415,11 @@ mod tests {
         vec![(Source::Me, starter)]
     }
 
+    /// Recordings for tests that never keep audio, so nothing is written there.
+    fn no_recordings() -> Recordings {
+        Recordings::new(std::path::PathBuf::from("/nonexistent/earshot-recordings"))
+    }
+
     fn ignore_issues() -> IssueSink {
         Arc::new(|_, _| {})
     }
@@ -416,6 +451,7 @@ mod tests {
             },
             To16k::new(rate).unwrap(),
             Pipeline::new(source, 7, 60_000, sensitivity),
+            None,
             |job| jobs.push(job),
         );
         jobs
@@ -586,6 +622,7 @@ mod tests {
             meeting.id,
             mic_only(fake_capture(vec![])),
             ignore_issues(),
+            &no_recordings(),
         );
 
         assert!(matches!(
@@ -611,6 +648,7 @@ mod tests {
             meeting.id,
             mic_only(fake_capture(buffers)),
             ignore_issues(),
+            &no_recordings(),
         )
         .unwrap();
         assert!(report.unavailable.is_empty());
@@ -646,6 +684,7 @@ mod tests {
                 meeting.id,
                 mic_only(fake_capture(stereo_buffers(audio))),
                 ignore_issues(),
+                &no_recordings(),
             )
             .unwrap();
             stop_recording(&store, &recorder).unwrap();
@@ -687,6 +726,7 @@ mod tests {
                 (Source::Them, fake_capture(them)),
             ],
             ignore_issues(),
+            &no_recordings(),
         )
         .unwrap();
         stop_recording(&store, &recorder).unwrap();
@@ -720,6 +760,7 @@ mod tests {
                 ),
             ],
             ignore_issues(),
+            &no_recordings(),
         )
         .unwrap();
 
@@ -757,6 +798,7 @@ mod tests {
                 ),
             ],
             ignore_issues(),
+            &no_recordings(),
         );
 
         let Err(error @ RecordingError::NoAudio(_)) = result else {
@@ -805,6 +847,7 @@ mod tests {
             meeting.id,
             mic_only(unplugged),
             on_issue,
+            &no_recordings(),
         )
         .unwrap();
 
@@ -829,6 +872,7 @@ mod tests {
             first.id,
             mic_only(fake_capture(vec![])),
             ignore_issues(),
+            &no_recordings(),
         )
         .unwrap();
 
@@ -839,6 +883,7 @@ mod tests {
             second.id,
             mic_only(fake_capture(vec![])),
             ignore_issues(),
+            &no_recordings(),
         );
 
         assert!(matches!(result, Err(RecordingError::AlreadyRecording(id)) if id == first.id));
@@ -851,5 +896,155 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
 
         assert_eq!(stop_recording(&store, &Recorder::default()).unwrap(), None);
+    }
+
+    /// The resampler holds back about 20 ms that only a rate change flushes, so a
+    /// kept file can be that much shorter than the audio sent.
+    const KEPT_TOLERANCE: usize = 40 * 16;
+
+    fn read_wav(path: &std::path::Path) -> (hound::WavSpec, Vec<i16>) {
+        let mut reader = hound::WavReader::open(path).unwrap();
+        let samples = reader.samples::<i16>().map(Result::unwrap).collect();
+        (reader.spec(), samples)
+    }
+
+    /// Records the meeting from both sources with the given audio, keeping its audio.
+    fn record_both(
+        store: &Store,
+        recordings: &Recordings,
+        meeting_id: i64,
+        me: &[f32],
+        them: &[f32],
+    ) {
+        let recorder = Recorder::default();
+        let (worker, _jobs) = worker();
+        start_recording(
+            store,
+            &recorder,
+            Ok(&worker),
+            meeting_id,
+            vec![
+                (Source::Me, fake_capture(stereo_buffers(me))),
+                (Source::Them, fake_capture(stereo_buffers(them))),
+            ],
+            ignore_issues(),
+            recordings,
+        )
+        .unwrap();
+        // Stopping waits for the pipelines, which end once the fake captures have
+        // sent every buffer, and each pipeline completes its file before it ends.
+        stop_recording(store, &recorder).unwrap();
+    }
+
+    #[test]
+    fn keeps_each_source_s_audio_including_silence_when_the_setting_is_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let recordings = Recordings::new(dir.path().join("recordings"));
+        let store = Store::open_in_memory().unwrap();
+        let meeting = store.create_meeting("Kept").unwrap();
+        store.set_setting(KEEP_AUDIO, Some(ON)).unwrap();
+        // Silence only: speech detection drops all of it, but the file keeps it.
+        let quiet = silence(2000);
+
+        record_both(&store, &recordings, meeting.id, &quiet, &tone(1000));
+
+        for (source, ms) in [(Source::Me, 2000), (Source::Them, 1000)] {
+            let (spec, samples) = read_wav(&recordings.file_path(meeting.id, 0, source));
+            assert_eq!((spec.channels, spec.sample_rate), (1, 16_000));
+            let expected = ms * 16;
+            assert!(
+                samples.len().abs_diff(expected) <= KEPT_TOLERANCE,
+                "{source:?}: {} samples, expected about {expected}",
+                samples.len()
+            );
+            if source == Source::Me {
+                assert!(samples.iter().all(|&s| s == 0));
+            }
+        }
+    }
+
+    #[test]
+    fn keeps_no_audio_when_the_setting_is_off_or_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let recordings = Recordings::new(dir.path().join("recordings"));
+        let store = Store::open_in_memory().unwrap();
+        let meeting = store.create_meeting("Not kept").unwrap();
+
+        record_both(&store, &recordings, meeting.id, &tone(500), &tone(500));
+        store.set_setting(KEEP_AUDIO, Some("off")).unwrap();
+        record_both(&store, &recordings, meeting.id, &tone(500), &tone(500));
+
+        assert!(!recordings.root().exists());
+    }
+
+    #[test]
+    fn a_second_recording_keeps_a_new_pair_named_by_its_offset() {
+        let dir = tempfile::tempdir().unwrap();
+        let recordings = Recordings::new(dir.path().join("recordings"));
+        let store = Store::open_in_memory().unwrap();
+        let meeting = store.create_meeting("Twice").unwrap();
+        store.set_setting(KEEP_AUDIO, Some(ON)).unwrap();
+
+        record_both(&store, &recordings, meeting.id, &tone(500), &tone(500));
+        thread::sleep(Duration::from_millis(20));
+        record_both(&store, &recordings, meeting.id, &tone(300), &tone(300));
+
+        let mut files: Vec<String> =
+            std::fs::read_dir(recordings.root().join(meeting.id.to_string()))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+        files.sort();
+        assert_eq!(files.len(), 4, "{files:?}");
+        assert_eq!(&files[..2], ["0-me.wav", "0-them.wav"]);
+        let offset = files[2].strip_suffix("-me.wav").unwrap();
+        assert!(offset.parse::<i64>().unwrap() > 0, "{files:?}");
+        assert_eq!(files[3], format!("{offset}-them.wav"));
+        // The first pair is untouched.
+        let (_, first) = read_wav(&recordings.file_path(meeting.id, 0, Source::Me));
+        assert!(first.len().abs_diff(500 * 16) <= KEPT_TOLERANCE);
+    }
+
+    #[test]
+    fn a_blocked_writer_never_delays_transcription_jobs() {
+        let (writer, release, written) = crate::recordings::testing::blocked_writer();
+        let kept = KeptAudio::spawn(writer).unwrap();
+        // Ten seconds of speech bursts, more than the writer's backlog holds.
+        let audio: Vec<f32> = (0..5)
+            .flat_map(|_| [tone(1000), silence(1000)].concat())
+            .collect();
+        let buffers = stereo_buffers(&audio);
+        let buffer_count = buffers.len();
+        let (frames_tx, frames) = sync_channel(buffer_count);
+        for buffer in buffers {
+            frames_tx.send(buffer).unwrap();
+        }
+        drop(frames_tx);
+        let (jobs_tx, jobs) = mpsc::channel();
+
+        let pipeline = thread::spawn(move || {
+            run_pipeline(
+                frames,
+                CaptureFormat {
+                    sample_rate: RATE,
+                    channels: 2,
+                },
+                To16k::new(RATE).unwrap(),
+                Pipeline::new(Source::Me, 1, 0, Sensitivity::Normal),
+                Some(kept),
+                |job| jobs_tx.send(job).unwrap(),
+            )
+        });
+
+        // Every burst becomes a job while the writer is still stuck on its first write.
+        for _ in 0..5 {
+            jobs.recv_timeout(Duration::from_secs(5)).unwrap();
+        }
+        assert!(written.lock().unwrap().is_empty());
+        release.send(()).unwrap();
+        pipeline.join().unwrap();
+        // The audio that didn't fit while blocked is kept as silence, so the length still matches.
+        let written = written.lock().unwrap().len();
+        assert!(written.abs_diff(10_000 * 16) <= KEPT_TOLERANCE, "{written}");
     }
 }
