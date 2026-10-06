@@ -32,6 +32,18 @@ pub struct Segment {
     /// Offset of the first sample from the start of the stream.
     pub start_sample: u64,
     pub samples: Vec<f32>,
+    pub speech: Speech,
+}
+
+/// How much speech a segment holds. A segment can be mostly pre-roll and
+/// trailing silence, which Whistle may still turn into words.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Speech {
+    /// Time spent in speech frames.
+    pub ms: u64,
+    /// How many times louder than the speech threshold the speech frames were,
+    /// on average. Always above 1.
+    pub margin: f32,
 }
 
 impl Segment {
@@ -60,6 +72,8 @@ struct Current {
     samples: Vec<f32>,
     frames: usize,
     speech_frames: usize,
+    /// Sum of each speech frame's margin over its threshold.
+    margin_sum: f32,
     silence_run: usize,
 }
 
@@ -104,10 +118,10 @@ impl Chunker {
     fn process_frame(&mut self, frame: Vec<f32>) -> Option<Segment> {
         let frame_start = self.frames_seen * FRAME as u64;
         self.frames_seen += 1;
-        let speech = self.is_speech(&frame);
+        let margin = self.speech_margin(&frame);
 
         let Some(current) = self.current.as_mut() else {
-            if speech {
+            if let Some(margin) = margin {
                 let preroll_frames = self.preroll.len();
                 let mut samples = Vec::with_capacity(FRAME * 64);
                 for f in self.preroll.drain(..) {
@@ -119,6 +133,7 @@ impl Chunker {
                     samples,
                     frames: preroll_frames + 1,
                     speech_frames: 1,
+                    margin_sum: margin,
                     silence_run: 0,
                 });
             } else {
@@ -132,8 +147,9 @@ impl Chunker {
 
         current.samples.extend_from_slice(&frame);
         current.frames += 1;
-        if speech {
+        if let Some(margin) = margin {
             current.speech_frames += 1;
+            current.margin_sum += margin;
             current.silence_run = 0;
         } else {
             current.silence_run += 1;
@@ -148,10 +164,13 @@ impl Chunker {
         None
     }
 
-    fn is_speech(&mut self, frame: &[f32]) -> bool {
+    /// Returns how many times louder than the speech threshold the frame is, or
+    /// `None` when it isn't speech.
+    fn speech_margin(&mut self, frame: &[f32]) -> Option<f32> {
         let rms = (frame.iter().map(|s| s * s).sum::<f32>() / frame.len() as f32).sqrt();
         let floor = *self.noise_floor.get_or_insert(rms);
-        let speech = rms > self.min_speech_rms.max(floor * NOISE_MULTIPLIER);
+        let threshold = self.min_speech_rms.max(floor * NOISE_MULTIPLIER);
+        let speech = rms > threshold;
         // Follow the background down quickly and up slowly. During speech the
         // floor still creeps up, so noise that starts mid-stream (a fan, an air
         // conditioner) is absorbed in about 15 s. Pauses between words pull it
@@ -162,14 +181,18 @@ impl Chunker {
             (true, false) => 0.0005,
         };
         self.noise_floor = Some(floor + (rms - floor) * rate);
-        speech
+        speech.then_some(rms / threshold)
     }
 }
 
 fn into_segment(current: Current) -> Option<Segment> {
-    (current.speech_frames >= MIN_SPEECH_FRAMES).then_some(Segment {
+    (current.speech_frames >= MIN_SPEECH_FRAMES).then(|| Segment {
         start_sample: current.start_sample,
         samples: current.samples,
+        speech: Speech {
+            ms: (current.speech_frames * FRAME) as u64 * 1000 / SAMPLE_RATE as u64,
+            margin: current.margin_sum / current.speech_frames as f32,
+        },
     })
 }
 
@@ -236,6 +259,36 @@ mod tests {
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].start_ms(), 800); // 200 ms of pre-roll
         assert!(segments[0].end_ms() >= 2500);
+    }
+
+    #[test]
+    fn measures_the_speech_in_a_segment() {
+        let audio = concat(&[silence(1000), tone(1000), silence(1000)]);
+
+        let speech = run(&audio, 512)[0].speech;
+
+        // 40 ms of every 250 ms of tone is a gap, so about 840 ms is speech.
+        assert!((780..=1000).contains(&speech.ms), "{speech:?}");
+        // The tone is about 0.21 RMS against the 0.01 microphone floor.
+        assert!(speech.margin > 15.0, "{speech:?}");
+    }
+
+    #[test]
+    fn measures_a_short_burst_as_little_speech() {
+        let audio = concat(&[silence(1000), tone(120), silence(1000)]);
+
+        let speech = run(&audio, 512)[0].speech;
+
+        assert!(speech.ms <= 120, "{speech:?}");
+    }
+
+    #[test]
+    fn measures_a_quiet_speaker_with_a_low_margin() {
+        let audio = concat(&[silence(1000), quiet(&tone(1000)), silence(1000)]);
+
+        let speech = run_with(SYSTEM_MIN_SPEECH_RMS, &audio, 512)[0].speech;
+
+        assert!(speech.margin > 1.0 && speech.margin < 2.5, "{speech:?}");
     }
 
     #[test]

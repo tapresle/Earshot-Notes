@@ -212,6 +212,7 @@ pub fn run_pipeline(
             start_ms: offset_ms + segment.start_ms() as i64,
             end_ms: offset_ms + segment.end_ms() as i64,
             samples: segment.samples,
+            speech: segment.speech,
         });
     };
     let mut push = |samples: &[f32]| {
@@ -391,6 +392,8 @@ mod tests {
             job.start_ms
         );
         assert_eq!(job.samples.len() as i64, (job.end_ms - job.start_ms) * 16);
+        assert!(job.speech.ms > 1000, "{:?}", job.speech);
+        assert!(job.speech.margin > 1.0, "{:?}", job.speech);
     }
 
     #[test]
