@@ -679,6 +679,13 @@ body {
   padding-left: 16px;
 }
 
+.export-all {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .export-meeting {
   display: flex;
   flex-direction: column;
@@ -689,12 +696,12 @@ body {
 }
 
 .settings-button {
-  margin-top: 8px;
+  margin-top: auto;
   text-align: left;
 }
 
-.settings-button.pinned-bottom {
-  margin-top: auto;
+.export-bar + .settings-button {
+  margin-top: 8px;
 }
 
 .settings-button[aria-current="page"] {

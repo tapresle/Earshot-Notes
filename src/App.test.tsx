@@ -1050,16 +1050,33 @@ describe("App", () => {
       expect(screen.queryByText(/Saved to/)).not.toBeInTheDocument();
     });
 
-    it("exports all meetings to a folder", async () => {
+    it("exports all meetings from Settings", async () => {
       const backend = fakeBackend([seedMeeting(1, "One"), seedMeeting(2, "Two")]);
       vi.mocked(open).mockResolvedValue("/Users/me/Exports");
       const user = userEvent.setup();
       render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
-      await user.click(await within(sidebar()).findByRole("button", { name: "Export all" }));
+      await user.click(await screen.findByRole("button", { name: "Export all meetings" }));
 
-      expect(await within(sidebar()).findByText(/Exported 2 meetings to/)).toBeInTheDocument();
+      expect(await screen.findByText(/Exported 2 meetings to/)).toBeInTheDocument();
       expect(backend.state.exports).toEqual([{ ids: null, folder: "/Users/me/Exports" }]);
+    });
+
+    it("exports every meeting from Settings while a search filters the sidebar", async () => {
+      const backend = fakeBackend([seedMeeting(1, "One"), seedMeeting(2, "Two")]);
+      vi.mocked(open).mockResolvedValue("/out");
+      const user = userEvent.setup();
+      render(<App />);
+      await user.type(await screen.findByRole("searchbox", { name: "Search meetings" }), "nothing matches this");
+      await within(sidebar()).findByText(/No meetings match/);
+
+      expect(within(sidebar()).queryByRole("button", { name: /Export all/ })).not.toBeInTheDocument();
+      await user.click(within(sidebar()).getByRole("button", { name: "Settings" }));
+      await user.click(await screen.findByRole("button", { name: "Export all meetings" }));
+
+      expect(await screen.findByText(/Exported 2 meetings to/)).toBeInTheDocument();
+      expect(backend.state.exports).toEqual([{ ids: null, folder: "/out" }]);
     });
 
     it("selects meetings with Cmd-click and exports the selection", async () => {
@@ -1104,20 +1121,25 @@ describe("App", () => {
       vi.mocked(open).mockResolvedValue("/locked");
       const user = userEvent.setup();
       render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
-      await user.click(await within(sidebar()).findByRole("button", { name: "Export all" }));
+      await user.click(await screen.findByRole("button", { name: "Export all meetings" }));
 
-      expect(await within(sidebar()).findByText(/Exported 1 meeting to/)).toBeInTheDocument();
-      expect(within(sidebar()).getByText("Couldn't export 1 meeting:")).toBeInTheDocument();
-      expect(within(sidebar()).getByText("Two: permission denied")).toBeInTheDocument();
+      expect(await screen.findByText(/Exported 1 meeting to/)).toBeInTheDocument();
+      expect(screen.getByText("Couldn't export 1 meeting:")).toBeInTheDocument();
+      expect(screen.getByText("Two: permission denied")).toBeInTheDocument();
     });
 
-    it("hides export when there are no meetings", async () => {
+    it("says when there are no meetings to export", async () => {
       fakeBackend();
+      vi.mocked(open).mockResolvedValue("/out");
+      const user = userEvent.setup();
       render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
-      await screen.findByRole("heading", { name: "Start your first meeting" });
-      expect(screen.queryByRole("button", { name: "Export all" })).not.toBeInTheDocument();
+      await user.click(await screen.findByRole("button", { name: "Export all meetings" }));
+
+      expect(await screen.findByText("There are no meetings to export yet.")).toBeInTheDocument();
     });
   });
 
