@@ -67,8 +67,9 @@ int32_t gc_set_app_icon(const uint8_t *image, size_t len);
 
 // Hides the Dock icon the way menu bar apps do: hides the app first, so macOS
 // hands focus to the next app with its usual app switch, then drops the Dock
-// icon once the app is inactive. Dropping it while the app is frontmost makes
-// macOS redraw the whole menu bar. Call on the main thread.
+// icon once the app is inactive. Dropping it while the app is frontmost, or
+// within a second of showing it, makes macOS redraw the whole menu bar, so a
+// hide that soon after a show waits. Call on the main thread.
 void gc_hide_dock_icon(void);
 
 // Shows the Dock icon again, cancelling a pending gc_hide_dock_icon. Call on

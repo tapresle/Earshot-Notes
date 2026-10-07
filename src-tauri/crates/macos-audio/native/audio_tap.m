@@ -387,8 +387,16 @@ int32_t gc_set_app_icon(const uint8_t *image, size_t len) {
     return 1;
 }
 
+// Showing the Dock icon finishes asynchronously, and hiding it again before
+// that settles makes macOS redraw the whole menu bar. A hide this soon after a
+// show waits until the interval has passed.
+static const NSTimeInterval kSettleAfterShow = 1.0;
+
 // The observer waiting for the app to become inactive, if a hide is pending.
 static id pending_hide;
+// Bumped by every show and hide, so a delayed hide that's been superseded does nothing.
+static NSUInteger dock_generation;
+static NSDate *last_show;
 
 static void cancel_pending_hide(void) {
     if (pending_hide) {
@@ -397,9 +405,8 @@ static void cancel_pending_hide(void) {
     }
 }
 
-void gc_hide_dock_icon(void) {
+static void hide_now(void) {
     NSApplication *app = NSApplication.sharedApplication;
-    cancel_pending_hide();
     if (!app.isActive) {
         [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
         return;
@@ -417,8 +424,24 @@ void gc_hide_dock_icon(void) {
     [app hide:nil];
 }
 
+void gc_hide_dock_icon(void) {
+    cancel_pending_hide();
+    NSUInteger generation = ++dock_generation;
+    NSTimeInterval wait = last_show ? kSettleAfterShow + last_show.timeIntervalSinceNow : 0;
+    if (wait <= 0) {
+        hide_now();
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+                       if (generation == dock_generation) hide_now();
+                   });
+}
+
 void gc_show_dock_icon(void) {
     cancel_pending_hide();
+    ++dock_generation;
+    last_show = [NSDate date];
     NSApplication *app = NSApplication.sharedApplication;
     [app setActivationPolicy:NSApplicationActivationPolicyRegular];
     [app unhide:nil];
