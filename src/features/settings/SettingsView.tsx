@@ -12,9 +12,11 @@ import {
   type Source,
   type SpeechSensitivity,
   type TranscriptionModel,
+  type UpdateCheck,
 } from "../../lib/api";
 import { ExportAllButton } from "../export/ExportBar";
 import { ModelOrigin } from "../summary/ModelOrigin";
+import { Markdown } from "../summary/Markdown";
 import { ModelSetup } from "../summary/ModelSetup";
 
 export function SettingsView({ recording, onShowSetup }: { recording: boolean; onShowSetup: () => void }) {
@@ -38,6 +40,7 @@ export function SettingsView({ recording, onShowSetup }: { recording: boolean; o
       <AudioRecordingsSection recording={recording} />
       <SummaryModelSection />
       <TranscriptionSection />
+      <UpdatesSection />
       <section className="settings-section" aria-labelledby="export-heading">
         <h2 id="export-heading">Export</h2>
         <p className="settings-help">Saves every meeting as a Markdown file in a folder you choose.</p>
@@ -596,6 +599,77 @@ function TranscriptionSection() {
           </p>
           <p className="settings-help selectable">{model.path}</p>
         </>
+      )}
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function UpdatesSection() {
+  const [enabled, setEnabled] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [found, setFound] = useState<UpdateCheck | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .updateCheckEnabled()
+      .then(setEnabled)
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
+
+  async function check() {
+    setChecking(true);
+    setError(null);
+    setFound(null);
+    try {
+      setFound(await api.checkForUpdate());
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function openPage(version: string) {
+    setError(null);
+    try {
+      await api.openReleasePage(version);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  if (!enabled && !error) return null;
+
+  return (
+    <section className="settings-section" aria-labelledby="updates-heading">
+      <h2 id="updates-heading">Updates</h2>
+      {enabled && (
+        <>
+          <p className="settings-help">
+            Checks GitHub for a newer release. Earshot Notes contacts GitHub only when you press the button.
+          </p>
+          <button type="button" className="button subtle" onClick={() => void check()} disabled={checking}>
+            {checking ? "Checking…" : "Check for updates"}
+          </button>
+        </>
+      )}
+      {found && !found.newer && <p role="status">You have the latest version, {found.current}.</p>}
+      {found?.newer && (
+        <div className="update-card">
+          <p role="status">
+            Earshot Notes {found.latest} is available. You have {found.current}.
+          </p>
+          <button type="button" className="button" onClick={() => void openPage(found.latest)}>
+            Open download page
+          </button>
+          {found.notes && <Markdown source={found.notes} />}
+        </div>
       )}
       {error && (
         <p className="field-error" role="alert">

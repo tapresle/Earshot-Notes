@@ -983,6 +983,80 @@ describe("App", () => {
       });
     });
 
+    describe("check for updates", () => {
+      async function openWith(setup: (state: ReturnType<typeof fakeBackend>["state"]) => void) {
+        const backend = fakeBackend([seedMeeting(1, "Sync")]);
+        setup(backend.state);
+        const user = userEvent.setup();
+        render(<App />);
+        await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+        await screen.findByLabelText("Record from");
+        return { backend, user };
+      }
+
+      it("isn't offered while switched off", async () => {
+        const { backend } = await openWith((state) => (state.updateCheckEnabled = false));
+
+        expect(screen.queryByRole("heading", { name: "Updates" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Check for updates" })).not.toBeInTheDocument();
+        expect(backend.state.updateChecks).toBe(0);
+      });
+
+      it("contacts GitHub only when asked", async () => {
+        const { backend, user } = await openWith((state) => (state.updateCheckEnabled = true));
+
+        expect(await screen.findByRole("button", { name: "Check for updates" })).toBeInTheDocument();
+        expect(backend.state.updateChecks).toBe(0);
+        await user.click(screen.getByRole("button", { name: "Check for updates" }));
+        await waitFor(() => expect(backend.state.updateChecks).toBe(1));
+      });
+
+      it("shows a newer release's notes and opens its page", async () => {
+        const { backend, user } = await openWith((state) => {
+          state.updateCheckEnabled = true;
+          state.updateCheck = {
+            current: "0.1.6",
+            latest: "0.2.0",
+            newer: true,
+            notes: "### Improved\n\n- **Faster summaries.** (#90)",
+          };
+        });
+
+        await user.click(await screen.findByRole("button", { name: "Check for updates" }));
+
+        expect(await screen.findByText("Earshot Notes 0.2.0 is available. You have 0.1.6.")).toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "Improved" })).toBeInTheDocument();
+        expect(screen.getByText("Faster summaries.")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Open download page" }));
+        expect(backend.state.openedReleasePage).toBe("0.2.0");
+      });
+
+      it("says when you have the latest version", async () => {
+        await openWith((state) => (state.updateCheckEnabled = true));
+
+        await userEvent.click(await screen.findByRole("button", { name: "Check for updates" }));
+
+        expect(await screen.findByText("You have the latest version, 0.1.6.")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Open download page" })).not.toBeInTheDocument();
+      });
+
+      it("explains a failed check", async () => {
+        await openWith((state) => {
+          state.updateCheckEnabled = true;
+          state.updateCheckError = {
+            kind: "unavailable",
+            message: "couldn't reach GitHub, check your internet connection: dns lookup failed",
+          };
+        });
+
+        await userEvent.click(await screen.findByRole("button", { name: "Check for updates" }));
+
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "Couldn't reach GitHub, check your internet connection: dns lookup failed.",
+        );
+      });
+    });
+
     it("chooses a microphone", async () => {
       const { backend, user } = await openSettings();
       const select = await screen.findByLabelText("Record from");

@@ -578,7 +578,8 @@ body {
   word-break: break-all;
 }
 
-.model-card {
+.model-card,
+.update-card {
   margin: 12px 0;
   padding: 12px 14px;
   border: 1px solid var(--border);

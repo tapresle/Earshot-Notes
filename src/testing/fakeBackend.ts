@@ -1,5 +1,5 @@
 // Synthetic data only: these fixtures also render the committed screenshots.
-import type { MeetingDetail, ModelRecord, Summary, TranscriptSegment } from "../lib/api";
+import type { MeetingDetail, ModelRecord, Summary, TranscriptSegment, UpdateCheck } from "../lib/api";
 
 type Args = Record<string, unknown>;
 
@@ -51,6 +51,11 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     systemAudioPermission: "authorized" as string | null,
     systemAudioAnswer: "authorized" as string | null,
     openedPanes: [] as string[],
+    updateCheckEnabled: false,
+    updateChecks: 0,
+    updateCheck: { current: "0.1.6", latest: "0.1.6", newer: false, notes: "" } as UpdateCheck,
+    updateCheckError: null as unknown,
+    openedReleasePage: null as string | null,
   };
 
   const handlers: Record<string, (args: Args) => unknown> = {
@@ -177,6 +182,16 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     },
     input_devices: () => state.devices,
     input_device: () => state.inputDevice,
+    update_check_enabled: () => state.updateCheckEnabled,
+    check_for_update: () => {
+      if (!state.updateCheckEnabled) throw { kind: "unavailable", message: "checking for updates isn't available" };
+      state.updateChecks++;
+      if (state.updateCheckError) throw state.updateCheckError;
+      return { ...state.updateCheck };
+    },
+    open_release_page: ({ version }) => {
+      state.openedReleasePage = version as string;
+    },
     launch_at_login: () => ({ ...state.launchAtLogin }),
     set_launch_at_login: ({ enabled }) => {
       if (state.launchAtLoginError) throw state.launchAtLoginError;
