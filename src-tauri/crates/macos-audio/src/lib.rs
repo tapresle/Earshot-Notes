@@ -122,18 +122,20 @@ pub enum LoginItem {
     On,
     /// Turned on, but waiting for approval in System Settings > General > Login Items.
     NeedsApproval,
-    /// macOS can't register this app, for example a development build that isn't bundled.
+    /// This platform has no login items.
     Unavailable,
 }
 
 impl LoginItem {
-    /// Decodes `SMAppServiceStatus`.
+    /// Decodes `SMAppServiceStatus`. `notFound` (3) counts as off: macOS
+    /// reports it for an installed app that has never registered, and only
+    /// registering changes it. Where registering can't work, such as a
+    /// development build, `set_login_item` returns macOS's reason.
     fn from_code(code: i32) -> Self {
         match code {
-            0 => LoginItem::Off,
             1 => LoginItem::On,
             2 => LoginItem::NeedsApproval,
-            _ => LoginItem::Unavailable,
+            _ => LoginItem::Off,
         }
     }
 }
@@ -459,7 +461,8 @@ mod tests {
         assert_eq!(LoginItem::from_code(0), LoginItem::Off);
         assert_eq!(LoginItem::from_code(1), LoginItem::On);
         assert_eq!(LoginItem::from_code(2), LoginItem::NeedsApproval);
-        assert_eq!(LoginItem::from_code(3), LoginItem::Unavailable);
+        // notFound: an installed app that has never registered reports this.
+        assert_eq!(LoginItem::from_code(3), LoginItem::Off);
     }
 
     #[test]

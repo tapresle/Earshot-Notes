@@ -69,7 +69,7 @@ pub struct LaunchAtLogin {
     enabled: bool,
     /// Turned on, but waiting for approval in System Settings > General > Login Items.
     needs_approval: bool,
-    /// False when macOS can't register this copy of the app, such as a development build.
+    /// False on a platform without login items.
     available: bool,
 }
 
@@ -96,11 +96,12 @@ pub async fn set_launch_at_login(enabled: bool) -> CommandResult<LaunchAtLogin> 
             kind: ErrorKind::Unavailable,
             message: format!("couldn't change opening at login: {error}"),
         })?;
+        let item = macos_audio::login_item();
         log::info!(
-            "opening at login turned {}",
+            "opening at login turned {}; macOS reports {item:?}",
             if enabled { "on" } else { "off" }
         );
-        Ok(macos_audio::login_item().into())
+        Ok(item.into())
     })
     .await
 }
