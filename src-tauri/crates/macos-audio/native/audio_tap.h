@@ -60,6 +60,11 @@ int32_t gc_system_audio_authorization_status(void);
 // available. Do not call on the main thread.
 int32_t gc_system_audio_request_access(void);
 
+// Sets the Dock icon from PNG or other image data. A bundled app gets its icon
+// from the bundle; a development build, which isn't bundled, needs this.
+// Returns 1 on success.
+int32_t gc_set_app_icon(const uint8_t *image, size_t len);
+
 // Whether the app opens at login (SMAppService.mainAppService): 0 not
 // registered, 1 enabled, 2 waiting for approval in System Settings, 3 not
 // found (for example, an app that isn't bundled).

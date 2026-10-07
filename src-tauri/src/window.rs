@@ -11,6 +11,7 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
     if let Err(error) = app.set_activation_policy(ActivationPolicy::Regular) {
         log::warn!("couldn't show the Dock icon: {error}");
     }
+    restore_dev_icon();
     let Some(window) = app.get_webview_window(MAIN) else {
         log::error!("the main window is missing");
         return;
@@ -23,6 +24,19 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
         log::warn!("couldn't show the window: {error}");
     }
 }
+
+/// A development build isn't bundled, so Tauri sets its Dock icon once at
+/// startup, and macOS shows a generic "exec" icon whenever the Dock icon comes
+/// back. Setting it again fixes that. A bundled app's icon comes from its bundle.
+#[cfg(dev)]
+fn restore_dev_icon() {
+    if let Err(error) = macos_audio::set_app_icon(include_bytes!("../icons/icon.png")) {
+        log::warn!("couldn't set the development Dock icon: {error}");
+    }
+}
+
+#[cfg(not(dev))]
+fn restore_dev_icon() {}
 
 /// Hides a window instead of closing it, and hides the Dock icon. The page
 /// stays loaded, so it keeps receiving events and opens again where it was.

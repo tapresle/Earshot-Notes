@@ -98,6 +98,12 @@ impl Drop for OutputDeviceWatcher {
     }
 }
 
+/// Sets the Dock icon from image data such as a PNG. Only development builds
+/// need this: a bundled app's icon comes from its bundle.
+pub fn set_app_icon(image: &[u8]) -> Result<(), String> {
+    imp::set_app_icon(image)
+}
+
 /// Whether the app opens at login, from macOS's own record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginItem {
@@ -189,6 +195,7 @@ mod imp {
             error_len: usize,
         ) -> *mut c_void;
         fn gc_output_device_unwatch(handle: *mut c_void);
+        fn gc_set_app_icon(image: *const u8, len: usize) -> i32;
         fn gc_login_item_status() -> i32;
         fn gc_login_item_set(enabled: i32, error: *mut c_char, error_len: usize) -> i32;
         fn gc_launched_as_login_item() -> i32;
@@ -289,6 +296,13 @@ mod imp {
         unsafe { gc_output_device_unwatch(handle) };
     }
 
+    pub fn set_app_icon(image: &[u8]) -> Result<(), String> {
+        match unsafe { gc_set_app_icon(image.as_ptr(), image.len()) } {
+            1 => Ok(()),
+            _ => Err("the icon isn't a readable image".into()),
+        }
+    }
+
     pub fn login_item() -> LoginItem {
         LoginItem::from_code(unsafe { gc_login_item_status() })
     }
@@ -345,6 +359,10 @@ mod imp {
     }
 
     pub fn unwatch(_handle: *mut c_void) {}
+
+    pub fn set_app_icon(_image: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
 
     pub fn login_item() -> LoginItem {
         LoginItem::Unavailable

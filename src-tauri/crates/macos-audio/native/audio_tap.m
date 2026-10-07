@@ -12,6 +12,7 @@
 #import "audio_tap.h"
 
 #import <AVFoundation/AVFoundation.h>
+#import <AppKit/AppKit.h>
 #import <CoreAudio/AudioHardwareTapping.h>
 #import <CoreAudio/CATapDescription.h>
 #import <CoreAudio/CoreAudio.h>
@@ -371,4 +372,17 @@ int32_t gc_launched_as_login_item(void) {
     if (!event || event.eventID != kAEOpenApplication) return 0;
     NSAppleEventDescriptor *data = [event paramDescriptorForKeyword:keyAEPropData];
     return data && data.enumCodeValue == keyAELaunchedAsLogInItem ? 1 : 0;
+}
+
+int32_t gc_set_app_icon(const uint8_t *image, size_t len) {
+    NSImage *icon = [[NSImage alloc] initWithData:[NSData dataWithBytes:image length:len]];
+    if (!icon) return 0;
+    // AppKit must be used on the main thread.
+    dispatch_block_t apply = ^{ NSApplication.sharedApplication.applicationIconImage = icon; };
+    if (NSThread.isMainThread) {
+        apply();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), apply);
+    }
+    return 1;
 }
