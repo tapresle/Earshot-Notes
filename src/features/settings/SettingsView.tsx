@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   errorMessage,
@@ -174,23 +174,26 @@ function SpeechDetectionSection() {
         recording.
       </p>
       {levels === null && !error && <p className="empty-hint">Loading…</p>}
-      {levels !== null &&
-        SENSITIVITY_SOURCES.map(({ source, label }) => (
-          <div className="settings-row" key={source}>
-            <label htmlFor={`sensitivity-${source}`}>{label}</label>
-            <select
-              id={`sensitivity-${source}`}
-              value={levels[source]}
-              onChange={(e) => void choose(source, e.target.value as Sensitivity)}
-            >
-              {SENSITIVITY_LEVELS.map(({ value, label }) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-        ))}
+      {levels !== null && (
+        <div className="settings-grid">
+          {SENSITIVITY_SOURCES.map(({ source, label }) => (
+            <Fragment key={source}>
+              <label htmlFor={`sensitivity-${source}`}>{label}</label>
+              <select
+                id={`sensitivity-${source}`}
+                value={levels[source]}
+                onChange={(e) => void choose(source, e.target.value as Sensitivity)}
+              >
+                {SENSITIVITY_LEVELS.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Fragment>
+          ))}
+        </div>
+      )}
       {saved && (
         <p className="settings-saved" role="status">
           Saved
