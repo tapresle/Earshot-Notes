@@ -386,3 +386,40 @@ int32_t gc_set_app_icon(const uint8_t *image, size_t len) {
     }
     return 1;
 }
+
+// The observer waiting for the app to become inactive, if a hide is pending.
+static id pending_hide;
+
+static void cancel_pending_hide(void) {
+    if (pending_hide) {
+        [NSNotificationCenter.defaultCenter removeObserver:pending_hide];
+        pending_hide = nil;
+    }
+}
+
+void gc_hide_dock_icon(void) {
+    NSApplication *app = NSApplication.sharedApplication;
+    cancel_pending_hide();
+    if (!app.isActive) {
+        [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        return;
+    }
+    pending_hide = [NSNotificationCenter.defaultCenter
+        addObserverForName:NSApplicationDidResignActiveNotification
+                    object:app
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(NSNotification *note) {
+                    (void)note;
+                    cancel_pending_hide();
+                    [NSApplication.sharedApplication
+                        setActivationPolicy:NSApplicationActivationPolicyAccessory];
+                }];
+    [app hide:nil];
+}
+
+void gc_show_dock_icon(void) {
+    cancel_pending_hide();
+    NSApplication *app = NSApplication.sharedApplication;
+    [app setActivationPolicy:NSApplicationActivationPolicyRegular];
+    [app unhide:nil];
+}

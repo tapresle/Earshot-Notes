@@ -65,6 +65,16 @@ int32_t gc_system_audio_request_access(void);
 // Returns 1 on success.
 int32_t gc_set_app_icon(const uint8_t *image, size_t len);
 
+// Hides the Dock icon the way menu bar apps do: hides the app first, so macOS
+// hands focus to the next app with its usual app switch, then drops the Dock
+// icon once the app is inactive. Dropping it while the app is frontmost makes
+// macOS redraw the whole menu bar. Call on the main thread.
+void gc_hide_dock_icon(void);
+
+// Shows the Dock icon again, cancelling a pending gc_hide_dock_icon. Call on
+// the main thread.
+void gc_show_dock_icon(void);
+
 // Whether the app opens at login (SMAppService.mainAppService): 0 not
 // registered, 1 enabled, 2 waiting for approval in System Settings, 3 not
 // found (for example, an app that isn't bundled).

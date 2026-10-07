@@ -98,6 +98,17 @@ impl Drop for OutputDeviceWatcher {
     }
 }
 
+/// Hides the Dock icon after the app steps aside, the way menu bar apps do,
+/// so macOS doesn't redraw the whole menu bar. Call on the main thread.
+pub fn hide_dock_icon() {
+    imp::hide_dock_icon()
+}
+
+/// Shows the Dock icon again, cancelling a pending hide. Call on the main thread.
+pub fn show_dock_icon() {
+    imp::show_dock_icon()
+}
+
 /// Sets the Dock icon from image data such as a PNG. Only development builds
 /// need this: a bundled app's icon comes from its bundle.
 pub fn set_app_icon(image: &[u8]) -> Result<(), String> {
@@ -196,6 +207,8 @@ mod imp {
         ) -> *mut c_void;
         fn gc_output_device_unwatch(handle: *mut c_void);
         fn gc_set_app_icon(image: *const u8, len: usize) -> i32;
+        fn gc_hide_dock_icon();
+        fn gc_show_dock_icon();
         fn gc_login_item_status() -> i32;
         fn gc_login_item_set(enabled: i32, error: *mut c_char, error_len: usize) -> i32;
         fn gc_launched_as_login_item() -> i32;
@@ -296,6 +309,14 @@ mod imp {
         unsafe { gc_output_device_unwatch(handle) };
     }
 
+    pub fn hide_dock_icon() {
+        unsafe { gc_hide_dock_icon() }
+    }
+
+    pub fn show_dock_icon() {
+        unsafe { gc_show_dock_icon() }
+    }
+
     pub fn set_app_icon(image: &[u8]) -> Result<(), String> {
         match unsafe { gc_set_app_icon(image.as_ptr(), image.len()) } {
             1 => Ok(()),
@@ -359,6 +380,10 @@ mod imp {
     }
 
     pub fn unwatch(_handle: *mut c_void) {}
+
+    pub fn hide_dock_icon() {}
+
+    pub fn show_dock_icon() {}
 
     pub fn set_app_icon(_image: &[u8]) -> Result<(), String> {
         Ok(())
