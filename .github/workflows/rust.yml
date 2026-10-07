@@ -1,0 +1,75 @@
+# Rust format, lint, and tests. These need macOS 26 on Apple Silicon: the
+# prebuilt needle engine supports nothing else, and the build targets macOS 26.
+# macOS minutes cost more, so this runs only when Rust or its inputs change.
+name: Rust
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src-tauri/**"
+      - "scripts/fetch-native.sh"
+      - ".github/workflows/rust.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src-tauri/**"
+      - "scripts/fetch-native.sh"
+      - ".github/workflows/rust.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust format, clippy, and tests
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the stable Rust toolchain
+        id: toolchain
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup component add clippy rustfmt
+          echo "rustc=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+      # Keyed on the pins in the script, so a changed pin refetches. The script
+      # verifies every file's checksum either way.
+      - name: Cache native engine and models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            src-tauri/vendor/needle/macos-arm64/libneedle.a
+            src-tauri/resources/models/whistle.cact
+            src-tauri/tests/models
+          key: native-${{ hashFiles('scripts/fetch-native.sh') }}
+      - name: Fetch native engine and models
+        run: ../scripts/fetch-native.sh
+      - name: Cache cargo registry and build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            src-tauri/target
+          key: cargo-macos-26-${{ steps.toolchain.outputs.rustc }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-macos-26-${{ steps.toolchain.outputs.rustc }}-
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      # The hosted runner's virtual GPU runs the tiny test model in minutes; the CPU takes seconds.
+      - run: cargo test --workspace
+        env:
+          EARSHOT_TEST_CPU: "1"

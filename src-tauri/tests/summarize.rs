@@ -1,18 +1,32 @@
 //! Runs the summary engine against a tiny real model (SmolLM2 135M). It checks
 //! plumbing, not summary quality. Requires scripts/fetch-native.sh.
+//!
+//! Set `EARSHOT_TEST_CPU=1` to run the model on the CPU. CI does, because the
+//! virtual GPU on hosted Mac runners makes these tests take minutes instead of seconds.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use earshot_lib::store::{Source, TranscriptSegment};
-use earshot_lib::summarize::llama::LlamaGenerator;
+use earshot_lib::summarize::llama::{LlamaGenerator, MAX_CONTEXT, Placement};
 use earshot_lib::summarize::run::{Generator, Progress, Request, SummaryError, summarize};
 use earshot_lib::summarize::template::Message;
 
 const MODEL: &str = "tests/models/smollm2-135m-instruct-q4_k_m.gguf";
 
+fn placement() -> Placement {
+    match std::env::var("EARSHOT_TEST_CPU").as_deref() {
+        Ok("1") => Placement::Cpu,
+        _ => Placement::Gpu,
+    }
+}
+
+fn model_with_context_limit(limit: usize) -> LlamaGenerator {
+    LlamaGenerator::load_on(Path::new(MODEL), limit, placement()).unwrap()
+}
+
 fn model() -> LlamaGenerator {
-    LlamaGenerator::load(Path::new(MODEL)).unwrap()
+    model_with_context_limit(MAX_CONTEXT)
 }
 
 fn question() -> Vec<Message> {
@@ -111,7 +125,7 @@ fn summarizes_a_short_meeting_in_one_pass() {
 
 #[test]
 fn condenses_in_parts_when_the_meeting_exceeds_the_context() {
-    let mut model = LlamaGenerator::load_with_context_limit(Path::new(MODEL), 2560).unwrap();
+    let mut model = model_with_context_limit(2560);
     let segments = transcript(120);
     let mut progress = Vec::new();
 
