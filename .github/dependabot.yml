@@ -1,6 +1,8 @@
-# Weekly dependency updates, one grouped pull request per ecosystem. The needle
-# engine, Whistle, and the summary models aren't packages; the upstream
-# workflow (.github/workflows/upstream.yml) tracks those.
+# Weekly dependency updates. Minor and patch updates arrive as one grouped pull
+# request per ecosystem; each major update gets its own, so a breaking release
+# can't hold back the safe ones. The needle engine, Whistle, and the summary
+# models aren't packages; the upstream workflow
+# (.github/workflows/upstream.yml) tracks those.
 version: 2
 updates:
   - package-ecosystem: cargo
@@ -10,6 +12,7 @@ updates:
     groups:
       cargo:
         patterns: ["*"]
+        update-types: [minor, patch]
     ignore:
       # Moving llama.cpp needs RUNTIME_VERSION and the models' min_runtime
       # updated and the summary benchmark rerun (see the update policy in
@@ -24,6 +27,7 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+        update-types: [minor, patch]
 
   # Keeps each action pinned to a commit SHA and updates the version comment.
   - package-ecosystem: github-actions
@@ -33,3 +37,4 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+        update-types: [minor, patch]
