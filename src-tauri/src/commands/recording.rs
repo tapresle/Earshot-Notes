@@ -89,7 +89,7 @@ pub(crate) fn start(app: &AppHandle, meeting_id: i64) -> CommandResult<StartRepo
         on_issue,
         &app.state::<Arc<Recordings>>(),
     )?;
-    let missing = report.unavailable.iter().map(|p| p.source).collect();
+    let missing = report.unavailable.clone();
     announce(app, Some(meeting_id), tray::Status::Recording { missing });
     Ok(report)
 }
