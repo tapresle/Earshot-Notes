@@ -1,0 +1,63 @@
+// One screenshot per scene in src/preview/scenes.ts, in light and dark mode.
+// `npm run screenshots` updates the images that changed; `npm run screenshots:check`
+// fails when the UI no longer matches them.
+import { expect, test, type Page } from "@playwright/test";
+
+/** The moment every scene is rendered at, in the configured time zone. */
+const NOW = new Date("2026-10-06T15:30:00-05:00");
+
+async function open(page: Page, scene: string) {
+  await page.clock.setFixedTime(NOW);
+  await page.goto(`/preview.html?scene=${scene}`);
+}
+
+function sidebar(page: Page) {
+  return page.getByRole("navigation", { name: "Meetings" });
+}
+
+async function openMeeting(page: Page, title: string) {
+  await sidebar(page).getByRole("button", { name: new RegExp(title) }).click();
+  await expect(page.getByLabel("Meeting title")).toHaveValue(title);
+}
+
+test("empty", async ({ page }) => {
+  await open(page, "empty");
+  await expect(page.getByRole("heading", { name: "Start your first meeting" })).toBeVisible();
+  await expect(page).toHaveScreenshot("empty.png");
+});
+
+test("setup", async ({ page }) => {
+  await open(page, "setup");
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page).toHaveScreenshot("setup.png");
+});
+
+test("meeting", async ({ page }) => {
+  await open(page, "meeting");
+  await openMeeting(page, "Design sync");
+  await expect(page.getByText("Thursday works.", { exact: false })).toBeVisible();
+  await expect(page).toHaveScreenshot("meeting.png");
+});
+
+test("summary", async ({ page }) => {
+  await open(page, "summary");
+  await openMeeting(page, "Design sync");
+  await page.getByRole("tab", { name: "Summary" }).click();
+  await expect(page.getByRole("heading", { name: "Decisions" })).toBeVisible();
+  await expect(page).toHaveScreenshot("summary.png");
+});
+
+test("recording", async ({ page }) => {
+  await open(page, "recording");
+  await openMeeting(page, "Customer call");
+  await expect(page.getByText("Transcripts, mostly in Markdown.")).toBeVisible();
+  await expect(page).toHaveScreenshot("recording.png");
+});
+
+test("settings", async ({ page }) => {
+  await open(page, "settings");
+  await sidebar(page).getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  await expect(page.getByLabel("Record from")).toBeVisible();
+  await expect(page).toHaveScreenshot("settings.png");
+});

@@ -11,7 +11,9 @@
     "tauri": "tauri",
     "lint": "eslint .",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "screenshots": "playwright test --update-snapshots=changed",
+    "screenshots:check": "playwright test"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
