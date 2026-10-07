@@ -131,10 +131,10 @@ mod tests {
     fn needs_every_word_but_not_in_the_same_place() {
         let store = store();
         let both = store.create_meeting("Hiring sync").unwrap();
-        store.update_notes(both.id, "Talked to Priya").unwrap();
+        store.update_notes(both.id, "Talked to Megan").unwrap();
         store.create_meeting("Hiring plan").unwrap();
 
-        assert_eq!(found(&store, "hiring priya"), vec!["Hiring sync"]);
+        assert_eq!(found(&store, "hiring megan"), vec!["Hiring sync"]);
     }
 
     #[test]
