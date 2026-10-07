@@ -49,13 +49,15 @@ With an ad-hoc signature the app also runs, but macOS treats each build as a new
 
 ### Running the app on another Mac
 
-The app isn't notarized, so Gatekeeper blocks it on other Macs. Open it once, then choose **System Settings** > **Privacy & Security** > **Open Anyway**, or remove the quarantine flag:
+Releases are notarized, so the disk image from a GitHub release opens on any Mac with Apple Silicon and macOS 26.
+
+A build you make yourself is notarized only when it's signed with a **Developer ID Application** certificate and you set notarization credentials before running `scripts/build-macos.sh`. Use an App Store Connect API key (`APPLE_API_KEY`, `APPLE_API_ISSUER`, and `APPLE_API_KEY_PATH`), or an Apple ID (`APPLE_ID`, `APPLE_PASSWORD` as an app-specific password, and `APPLE_TEAM_ID`). The script then notarizes and staples both the app and the disk image, and checks them with Gatekeeper.
+
+Otherwise the build isn't notarized, and Gatekeeper blocks it on other Macs. Open it once, then choose **System Settings** > **Privacy & Security** > **Open Anyway**, or remove the quarantine flag:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Earshot Notes.app"
 ```
-
-Notarization needs a paid Apple Developer account and a **Developer ID Application** certificate. With those, set `APPLE_ID`, `APPLE_PASSWORD` (an app-specific password), and `APPLE_TEAM_ID` before running `scripts/build-macos.sh`, and Tauri notarizes the build.
 
 ## Permissions
 
