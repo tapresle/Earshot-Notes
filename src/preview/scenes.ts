@@ -20,7 +20,7 @@ function meeting(id: number, title: string, minutesAgo: number, lengthMinutes: n
   };
 }
 
-const DESIGN_NOTES = `- Onboarding copy is final once Priya signs off
+const DESIGN_NOTES = `- Onboarding copy is final once Megan signs off
 - Move the empty state illustration to the left
 - **Decision:** ship the new settings layout in 0.2
 
@@ -29,11 +29,11 @@ Follow up with Sam about the export folder picker.`;
 const DESIGN_SUMMARY = `## Decisions
 
 - The new settings layout ships in version 0.2.
-- Onboarding copy is final after Priya's review on Thursday.
+- Onboarding copy is final after Megan's review on Thursday.
 
 ## Action items
 
-- **Priya:** review the onboarding copy by Thursday.
+- **Megan:** review the onboarding copy by Thursday.
 - **Sam:** prototype the export folder picker.
 - **You:** move the empty state illustration to the left.
 
