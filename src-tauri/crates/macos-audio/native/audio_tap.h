@@ -1,4 +1,5 @@
-// C interface to macOS system audio capture and microphone permission.
+// C interface to macOS system audio capture, recording permissions, and the
+// login item.
 #ifndef GC_AUDIO_TAP_H
 #define GC_AUDIO_TAP_H
 
@@ -58,5 +59,18 @@ int32_t gc_system_audio_authorization_status(void);
 // Returns 1 if granted, 0 if denied, or -1 when the framework isn't
 // available. Do not call on the main thread.
 int32_t gc_system_audio_request_access(void);
+
+// Whether the app opens at login (SMAppService.mainAppService): 0 not
+// registered, 1 enabled, 2 waiting for approval in System Settings, 3 not
+// found (for example, an app that isn't bundled).
+int32_t gc_login_item_status(void);
+
+// Turns opening at login on or off. Returns 1 on success, or 0 with a message
+// in `error`.
+int32_t gc_login_item_set(int32_t enabled, char *error, size_t error_len);
+
+// Returns 1 if macOS opened the app as a login item. Only meaningful while the
+// app is finishing launching.
+int32_t gc_launched_as_login_item(void);
 
 #endif

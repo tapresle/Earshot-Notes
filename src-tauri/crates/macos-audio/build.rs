@@ -11,7 +11,13 @@ fn main() {
         .flag("-Wextra")
         .flag("-Werror")
         .compile("gc_audio_tap");
-    for framework in ["AVFoundation", "CoreAudio", "Foundation"] {
+    for framework in [
+        "AVFoundation",
+        "AppKit",
+        "CoreAudio",
+        "Foundation",
+        "ServiceManagement",
+    ] {
         println!("cargo:rustc-link-lib=framework={framework}");
     }
 }

@@ -16,6 +16,7 @@
 #import <CoreAudio/CATapDescription.h>
 #import <CoreAudio/CoreAudio.h>
 #import <Foundation/Foundation.h>
+#import <ServiceManagement/ServiceManagement.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -347,4 +348,27 @@ int32_t gc_system_audio_request_access(void) {
     });
     dispatch_semaphore_wait(done, DISPATCH_TIME_FOREVER);
     return granted ? 1 : 0;
+}
+
+int32_t gc_login_item_status(void) {
+    return (int32_t)SMAppService.mainAppService.status;
+}
+
+int32_t gc_login_item_set(int32_t enabled, char *error, size_t error_len) {
+    NSError *failure = nil;
+    SMAppService *service = SMAppService.mainAppService;
+    BOOL ok = enabled ? [service registerAndReturnError:&failure]
+                      : [service unregisterAndReturnError:&failure];
+    if (!ok && error && error_len > 0) {
+        snprintf(error, error_len, "%s",
+                 failure.localizedDescription.UTF8String ?: "unknown error");
+    }
+    return ok ? 1 : 0;
+}
+
+int32_t gc_launched_as_login_item(void) {
+    NSAppleEventDescriptor *event = [NSAppleEventManager sharedAppleEventManager].currentAppleEvent;
+    if (!event || event.eventID != kAEOpenApplication) return 0;
+    NSAppleEventDescriptor *data = [event paramDescriptorForKeyword:keyAEPropData];
+    return data && data.enumCodeValue == keyAELaunchedAsLogInItem ? 1 : 0;
 }

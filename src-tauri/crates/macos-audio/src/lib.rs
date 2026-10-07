@@ -1,5 +1,5 @@
-//! macOS system audio capture (Core Audio process taps), and microphone and
-//! system audio recording permissions.
+//! macOS system audio capture (Core Audio process taps), microphone and
+//! system audio recording permissions, and opening at login.
 //!
 //! On other platforms every function reports that the feature is unsupported.
 
@@ -98,6 +98,44 @@ impl Drop for OutputDeviceWatcher {
     }
 }
 
+/// Whether the app opens at login, from macOS's own record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginItem {
+    Off,
+    On,
+    /// Turned on, but waiting for approval in System Settings > General > Login Items.
+    NeedsApproval,
+    /// macOS can't register this app, for example a development build that isn't bundled.
+    Unavailable,
+}
+
+impl LoginItem {
+    /// Decodes `SMAppServiceStatus`.
+    fn from_code(code: i32) -> Self {
+        match code {
+            0 => LoginItem::Off,
+            1 => LoginItem::On,
+            2 => LoginItem::NeedsApproval,
+            _ => LoginItem::Unavailable,
+        }
+    }
+}
+
+pub fn login_item() -> LoginItem {
+    imp::login_item()
+}
+
+/// Turns opening at login on or off.
+pub fn set_login_item(enabled: bool) -> Result<(), String> {
+    imp::set_login_item(enabled)
+}
+
+/// Whether macOS opened the app as a login item. Only meaningful while the app
+/// is finishing launching, such as during Tauri's setup.
+pub fn launched_as_login_item() -> bool {
+    imp::launched_as_login_item()
+}
+
 pub fn mic_permission() -> Permission {
     imp::mic_permission()
 }
@@ -151,6 +189,9 @@ mod imp {
             error_len: usize,
         ) -> *mut c_void;
         fn gc_output_device_unwatch(handle: *mut c_void);
+        fn gc_login_item_status() -> i32;
+        fn gc_login_item_set(enabled: i32, error: *mut c_char, error_len: usize) -> i32;
+        fn gc_launched_as_login_item() -> i32;
         fn gc_mic_authorization_status() -> i32;
         fn gc_mic_request_access() -> i32;
         fn gc_system_audio_authorization_status() -> i32;
@@ -248,6 +289,24 @@ mod imp {
         unsafe { gc_output_device_unwatch(handle) };
     }
 
+    pub fn login_item() -> LoginItem {
+        LoginItem::from_code(unsafe { gc_login_item_status() })
+    }
+
+    pub fn set_login_item(enabled: bool) -> Result<(), String> {
+        let mut error = [0 as c_char; 512];
+        if unsafe { gc_login_item_set(enabled.into(), error.as_mut_ptr(), error.len()) } == 1 {
+            return Ok(());
+        }
+        // SAFETY: the native side writes a NUL-terminated message into the zeroed buffer.
+        let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) };
+        Err(message.to_string_lossy().into_owned())
+    }
+
+    pub fn launched_as_login_item() -> bool {
+        unsafe { gc_launched_as_login_item() == 1 }
+    }
+
     pub fn mic_permission() -> Permission {
         Permission::from_code(unsafe { gc_mic_authorization_status() })
     }
@@ -286,6 +345,18 @@ mod imp {
     }
 
     pub fn unwatch(_handle: *mut c_void) {}
+
+    pub fn login_item() -> LoginItem {
+        LoginItem::Unavailable
+    }
+
+    pub fn set_login_item(_enabled: bool) -> Result<(), String> {
+        Err("opening at login isn't supported on this platform yet".into())
+    }
+
+    pub fn launched_as_login_item() -> bool {
+        false
+    }
 
     pub fn mic_permission() -> Permission {
         Permission::Authorized
@@ -330,6 +401,22 @@ mod tests {
         // that dropping it returns, so the callback can be freed safely.
         let watcher = OutputDeviceWatcher::start(|| {}).unwrap();
         drop(watcher);
+    }
+
+    #[test]
+    fn reads_the_login_item_status_without_changing_it() {
+        // A test binary isn't an app bundle, so macOS can't register it; this
+        // proves the call links and runs.
+        let _ = login_item();
+        assert!(!launched_as_login_item());
+    }
+
+    #[test]
+    fn decodes_login_item_status_codes() {
+        assert_eq!(LoginItem::from_code(0), LoginItem::Off);
+        assert_eq!(LoginItem::from_code(1), LoginItem::On);
+        assert_eq!(LoginItem::from_code(2), LoginItem::NeedsApproval);
+        assert_eq!(LoginItem::from_code(3), LoginItem::Unavailable);
     }
 
     #[test]
