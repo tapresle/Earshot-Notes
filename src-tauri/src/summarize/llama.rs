@@ -35,11 +35,22 @@ fn backend() -> Result<&'static LlamaBackend, SummaryError> {
         .map_err(|e| SummaryError::Model(e.clone()))
 }
 
+/// Where a model runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Placement {
+    /// Every layer, the key-value cache, and large operations on the GPU (Metal).
+    Gpu,
+    /// Everything on the CPU. For tests on machines whose GPU is slow, such as
+    /// virtual CI runners; the app always uses the GPU.
+    Cpu,
+}
+
 pub struct LlamaGenerator {
     model: LlamaModel,
     template: String,
     tokens: SpecialTokens,
     context_size: usize,
+    placement: Placement,
 }
 
 impl LlamaGenerator {
@@ -54,6 +65,15 @@ impl LlamaGenerator {
         path: &Path,
         context_limit: usize,
     ) -> Result<Self, SummaryError> {
+        Self::load_on(path, context_limit, Placement::Gpu)
+    }
+
+    /// Loads with the context capped at `context_limit`, running on `placement`.
+    pub fn load_on(
+        path: &Path,
+        context_limit: usize,
+        placement: Placement,
+    ) -> Result<Self, SummaryError> {
         if !path.exists() {
             return Err(SummaryError::Model(format!(
                 "the model file {} is missing",
@@ -61,7 +81,11 @@ impl LlamaGenerator {
             )));
         }
         let backend = backend()?;
-        let params = LlamaModelParams::default().with_n_gpu_layers(u32::MAX);
+        let gpu_layers = match placement {
+            Placement::Gpu => u32::MAX,
+            Placement::Cpu => 0,
+        };
+        let params = LlamaModelParams::default().with_n_gpu_layers(gpu_layers);
         let model = LlamaModel::load_from_file(backend, path, &params)
             .map_err(|e| SummaryError::Model(format!("couldn't load the model: {e}")))?;
         let template = model
@@ -84,6 +108,7 @@ impl LlamaGenerator {
             template,
             tokens,
             context_size,
+            placement,
         })
     }
 
@@ -129,9 +154,13 @@ impl Generator for LlamaGenerator {
         }
         let backend = backend()?;
         let n_ctx = NonZeroU32::new((prompt.len() + max_tokens) as u32).expect("non-zero");
+        let on_gpu = self.placement == Placement::Gpu;
         let params = LlamaContextParams::default()
             .with_n_ctx(Some(n_ctx))
-            .with_n_batch(BATCH as u32);
+            .with_n_batch(BATCH as u32)
+            // Without these, llama.cpp still moves the cache and large operations to the GPU.
+            .with_offload_kqv(on_gpu)
+            .with_op_offload(on_gpu);
         let mut ctx = self
             .model
             .new_context(backend, params)

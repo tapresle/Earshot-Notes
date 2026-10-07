@@ -69,4 +69,7 @@ jobs:
             cargo-macos-26-${{ steps.toolchain.outputs.rustc }}-
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # The hosted runner's virtual GPU runs the tiny test model in minutes; the CPU takes seconds.
       - run: cargo test --workspace
+        env:
+          EARSHOT_TEST_CPU: "1"

@@ -43,7 +43,7 @@ GitHub Actions runs these checks on every pull request to `main` and every push 
 | Workflow | Runner | Jobs |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | `ubuntu-latest` | Frontend lint, typecheck, and tests; `./scripts/generate-notices.sh --check` |
-| `.github/workflows/rust.yml` | `macos-26` (Apple Silicon) | `./scripts/fetch-native.sh`, then `cargo fmt --check`, clippy, and `cargo test --workspace` |
+| `.github/workflows/rust.yml` | `macos-26` (Apple Silicon) | `./scripts/fetch-native.sh`, then `cargo fmt --check`, clippy, and `cargo test --workspace` (summary tests on the CPU, see **Summary tests**) |
 
 The Rust workflow needs macOS 26 on Apple Silicon, because the prebuilt needle engine supports nothing else. macOS minutes cost more, so it runs only when `src-tauri/`, `scripts/fetch-native.sh`, or the workflow itself changes. It caches the fetched native files (keyed on `fetch-native.sh`, whose checksums are still verified) and the cargo build (keyed on the Rust version and `Cargo.lock`). A newer run on the same pull request cancels the older one. To rerun a failed job, use **Re-run failed jobs** on the run's page, or `gh run rerun <run id> --failed`. Workflows keep `permissions: contents: read` and pin each action to a full commit SHA, with its version in a comment.
 
@@ -66,7 +66,7 @@ The Rust workflow needs macOS 26 on Apple Silicon, because the prebuilt needle e
 - **Logging:** Rust code logs with the `log` macros (`log::error!`, `log::warn!`, `log::info!`, `log::debug!`), never `eprintln!`. `tauri-plugin-log`, set up in `src-tauri/src/lib.rs`, writes to stderr and to `~/Library/Logs/com.tedpresley.earshot/Earshot Notes.log` (named after `productName`), keeping one file of at most 1 MB. Logs stay on the device: don't add network or webview targets, and don't log transcript, notes, or summary text.
 - **Network test:** `cargo test --lib -- --ignored resumes_from_hugging_face` checks a real ranged download from Hugging Face. It's ignored by default because it needs the network.
 - **Styling** uses the CSS custom properties in `src/styles.css`. Every color needs a dark mode value.
-- **Summary tests:** `src-tauri/tests/summarize.rs` runs a tiny real model (SmolLM2 135M, fetched by `scripts/fetch-native.sh`) to test plumbing such as streaming, limits, and cancellation, not summary quality. Logic above the model is tested through the `Generator` trait with fakes.
+- **Summary tests:** `src-tauri/tests/summarize.rs` runs a tiny real model (SmolLM2 135M, fetched by `scripts/fetch-native.sh`) to test plumbing such as streaming, limits, and cancellation, not summary quality. Logic above the model is tested through the `Generator` trait with fakes. Set `EARSHOT_TEST_CPU=1` to run that model on the CPU (`summarize::llama::Placement::Cpu`); CI does, because the hosted runner's virtual GPU makes these tests take minutes. The app always uses the GPU.
 - **Rendering model output:** never render model output as HTML. Use `src/features/summary/Markdown.tsx`.
 - **Test data:** tests use synthetic audio and text fixtures only. Generate speech fixtures with macOS `say`, for example `say -o tests/fixtures/name.wav --data-format=LEI16@16000 "text"`.
 - **Native binaries:** `libneedle.a` and `.cact` model files aren't committed. `scripts/fetch-native.sh` pins their Hugging Face revisions and SHA-256 checksums. To change a version, update the pins and checksums there.
