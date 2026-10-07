@@ -1,0 +1,47 @@
+# Checks weekly for newer versions of what Earshot pins (see
+# scripts/upstream/check.ts), and keeps one open "Upstream updates available"
+# issue current: opens it when something is newer, updates it while it stays
+# that way, and closes it once everything is current again.
+name: Upstream updates
+
+on:
+  schedule:
+    - cron: "0 13 * * 1" # Mondays
+  workflow_dispatch:
+
+# Reads the repository and writes only the tracking issue.
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}
+
+jobs:
+  check:
+    name: Check pinned versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TITLE: Upstream updates available
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+      # The check uses only Node's standard library, so it needs no npm ci.
+      - run: node scripts/upstream/check.ts > "$RUNNER_TEMP/report.md"
+      - name: Update the tracking issue
+        run: |
+          number=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq '.[] | select(.title == env.TITLE) | .number' | head -n 1)
+          if [[ -s "$RUNNER_TEMP/report.md" ]]; then
+            if [[ -n "$number" ]]; then
+              gh issue edit "$number" --body-file "$RUNNER_TEMP/report.md"
+            else
+              gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/report.md"
+            fi
+          elif [[ -n "$number" ]]; then
+            gh issue close "$number" --comment "Everything Earshot pins is current."
+          fi

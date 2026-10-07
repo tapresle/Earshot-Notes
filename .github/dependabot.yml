@@ -1,0 +1,40 @@
+# Weekly dependency updates. Minor and patch updates arrive as one grouped pull
+# request per ecosystem; each major update gets its own, so a breaking release
+# can't hold back the safe ones. The needle engine, Whistle, and the summary
+# models aren't packages; the upstream workflow
+# (.github/workflows/upstream.yml) tracks those.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      # Moving llama.cpp needs RUNTIME_VERSION and the models' min_runtime
+      # updated and the summary benchmark rerun (see the update policy in
+      # AGENTS.md). The upstream workflow reports new versions instead.
+      - dependency-name: llama-cpp-2
+      - dependency-name: llama-cpp-sys-2
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Keeps each action pinned to a commit SHA and updates the version comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: [minor, patch]

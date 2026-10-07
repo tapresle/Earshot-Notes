@@ -35,6 +35,7 @@ Run all commands from the repository root unless noted.
 | Rust tests | `cargo test --workspace` (in `src-tauri/`) |
 | Update the UI screenshots (needs `npx playwright install chromium` once) | `npm run screenshots` |
 | Check the UI screenshots are current | `npm run screenshots:check` |
+| Check for newer versions of the pinned engine, models, and llama.cpp (reads Hugging Face and crates.io) | `node scripts/upstream/check.ts` |
 
 Before you hand off work, run the lint, typecheck, test, format, and screenshot check commands. All of them must pass. When you change the UI on purpose, run `npm run screenshots` and commit the updated images with the change.
 
@@ -49,6 +50,8 @@ GitHub Actions runs these checks on every pull request to `main` and every push 
 | `.github/workflows/rust.yml` | `macos-26` (Apple Silicon) | `./scripts/fetch-native.sh`, then `cargo fmt --check`, clippy, and `cargo test --workspace` (summary tests on the CPU, see **Summary tests**) |
 
 The screenshots workflow runs on macOS because the UI uses the system font, and only when the UI, the preview, or the screenshots change. The Rust workflow needs macOS 26 on Apple Silicon, because the prebuilt needle engine supports nothing else. macOS minutes cost more, so it runs only when `src-tauri/`, `scripts/fetch-native.sh`, or the workflow itself changes. It caches the fetched native files (keyed on `fetch-native.sh`, whose checksums are still verified) and the cargo build (keyed on the Rust version and `Cargo.lock`). A newer run on the same pull request cancels the older one. To rerun a failed job, use **Re-run failed jobs** on the run's page, or `gh run rerun <run id> --failed`. Workflows keep `permissions: contents: read` and pin each action to a full commit SHA, with its version in a comment.
+
+Two more jobs keep the pins current (see **Updating pinned versions**). `.github/workflows/upstream.yml` runs `scripts/upstream/check.ts` every Monday, or from **Run workflow** on its page, and keeps one open issue, "Upstream updates available", current; it also has `issues: write`, for that issue only. Dependabot (`.github/dependabot.yml`) checks weekly and opens one grouped pull request each for Cargo, npm, and GitHub Actions minor and patch updates, and a separate pull request for each major update.
 
 ## Conventions
 
@@ -77,6 +80,25 @@ The screenshots workflow runs on macOS because the UI uses the system font, and 
 - **Native binaries:** `libneedle.a` and `.cact` model files aren't committed. `scripts/fetch-native.sh` pins their Hugging Face revisions and SHA-256 checksums. To change a version, update the pins and checksums there.
 - **needle engine:** the engine holds one process-global, non-thread-safe model, so only one `Whistle` can exist at a time and it must stay on a single owner thread. `Whistle::transcribe` always passes English (`LANGUAGE` in `whistle.rs`): per-clip language detection read short or quiet call audio as other languages.
 - **Git and pull requests:** don't add AI attribution anywhere: no `Co-Authored-By` or session trailers in commits, no "Generated with" footers or session links in pull requests, and no AI names in branch names. Commit as the repository owner. Name branches by purpose, such as `feature/<issue>-<topic>`, `bugfix/<issue>-<topic>`, or `chore/<topic>`.
+
+## Updating pinned versions
+
+Earshot pins exact versions, and nothing moves a pin without a pull request:
+
+- **needle and Whistle:** revisions and checksums in `scripts/fetch-native.sh`.
+- **Summary models:** repository, revision, and SHA-256 in `src-tauri/src/models/mod.rs`.
+- **llama.cpp:** `llama-cpp-2` pinned with `=` in `src-tauri/Cargo.toml`, matching `RUNTIME_VERSION`.
+- **Everything else:** `Cargo.lock`, `package-lock.json`, and the action SHAs.
+
+The upstream workflow reports the first three; it counts a Hugging Face pin as outdated only when the pinned file itself changed, so README edits don't show up. Dependabot covers the rest and skips `llama-cpp-2` and `llama-cpp-sys-2`. A release takes an update when:
+
+- **It fixes a security problem:** in the next release.
+- **llama.cpp:** a model you want needs it, or it fixes a problem Earshot has. Run the summary tests and the summary benchmark (#8) on the new version, then update `RUNTIME_VERSION` and each model's `min_runtime` with the pin.
+- **needle and Whistle:** it improves accuracy or speed. Run the transcription tests and listen through recordings kept with **Keep audio recordings**. Move them together: each Whistle version has to match its engine.
+- **A summary model's file changed:** compare the new file with the old one in the summary benchmark (#8) before moving the pin. Earlier releases are unaffected: they download from the revision they pin and check its SHA-256.
+- **Dependabot's grouped updates:** when CI passes. Read the changelogs of major version bumps first.
+
+Every pin change gets a line in the next release notes.
 
 ## Releases
 

@@ -12,6 +12,7 @@
   "include": [
     "vite.config.ts",
     "playwright.config.ts",
-    "screenshots"
+    "screenshots",
+    "scripts"
   ]
 }
