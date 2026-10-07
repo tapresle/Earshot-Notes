@@ -1,0 +1,74 @@
+# Checks that docs/screenshots matches the UI. Runs on macOS because the UI
+# uses the system font, which Linux would replace. macOS minutes cost more, so
+# this runs only when the UI, the preview, or the screenshots change.
+name: Screenshots
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "index.html"
+      - "preview.html"
+      - "screenshots/**"
+      - "docs/screenshots/**"
+      - "playwright.config.ts"
+      - "vite.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/screenshots.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "index.html"
+      - "preview.html"
+      - "screenshots/**"
+      - "docs/screenshots/**"
+      - "playwright.config.ts"
+      - "vite.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/screenshots.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  screenshots:
+    name: Screenshots match the UI
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - name: Read the Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright's browser
+        id: browser
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: playwright-macos-26-${{ steps.playwright.outputs.version }}
+      - name: Install Playwright's browser
+        if: steps.browser.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+      - run: npm run screenshots:check
+      # The rendered screenshots and their differences, so a contributor can see
+      # what changed and commit the new images if the change is intended.
+      - name: Upload the rendered screenshots
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshots
+          path: test-results/
+          retention-days: 7

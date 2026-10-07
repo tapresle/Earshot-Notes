@@ -33,8 +33,10 @@ Run all commands from the repository root unless noted.
 | Rust lint | `cargo clippy --workspace --all-targets -- -D warnings` (in `src-tauri/`) |
 | Rust format check | `cargo fmt --check` (in `src-tauri/`) |
 | Rust tests | `cargo test --workspace` (in `src-tauri/`) |
+| Update the UI screenshots (needs `npx playwright install chromium` once) | `npm run screenshots` |
+| Check the UI screenshots are current | `npm run screenshots:check` |
 
-Before you hand off work, run the lint, typecheck, test, and format commands. All of them must pass.
+Before you hand off work, run the lint, typecheck, test, format, and screenshot check commands. All of them must pass. When you change the UI on purpose, run `npm run screenshots` and commit the updated images with the change.
 
 ## Continuous integration
 
@@ -43,9 +45,10 @@ GitHub Actions runs these checks on every pull request to `main` and every push 
 | Workflow | Runner | Jobs |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | `ubuntu-latest` | Frontend lint, typecheck, and tests; `./scripts/generate-notices.sh --check` |
+| `.github/workflows/screenshots.yml` | `macos-26` | `npm run screenshots:check`; on failure, uploads the rendered screenshots and their differences as the `screenshots` artifact |
 | `.github/workflows/rust.yml` | `macos-26` (Apple Silicon) | `./scripts/fetch-native.sh`, then `cargo fmt --check`, clippy, and `cargo test --workspace` (summary tests on the CPU, see **Summary tests**) |
 
-The Rust workflow needs macOS 26 on Apple Silicon, because the prebuilt needle engine supports nothing else. macOS minutes cost more, so it runs only when `src-tauri/`, `scripts/fetch-native.sh`, or the workflow itself changes. It caches the fetched native files (keyed on `fetch-native.sh`, whose checksums are still verified) and the cargo build (keyed on the Rust version and `Cargo.lock`). A newer run on the same pull request cancels the older one. To rerun a failed job, use **Re-run failed jobs** on the run's page, or `gh run rerun <run id> --failed`. Workflows keep `permissions: contents: read` and pin each action to a full commit SHA, with its version in a comment.
+The screenshots workflow runs on macOS because the UI uses the system font, and only when the UI, the preview, or the screenshots change. The Rust workflow needs macOS 26 on Apple Silicon, because the prebuilt needle engine supports nothing else. macOS minutes cost more, so it runs only when `src-tauri/`, `scripts/fetch-native.sh`, or the workflow itself changes. It caches the fetched native files (keyed on `fetch-native.sh`, whose checksums are still verified) and the cargo build (keyed on the Rust version and `Cargo.lock`). A newer run on the same pull request cancels the older one. To rerun a failed job, use **Re-run failed jobs** on the run's page, or `gh run rerun <run id> --failed`. Workflows keep `permissions: contents: read` and pin each action to a full commit SHA, with its version in a comment.
 
 ## Conventions
 
@@ -66,6 +69,7 @@ The Rust workflow needs macOS 26 on Apple Silicon, because the prebuilt needle e
 - **Logging:** Rust code logs with the `log` macros (`log::error!`, `log::warn!`, `log::info!`, `log::debug!`), never `eprintln!`. `tauri-plugin-log`, set up in `src-tauri/src/lib.rs`, writes to stderr and to `~/Library/Logs/com.tedpresley.earshot/Earshot Notes.log` (named after `productName`), keeping one file of at most 1 MB. Logs stay on the device: don't add network or webview targets, and don't log transcript, notes, or summary text.
 - **Network test:** `cargo test --lib -- --ignored resumes_from_hugging_face` checks a real ranged download from Hugging Face. It's ignored by default because it needs the network.
 - **Styling** uses the CSS custom properties in `src/styles.css`. Every color needs a dark mode value.
+- **Screenshots:** `docs/screenshots/` holds a light and a dark screenshot of each scene in `src/preview/scenes.ts`, so a pull request that changes the UI shows the change in its diff. They're generated, and committed on purpose, like `third-party-notices.txt`. `preview.html` renders the real `App` with `mockIPC` answered by the fake backend in `src/testing/fakeBackend.ts`, which `App.test.tsx` also uses; `vite build` bundles only `index.html`, so neither ships. `screenshots/scenes.spec.ts` opens each scene with Playwright at the app's default window size, a fixed clock, time zone, and locale, so unchanged UI renders identical images. Macs on different macOS versions draw text edges slightly differently, so the check tolerates a few pixels of edge shading per image (`playwright.config.ts` records the measurements); it still fails on a changed word, layout, or clearly visible color, but a very subtle change, such as a slightly different shade, can pass. `npm run screenshots` rewrites only images that differ beyond that tolerance. To add a scene, add it to `scenes.ts` and a test to `scenes.spec.ts`, then run `npm run screenshots`. Scenes use synthetic data only.
 - **Summary tests:** `src-tauri/tests/summarize.rs` runs a tiny real model (SmolLM2 135M, fetched by `scripts/fetch-native.sh`) to test plumbing such as streaming, limits, and cancellation, not summary quality. Logic above the model is tested through the `Generator` trait with fakes. Set `EARSHOT_TEST_CPU=1` to run that model on the CPU (`summarize::llama::Placement::Cpu`); CI does, because the hosted runner's virtual GPU makes these tests take minutes. The app always uses the GPU.
 - **Rendering model output:** never render model output as HTML. Use `src/features/summary/Markdown.tsx`.
 - **Test data:** tests use synthetic audio and text fixtures only. Generate speech fixtures with macOS `say`, for example `say -o tests/fixtures/name.wav --data-format=LEI16@16000 "text"`.

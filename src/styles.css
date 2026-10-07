@@ -171,6 +171,12 @@ body {
   color: var(--danger);
 }
 
+/* After .button.danger, which would otherwise keep a disabled button red. */
+.button.danger:disabled {
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+
 .full-width {
   width: 100%;
 }
@@ -745,6 +751,20 @@ body {
 
 .settings-row select {
   flex: 1;
+  padding: 4px 6px;
+  font: inherit;
+}
+
+/* Label and select pairs that line up in two columns. */
+.settings-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 12rem);
+  align-items: center;
+  gap: 8px 10px;
+  font-size: 13px;
+}
+
+.settings-grid select {
   padding: 4px 6px;
   font: inherit;
 }
