@@ -432,6 +432,37 @@ describe("App", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("System audio couldn't start: tap failed.");
   });
 
+  it("opens a meeting the menu bar started recording", async () => {
+    const backend = fakeBackend([seedMeeting(1, "Design sync")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
+
+    // What the menu bar's Start recording does: a new meeting, recording.
+    const meeting = (await backend.handle("create_meeting", { title: "" })) as { id: number };
+    backend.state.recording = meeting.id;
+    emit("recording:changed", { meetingId: meeting.id });
+
+    await waitFor(() => expect(screen.getByLabelText("Meeting title")).toHaveValue("Untitled meeting"));
+    expect(within(sidebar()).getByRole("button", { name: /Untitled meeting/, current: "page" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Stop recording" })).toBeInTheDocument();
+  });
+
+  it("shows a recording stopped from the menu bar", async () => {
+    const backend = fakeBackend([seedMeeting(1, "Call")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Call/ }));
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+    await screen.findByRole("button", { name: "Stop recording" });
+
+    backend.state.recording = null;
+    emit("recording:changed", { meetingId: null });
+
+    expect(await screen.findByRole("button", { name: "Start recording" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Meeting title")).toHaveValue("Call");
+  });
+
   it("shows a problem reported during the recording", async () => {
     fakeBackend([seedMeeting(1, "Call")]);
     const user = userEvent.setup();
@@ -904,6 +935,52 @@ describe("App", () => {
 
       expect(screen.queryByRole("heading", { level: 1, name: "Settings" })).not.toBeInTheDocument();
       expect(await screen.findByLabelText("Meeting title")).toHaveValue("Sync");
+    });
+
+    describe("open at login", () => {
+      async function openWith(launchAtLogin: { enabled: boolean; needsApproval: boolean; available: boolean }) {
+        const backend = fakeBackend([seedMeeting(1, "Sync")]);
+        backend.state.launchAtLogin = launchAtLogin;
+        const user = userEvent.setup();
+        render(<App />);
+        await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+        return { backend, user };
+      }
+
+      it("is off by default and turns on and off", async () => {
+        const { backend, user } = await openWith({ enabled: false, needsApproval: false, available: true });
+        const option = await screen.findByRole("checkbox", { name: "Open at login" });
+
+        expect(option).not.toBeChecked();
+        await user.click(option);
+        await waitFor(() => expect(backend.state.launchAtLogin.enabled).toBe(true));
+        expect(option).toBeChecked();
+        await user.click(option);
+        await waitFor(() => expect(backend.state.launchAtLogin.enabled).toBe(false));
+      });
+
+      it("explains when macOS is waiting for approval", async () => {
+        await openWith({ enabled: true, needsApproval: true, available: true });
+
+        expect(await screen.findByRole("checkbox", { name: "Open at login" })).toBeChecked();
+        expect(screen.getByText(/System Settings > General > Login Items/)).toBeInTheDocument();
+      });
+
+      it("can't be turned on when macOS can't register this copy", async () => {
+        await openWith({ enabled: false, needsApproval: false, available: false });
+
+        expect(await screen.findByRole("checkbox", { name: "Open at login" })).toBeDisabled();
+        expect(screen.getByText(/Install it in Applications first/)).toBeInTheDocument();
+      });
+
+      it("shows why a change failed", async () => {
+        const { backend, user } = await openWith({ enabled: false, needsApproval: false, available: true });
+        backend.state.launchAtLoginError = { kind: "unavailable", message: "couldn't change opening at login: denied" };
+
+        await user.click(await screen.findByRole("checkbox", { name: "Open at login" }));
+
+        expect(await screen.findByText(/couldn't change opening at login: denied/i)).toHaveAttribute("role", "alert");
+      });
     });
 
     it("chooses a microphone", async () => {

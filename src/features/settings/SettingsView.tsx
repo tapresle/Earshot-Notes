@@ -5,6 +5,7 @@ import {
   isCommandError,
   type InputDevice,
   type InstalledModels,
+  type LaunchAtLogin,
   type InstalledModel as InstalledModelInfo,
   type ModelRecord,
   type Sensitivity,
@@ -31,6 +32,7 @@ export function SettingsView({ recording, onShowSetup }: { recording: boolean; o
   return (
     <article className="settings">
       <h1>Settings</h1>
+      <StartupSection />
       <MicrophoneSection />
       <SpeechDetectionSection />
       <AudioRecordingsSection recording={recording} />
@@ -52,6 +54,60 @@ export function SettingsView({ recording, onShowSetup }: { recording: boolean; o
         )}
       </section>
     </article>
+  );
+}
+
+function StartupSection() {
+  const [state, setState] = useState<LaunchAtLogin | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .launchAtLogin()
+      .then(setState)
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
+
+  async function toggle(enabled: boolean) {
+    setError(null);
+    try {
+      setState(await api.setLaunchAtLogin(enabled));
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  return (
+    <section className="settings-section" aria-labelledby="startup-heading">
+      <h2 id="startup-heading">Startup</h2>
+      {state && (
+        <label className="settings-row">
+          <input
+            type="checkbox"
+            checked={state.enabled}
+            disabled={!state.available}
+            onChange={(e) => void toggle(e.target.checked)}
+          />
+          Open at login
+        </label>
+      )}
+      <p className="settings-help">
+        Opens Earshot Notes in the menu bar when you log in. Closing the window keeps it running there.
+      </p>
+      {state && !state.available && (
+        <p className="field-warning">This copy of Earshot Notes can't open at login. Install it in Applications first.</p>
+      )}
+      {state?.needsApproval && (
+        <p className="field-warning">
+          Allow Earshot Notes in System Settings &gt; General &gt; Login Items to finish turning this on.
+        </p>
+      )}
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 

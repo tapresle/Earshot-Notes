@@ -12,10 +12,12 @@
 #import "audio_tap.h"
 
 #import <AVFoundation/AVFoundation.h>
+#import <AppKit/AppKit.h>
 #import <CoreAudio/AudioHardwareTapping.h>
 #import <CoreAudio/CATapDescription.h>
 #import <CoreAudio/CoreAudio.h>
 #import <Foundation/Foundation.h>
+#import <ServiceManagement/ServiceManagement.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -347,4 +349,100 @@ int32_t gc_system_audio_request_access(void) {
     });
     dispatch_semaphore_wait(done, DISPATCH_TIME_FOREVER);
     return granted ? 1 : 0;
+}
+
+int32_t gc_login_item_status(void) {
+    return (int32_t)SMAppService.mainAppService.status;
+}
+
+int32_t gc_login_item_set(int32_t enabled, char *error, size_t error_len) {
+    NSError *failure = nil;
+    SMAppService *service = SMAppService.mainAppService;
+    BOOL ok = enabled ? [service registerAndReturnError:&failure]
+                      : [service unregisterAndReturnError:&failure];
+    if (!ok && error && error_len > 0) {
+        snprintf(error, error_len, "%s",
+                 failure.localizedDescription.UTF8String ?: "unknown error");
+    }
+    return ok ? 1 : 0;
+}
+
+int32_t gc_launched_as_login_item(void) {
+    NSAppleEventDescriptor *event = [NSAppleEventManager sharedAppleEventManager].currentAppleEvent;
+    if (!event || event.eventID != kAEOpenApplication) return 0;
+    NSAppleEventDescriptor *data = [event paramDescriptorForKeyword:keyAEPropData];
+    return data && data.enumCodeValue == keyAELaunchedAsLogInItem ? 1 : 0;
+}
+
+int32_t gc_set_app_icon(const uint8_t *image, size_t len) {
+    NSImage *icon = [[NSImage alloc] initWithData:[NSData dataWithBytes:image length:len]];
+    if (!icon) return 0;
+    // AppKit must be used on the main thread.
+    dispatch_block_t apply = ^{ NSApplication.sharedApplication.applicationIconImage = icon; };
+    if (NSThread.isMainThread) {
+        apply();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), apply);
+    }
+    return 1;
+}
+
+// Showing the Dock icon finishes asynchronously, and hiding it again before
+// that settles makes macOS redraw the whole menu bar. A hide this soon after a
+// show waits until the interval has passed.
+static const NSTimeInterval kSettleAfterShow = 1.0;
+
+// The observer waiting for the app to become inactive, if a hide is pending.
+static id pending_hide;
+// Bumped by every show and hide, so a delayed hide that's been superseded does nothing.
+static NSUInteger dock_generation;
+static NSDate *last_show;
+
+static void cancel_pending_hide(void) {
+    if (pending_hide) {
+        [NSNotificationCenter.defaultCenter removeObserver:pending_hide];
+        pending_hide = nil;
+    }
+}
+
+static void hide_now(void) {
+    NSApplication *app = NSApplication.sharedApplication;
+    if (!app.isActive) {
+        [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        return;
+    }
+    pending_hide = [NSNotificationCenter.defaultCenter
+        addObserverForName:NSApplicationDidResignActiveNotification
+                    object:app
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(NSNotification *note) {
+                    (void)note;
+                    cancel_pending_hide();
+                    [NSApplication.sharedApplication
+                        setActivationPolicy:NSApplicationActivationPolicyAccessory];
+                }];
+    [app hide:nil];
+}
+
+void gc_hide_dock_icon(void) {
+    cancel_pending_hide();
+    NSUInteger generation = ++dock_generation;
+    NSTimeInterval wait = last_show ? kSettleAfterShow + last_show.timeIntervalSinceNow : 0;
+    if (wait <= 0) {
+        hide_now();
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+                       if (generation == dock_generation) hide_now();
+                   });
+}
+
+void gc_show_dock_icon(void) {
+    cancel_pending_hide();
+    ++dock_generation;
+    last_show = [NSDate date];
+    NSApplication *app = NSApplication.sharedApplication;
+    [app setActivationPolicy:NSApplicationActivationPolicyRegular];
+    [app unhide:nil];
 }

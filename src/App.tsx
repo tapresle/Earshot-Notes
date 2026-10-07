@@ -57,6 +57,30 @@ export default function App() {
       .catch(() => setRecordingMeetingId(null));
   }, []);
 
+  // Recordings can also start and stop from the menu bar. One started there
+  // records a new meeting, which opens here so the window shows it. A
+  // recording of the open meeting started from this window needs nothing more.
+  useEffect(() => {
+    const unlisten = api.onRecordingChanged(({ meetingId }) => {
+      setRecordingMeetingId(meetingId);
+      if (meetingId === null || meetingId === selectedId) return;
+      api
+        .getMeeting(meetingId)
+        .then((meeting) => {
+          updateMeetings((all) => (all.some((m) => m.id === meeting.id) ? all : [meeting, ...all]));
+          // A new meeting matches no search, so show the full list it belongs to.
+          setSearch("");
+          setSelectedId(meeting.id);
+          setSelection({ ids: [meeting.id], anchor: meeting.id });
+          setView("meetings");
+        })
+        .catch((error) => console.error("couldn't open the meeting recording from the menu bar", error));
+    });
+    return () => {
+      unlisten.then((stop) => stop()).catch(() => {});
+    };
+  }, [selectedId, updateMeetings]);
+
   async function createMeeting() {
     setCreating(true);
     setCreateError(null);

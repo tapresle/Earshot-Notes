@@ -11,11 +11,13 @@ pub mod recordings;
 pub mod store;
 pub mod summarize;
 pub mod transcribe;
+pub mod tray;
+pub mod window;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::{App, Emitter, Manager, RunEvent};
+use tauri::{App, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
 use commands::recording::{Transcription, TranscriptionModel};
@@ -65,6 +67,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(logger())
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            // Closing the window keeps the app, and any recording, running in the menu bar.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                window::hide(window);
+            }
+        })
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -96,6 +105,16 @@ pub fn run() {
             app.manage(Arc::new(Transcription(worker)));
             app.manage(Arc::new(summarizer));
             app.manage(models::manager::Downloads::default());
+
+            tray::create(app)?;
+            // The window starts hidden (see tauri.conf.json), so a launch at
+            // login can stay in the menu bar without the window flashing open.
+            if macos_audio::launched_as_login_item() {
+                log::info!("opened at login; staying in the menu bar");
+                window::hide_dock_icon(app.handle());
+            } else {
+                window::show(app.handle());
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -130,6 +149,8 @@ pub fn run() {
             commands::settings::input_devices,
             commands::settings::input_device,
             commands::settings::set_input_device,
+            commands::settings::launch_at_login,
+            commands::settings::set_launch_at_login,
             commands::settings::speech_sensitivity,
             commands::settings::set_speech_sensitivity,
             commands::settings::installed_models,
@@ -147,6 +168,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            // Clicking the Dock icon, while it shows, opens the window.
+            if let RunEvent::Reopen { .. } = event {
+                window::show(app);
+            }
             if let RunEvent::Exit = event {
                 let store = app.state::<Arc<Store>>();
                 if let Err(error) = recording::stop_recording(&store, &app.state::<Arc<Recorder>>())

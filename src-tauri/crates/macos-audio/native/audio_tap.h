@@ -1,4 +1,5 @@
-// C interface to macOS system audio capture and microphone permission.
+// C interface to macOS system audio capture, recording permissions, and the
+// login item.
 #ifndef GC_AUDIO_TAP_H
 #define GC_AUDIO_TAP_H
 
@@ -58,5 +59,34 @@ int32_t gc_system_audio_authorization_status(void);
 // Returns 1 if granted, 0 if denied, or -1 when the framework isn't
 // available. Do not call on the main thread.
 int32_t gc_system_audio_request_access(void);
+
+// Sets the Dock icon from PNG or other image data. A bundled app gets its icon
+// from the bundle; a development build, which isn't bundled, needs this.
+// Returns 1 on success.
+int32_t gc_set_app_icon(const uint8_t *image, size_t len);
+
+// Hides the Dock icon the way menu bar apps do: hides the app first, so macOS
+// hands focus to the next app with its usual app switch, then drops the Dock
+// icon once the app is inactive. Dropping it while the app is frontmost, or
+// within a second of showing it, makes macOS redraw the whole menu bar, so a
+// hide that soon after a show waits. Call on the main thread.
+void gc_hide_dock_icon(void);
+
+// Shows the Dock icon again, cancelling a pending gc_hide_dock_icon. Call on
+// the main thread.
+void gc_show_dock_icon(void);
+
+// Whether the app opens at login (SMAppService.mainAppService): 0 not
+// registered, 1 enabled, 2 waiting for approval in System Settings, 3 not
+// found (for example, an app that isn't bundled).
+int32_t gc_login_item_status(void);
+
+// Turns opening at login on or off. Returns 1 on success, or 0 with a message
+// in `error`.
+int32_t gc_login_item_set(int32_t enabled, char *error, size_t error_len);
+
+// Returns 1 if macOS opened the app as a login item. Only meaningful while the
+// app is finishing launching.
+int32_t gc_launched_as_login_item(void);
 
 #endif

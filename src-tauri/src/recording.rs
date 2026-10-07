@@ -126,10 +126,13 @@ pub fn start_recording(
             Ok((capture, format, resampler)) => {
                 started.push((source, capture, format, resampler, frames, sensitivity))
             }
-            Err(error) => report.unavailable.push(SourceProblem {
-                source,
-                message: error.to_string(),
-            }),
+            Err(error) => {
+                log::warn!("{source:?} audio couldn't start: {error}");
+                report.unavailable.push(SourceProblem {
+                    source,
+                    message: error.to_string(),
+                });
+            }
         }
     }
     if started.is_empty() {

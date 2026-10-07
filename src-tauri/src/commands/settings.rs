@@ -13,6 +13,7 @@ use crate::models::{self, RemoveError};
 use crate::store::settings::{INPUT_DEVICE, sensitivity_key};
 use crate::store::{ModelRecord, Source, Store};
 use crate::summarize::service::Summarizer;
+use macos_audio::LoginItem;
 
 /// The transcription model in use, or why transcription is unavailable.
 #[tauri::command]
@@ -58,6 +59,50 @@ pub async fn set_input_device(
 ) -> CommandResult<()> {
     let store = Arc::clone(&store);
     blocking(move || Ok(store.set_setting(INPUT_DEVICE, device_id.as_deref())?)).await
+}
+
+/// Whether Earshot Notes opens at login. macOS keeps this, not the settings
+/// table, so it stays right when you change it in System Settings.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchAtLogin {
+    enabled: bool,
+    /// Turned on, but waiting for approval in System Settings > General > Login Items.
+    needs_approval: bool,
+    /// False when macOS can't register this copy of the app, such as a development build.
+    available: bool,
+}
+
+impl From<LoginItem> for LaunchAtLogin {
+    fn from(item: LoginItem) -> Self {
+        LaunchAtLogin {
+            enabled: matches!(item, LoginItem::On | LoginItem::NeedsApproval),
+            needs_approval: item == LoginItem::NeedsApproval,
+            available: item != LoginItem::Unavailable,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn launch_at_login() -> CommandResult<LaunchAtLogin> {
+    blocking(|| Ok(macos_audio::login_item().into())).await
+}
+
+/// Turns opening at login on or off, and returns the state macOS reports after.
+#[tauri::command]
+pub async fn set_launch_at_login(enabled: bool) -> CommandResult<LaunchAtLogin> {
+    blocking(move || {
+        macos_audio::set_login_item(enabled).map_err(|error| CommandError {
+            kind: ErrorKind::Unavailable,
+            message: format!("couldn't change opening at login: {error}"),
+        })?;
+        log::info!(
+            "opening at login turned {}",
+            if enabled { "on" } else { "off" }
+        );
+        Ok(macos_audio::login_item().into())
+    })
+    .await
 }
 
 /// How readily quiet audio counts as speech, for each side of the call.
@@ -264,6 +309,31 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<Source>(serde_json::json!("them")).unwrap(),
             Source::Them
+        );
+    }
+
+    #[test]
+    fn reports_opening_at_login_from_the_macos_status() {
+        let off = LaunchAtLogin::from(LoginItem::Off);
+        assert_eq!(
+            (off.enabled, off.needs_approval, off.available),
+            (false, false, true)
+        );
+        let on = LaunchAtLogin::from(LoginItem::On);
+        assert_eq!(
+            (on.enabled, on.needs_approval, on.available),
+            (true, false, true)
+        );
+        let pending = LaunchAtLogin::from(LoginItem::NeedsApproval);
+        assert_eq!(
+            (pending.enabled, pending.needs_approval, pending.available),
+            (true, true, true)
+        );
+        let unavailable = LaunchAtLogin::from(LoginItem::Unavailable);
+        assert_eq!((unavailable.enabled, unavailable.available), (false, false));
+        assert_eq!(
+            serde_json::to_value(pending).unwrap(),
+            serde_json::json!({ "enabled": true, "needsApproval": true, "available": true })
         );
     }
 }

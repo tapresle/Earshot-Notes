@@ -66,6 +66,20 @@ export interface RecordingIssue extends SourceProblem {
   meetingId: number;
 }
 
+/** A recording started or stopped, from the window or the menu bar. Null means none is running. */
+export interface RecordingChanged {
+  meetingId: number | null;
+}
+
+/** Whether the app opens at login, as macOS reports it. */
+export interface LaunchAtLogin {
+  enabled: boolean;
+  /** Turned on, but waiting for approval in System Settings > General > Login Items. */
+  needsApproval: boolean;
+  /** False when macOS can't register this copy of the app, such as a development build. */
+  available: boolean;
+}
+
 export interface Summary {
   id: number;
   meetingId: number;
@@ -237,6 +251,10 @@ export const api = {
     listen<TranscriptSegment>("transcript:segment", (event) => handler(event.payload)),
   onRecordingIssue: (handler: (issue: RecordingIssue) => void): Promise<UnlistenFn> =>
     listen<RecordingIssue>("recording:issue", (event) => handler(event.payload)),
+  onRecordingChanged: (handler: (change: RecordingChanged) => void): Promise<UnlistenFn> =>
+    listen<RecordingChanged>("recording:changed", (event) => handler(event.payload)),
+  launchAtLogin: () => invoke<LaunchAtLogin>("launch_at_login"),
+  setLaunchAtLogin: (enabled: boolean) => invoke<LaunchAtLogin>("set_launch_at_login", { enabled }),
 
   summarizeMeeting: (meetingId: number) => invoke<void>("summarize_meeting", { meetingId }),
   cancelSummary: () => invoke<boolean>("cancel_summary"),
