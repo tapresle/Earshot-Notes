@@ -76,7 +76,7 @@ export interface LaunchAtLogin {
   enabled: boolean;
   /** Turned on, but waiting for approval in System Settings > General > Login Items. */
   needsApproval: boolean;
-  /** False when macOS can't register this copy of the app, such as a development build. */
+  /** False on a platform without login items. */
   available: boolean;
 }
 

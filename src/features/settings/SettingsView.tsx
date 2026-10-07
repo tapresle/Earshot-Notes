@@ -95,7 +95,7 @@ function StartupSection() {
         Opens Earshot Notes in the menu bar when you log in. Closing the window keeps it running there.
       </p>
       {state && !state.available && (
-        <p className="field-warning">This copy of Earshot Notes can't open at login. Install it in Applications first.</p>
+        <p className="field-warning">Opening at login isn't available on this system.</p>
       )}
       {state?.needsApproval && (
         <p className="field-warning">

@@ -966,11 +966,11 @@ describe("App", () => {
         expect(screen.getByText(/System Settings > General > Login Items/)).toBeInTheDocument();
       });
 
-      it("can't be turned on when macOS can't register this copy", async () => {
+      it("can't be turned on where the system has no login items", async () => {
         await openWith({ enabled: false, needsApproval: false, available: false });
 
         expect(await screen.findByRole("checkbox", { name: "Open at login" })).toBeDisabled();
-        expect(screen.getByText(/Install it in Applications first/)).toBeInTheDocument();
+        expect(screen.getByText(/isn't available on this system/)).toBeInTheDocument();
       });
 
       it("shows why a change failed", async () => {
