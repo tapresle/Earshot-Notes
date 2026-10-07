@@ -61,3 +61,17 @@ test("settings", async ({ page }) => {
   await expect(page.getByLabel("Record from")).toBeVisible();
   await expect(page).toHaveScreenshot("settings.png");
 });
+
+test("settings scroll inside their pane, not the window", async ({ page }) => {
+  await open(page, "settings");
+  await sidebar(page).getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByLabel("Record from")).toBeVisible();
+
+  await page.locator(".workspace").evaluate((pane) => pane.scrollTo(0, pane.scrollHeight));
+
+  const size = await page.evaluate(() => ({
+    height: document.scrollingElement!.scrollHeight,
+    window: window.innerHeight,
+  }));
+  expect(size.height).toBeLessThanOrEqual(size.window);
+});

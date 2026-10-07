@@ -59,6 +59,16 @@ body {
   height: 100vh;
 }
 
+/* Each pane scrolls on its own. Positioning them makes each one the
+   containing block for absolutely positioned content inside it, such as
+   .sr-only inputs; otherwise that content escapes the pane and makes the
+   whole window scroll. */
+.sidebar,
+.workspace,
+.transcript-panel {
+  position: relative;
+}
+
 .sidebar,
 .transcript-panel {
   padding: 16px;
