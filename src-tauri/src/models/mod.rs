@@ -13,7 +13,7 @@ use crate::store::{ModelRecord, ModelSource, Store, StoreError};
 use crate::summarize::llama::MAX_CONTEXT;
 
 /// The llama-cpp-2 version this build runs, recorded as the minimum runtime of
-/// models known to work with it. Must match Cargo.toml.
+/// models known to work with it. Must match the exact version Cargo.toml pins.
 pub const RUNTIME_VERSION: &str = "0.1.158";
 
 /// A model the app knows how to fetch and verify.
@@ -639,7 +639,9 @@ mod tests {
         let manifest = std::fs::read_to_string("Cargo.toml").unwrap();
 
         assert!(
-            manifest.contains(&format!("llama-cpp-2 = {{ version = \"{RUNTIME_VERSION}\"")),
+            manifest.contains(&format!(
+                "llama-cpp-2 = {{ version = \"={RUNTIME_VERSION}\""
+            )),
             "update RUNTIME_VERSION to match Cargo.toml"
         );
     }
