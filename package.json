@@ -13,7 +13,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit --composite false",
     "screenshots": "playwright test --update-snapshots=changed",
-    "screenshots:check": "playwright test"
+    "screenshots:check": "playwright test",
+    "benchmark": "node scripts/benchmark/run.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
