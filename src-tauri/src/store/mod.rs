@@ -8,6 +8,7 @@ mod search;
 pub mod settings;
 mod summaries;
 mod transcript;
+mod vocabulary;
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
@@ -33,6 +34,8 @@ pub enum StoreError {
         "the database was created by a newer version of the app (schema {found}, this build supports {supported})"
     )]
     SchemaTooNew { found: i64, supported: usize },
+    #[error("the saved {key} setting can't be read: {reason}")]
+    UnreadableSetting { key: &'static str, reason: String },
     #[error("database error: {0}")]
     Sqlite(#[from] rusqlite::Error),
 }

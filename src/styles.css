@@ -780,6 +780,41 @@ body {
   font: inherit;
 }
 
+/* Term, mishearings, and a remove button on each row. */
+.vocabulary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) max-content;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 13px;
+}
+
+.vocabulary-heading {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.vocabulary-input {
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.vocabulary-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.vocabulary-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .settings-saved {
   margin: 6px 0 0;
   font-size: 12px;

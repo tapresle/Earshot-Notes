@@ -983,6 +983,74 @@ describe("App", () => {
       });
     });
 
+    describe("vocabulary", () => {
+      // Invented names only.
+      async function openWith(setup: (state: ReturnType<typeof fakeBackend>["state"]) => void = () => {}) {
+        const backend = fakeBackend([seedMeeting(1, "Sync")]);
+        setup(backend.state);
+        const user = userEvent.setup();
+        render(<App />);
+        await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+        await screen.findByRole("button", { name: "Add term" });
+        return { backend, user };
+      }
+
+      it("shows the saved terms and their mishearings", async () => {
+        await openWith((state) => {
+          state.vocabulary = [{ term: "Bluefin Ledger", heardAs: ["blue fin ledger", "bluefinn ledger"] }];
+        });
+
+        expect(screen.getByLabelText("Term 1")).toHaveValue("Bluefin Ledger");
+        expect(screen.getByLabelText("Heard as, term 1")).toHaveValue("blue fin ledger, bluefinn ledger");
+      });
+
+      it("adds a term and reports the transcripts it corrected", async () => {
+        const { backend, user } = await openWith((state) => (state.vocabularyUpdated = 3));
+
+        await user.click(screen.getByRole("button", { name: "Add term" }));
+        await user.type(screen.getByLabelText("Term 1"), "Corvina");
+        await user.type(screen.getByLabelText("Heard as, term 1"), "corvena, core vina");
+        await user.click(screen.getByRole("button", { name: "Save vocabulary" }));
+
+        expect(await screen.findByRole("status")).toHaveTextContent("Saved. Corrected 3 transcript lines.");
+        expect(backend.state.vocabulary).toEqual([{ term: "Corvina", heardAs: ["corvena", "core vina"] }]);
+        expect(screen.getByLabelText("Heard as, term 1")).toHaveValue("corvena, core vina");
+      });
+
+      it("removes a term and skips empty rows when saving", async () => {
+        const { backend, user } = await openWith((state) => {
+          state.vocabulary = [
+            { term: "Bluefin Ledger", heardAs: [] },
+            { term: "Corvina", heardAs: [] },
+          ];
+        });
+
+        await user.click(screen.getByRole("button", { name: "Remove term 1" }));
+        await user.click(screen.getByRole("button", { name: "Add term" }));
+        await user.click(screen.getByRole("button", { name: "Save vocabulary" }));
+
+        expect(await screen.findByRole("status")).toHaveTextContent("Saved");
+        expect(backend.state.vocabulary).toEqual([{ term: "Corvina", heardAs: [] }]);
+      });
+
+      it("explains why a vocabulary can't be saved", async () => {
+        const { user } = await openWith((state) => {
+          state.vocabularyError = {
+            kind: "invalid",
+            message: 'the mishearing "cor-vena" can only contain letters, numbers, and spaces',
+          };
+        });
+
+        await user.click(screen.getByRole("button", { name: "Add term" }));
+        await user.type(screen.getByLabelText("Term 1"), "Corvina");
+        await user.click(screen.getByRole("button", { name: "Save vocabulary" }));
+
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          'The mishearing "cor-vena" can only contain letters, numbers, and spaces.',
+        );
+      });
+    });
+
     describe("check for updates", () => {
       async function openWith(setup: (state: ReturnType<typeof fakeBackend>["state"]) => void) {
         const backend = fakeBackend([seedMeeting(1, "Sync")]);

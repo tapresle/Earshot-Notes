@@ -13,6 +13,7 @@ pub mod summarize;
 pub mod transcribe;
 pub mod tray;
 pub mod updates;
+pub mod vocabulary;
 pub mod window;
 
 use std::path::PathBuf;
@@ -168,6 +169,8 @@ pub fn run() {
             commands::updates::update_check_enabled,
             commands::updates::check_for_update,
             commands::updates::open_release_page,
+            commands::vocabulary::vocabulary,
+            commands::vocabulary::set_vocabulary,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -196,7 +199,8 @@ fn spawn_transcription(
 ) -> Result<(TranscriptionWorker, PathBuf), String> {
     let handle = app.handle().clone();
     TranscriptionWorker::spawn(candidates, move |job, transcription| {
-        let saved = store.insert_segment(NewSegment {
+        // Corrected with the vocabulary as it's saved.
+        let saved = store.insert_transcribed_segment(NewSegment {
             meeting_id: job.meeting_id,
             source: job.source,
             start_ms: job.start_ms,

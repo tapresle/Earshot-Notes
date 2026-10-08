@@ -85,12 +85,23 @@ impl Whistle {
 
     /// Transcribes up to 30 seconds of 16 kHz mono PCM as English.
     pub fn transcribe(&mut self, pcm: &[f32]) -> Result<Transcription, WhistleError> {
-        self.transcribe_with_capacity(pcm, INITIAL_OUTPUT_CAPACITY)
+        self.transcribe_with_capacity(pcm, None, INITIAL_OUTPUT_CAPACITY)
+    }
+
+    /// Like [`Whistle::transcribe`], biased toward `keywords`: words and
+    /// phrases, one per line, that the speech is likely to contain.
+    pub fn transcribe_with_keywords(
+        &mut self,
+        pcm: &[f32],
+        keywords: Option<&CStr>,
+    ) -> Result<Transcription, WhistleError> {
+        self.transcribe_with_capacity(pcm, keywords, INITIAL_OUTPUT_CAPACITY)
     }
 
     fn transcribe_with_capacity(
         &mut self,
         pcm: &[f32],
+        keywords: Option<&CStr>,
         initial_capacity: usize,
     ) -> Result<Transcription, WhistleError> {
         if pcm.len() > MAX_SAMPLES {
@@ -105,7 +116,7 @@ impl Whistle {
                     pcm.as_ptr(),
                     pcm.len() as c_int,
                     LANGUAGE.as_ptr(),
-                    std::ptr::null(),
+                    keywords.map_or(std::ptr::null(), CStr::as_ptr),
                     0,
                     out.as_mut_ptr().cast::<c_char>(),
                     capacity as c_int,
@@ -195,7 +206,7 @@ mod tests {
         let mut whistle =
             Whistle::load(std::path::Path::new("resources/models/whistle.cact")).unwrap();
 
-        let result = whistle.transcribe_with_capacity(&pcm, 16).unwrap();
+        let result = whistle.transcribe_with_capacity(&pcm, None, 16).unwrap();
 
         assert!(result.text.ends_with("budget report."));
     }

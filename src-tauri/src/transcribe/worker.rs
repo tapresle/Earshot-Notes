@@ -1,6 +1,8 @@
 //! A dedicated thread that owns the Whistle model and transcribes segments in order.
 
+use std::ffi::CString;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::mpsc::{self, Sender};
 use std::thread;
 
@@ -19,6 +21,8 @@ pub struct Job {
     pub end_ms: i64,
     pub samples: Vec<f32>,
     pub speech: Speech,
+    /// Vocabulary terms that bias transcription, one per line.
+    pub keywords: Option<Arc<CString>>,
 }
 
 /// Where the worker loaded its model from.
@@ -65,7 +69,7 @@ impl TranscriptionWorker {
                 };
                 for mut job in inbox {
                     let samples = std::mem::take(&mut job.samples);
-                    match whistle.transcribe(&samples) {
+                    match whistle.transcribe_with_keywords(&samples, job.keywords.as_deref().map(CString::as_c_str)) {
                         Ok(t) if t.text.is_empty() => {}
                         // Never log the text itself.
                         Ok(t) if is_phantom(&t.text, job.speech) => log::debug!(

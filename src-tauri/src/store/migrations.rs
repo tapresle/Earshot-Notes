@@ -11,6 +11,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0003_summaries_and_models.sql"),
     include_str!("../../migrations/0004_meetings_page_index.sql"),
     include_str!("../../migrations/0005_meeting_search.sql"),
+    include_str!("../../migrations/0006_transcript_heard_text.sql"),
 ];
 
 pub fn apply(conn: &mut Connection) -> Result<(), StoreError> {

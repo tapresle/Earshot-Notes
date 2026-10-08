@@ -13,6 +13,7 @@ pub mod settings;
 pub mod setup;
 pub mod summaries;
 pub mod updates;
+pub mod vocabulary;
 
 use serde::Serialize;
 
@@ -79,7 +80,9 @@ impl From<StoreError> for CommandError {
             StoreError::ModelNotFound(_) => ErrorKind::NotFound {
                 missing: Missing::Model,
             },
-            StoreError::SchemaTooNew { .. } | StoreError::Sqlite(_) => ErrorKind::Internal,
+            StoreError::SchemaTooNew { .. }
+            | StoreError::UnreadableSetting { .. }
+            | StoreError::Sqlite(_) => ErrorKind::Internal,
         };
         Self {
             kind,

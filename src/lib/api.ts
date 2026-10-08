@@ -71,6 +71,18 @@ export interface RecordingChanged {
   meetingId: number | null;
 }
 
+/** A name to spell correctly, and what transcription tends to hear instead. */
+export interface VocabularyTerm {
+  term: string;
+  heardAs: string[];
+}
+
+/** The vocabulary as saved, and how many transcript lines saving it corrected. */
+export interface SavedVocabulary {
+  terms: VocabularyTerm[];
+  updated: number;
+}
+
 /** What checking GitHub for a newer release found. */
 export interface UpdateCheck {
   current: string;
@@ -316,6 +328,9 @@ export const api = {
   installedModels: () => invoke<InstalledModels>("installed_models"),
   selectSummaryModel: (modelId: string) => invoke<void>("select_summary_model", { modelId }),
   openModelPage: (modelId: string) => invoke<void>("open_model_page", { modelId }),
+  vocabulary: () => invoke<VocabularyTerm[]>("vocabulary"),
+  /** Saves the vocabulary and corrects every stored transcript with it. */
+  setVocabulary: (terms: VocabularyTerm[]) => invoke<SavedVocabulary>("set_vocabulary", { terms }),
   updateCheckEnabled: () => invoke<boolean>("update_check_enabled"),
   /** Contacts GitHub. Call only when the user asks. */
   checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),

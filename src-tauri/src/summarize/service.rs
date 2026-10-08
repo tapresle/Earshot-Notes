@@ -72,6 +72,7 @@ struct Job {
     title: String,
     notes_markdown: String,
     segments: Vec<TranscriptSegment>,
+    terms: Vec<String>,
     upto_ms: i64,
     is_final: bool,
     cancel: Arc<AtomicBool>,
@@ -145,6 +146,12 @@ impl Summarizer {
             notes_markdown: detail.notes_markdown,
             upto_ms: segments.iter().map(|s| s.end_ms).max().unwrap_or(0),
             segments,
+            terms: store
+                .vocabulary()?
+                .terms()
+                .iter()
+                .map(|t| t.term.clone())
+                .collect(),
             is_final,
             cancel: cancel.clone(),
         };
@@ -212,6 +219,7 @@ fn run_job(
         title: &job.title,
         notes_markdown: &job.notes_markdown,
         segments: &job.segments,
+        terms: &job.terms,
     };
     let body = summarize(
         generator.as_mut(),
