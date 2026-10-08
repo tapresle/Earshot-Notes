@@ -4,6 +4,11 @@
   publish = "site"
   # Nothing to build. Netlify deploys the folder.
   command = ""
+  # Skip the deploy, including pull request previews, when neither site/ nor
+  # this file changed since the last build. Exit 0 skips; anything else builds.
+  # Without a cache, CACHED_COMMIT_REF equals COMMIT_REF, so it always builds
+  # then, and a failed comparison builds too.
+  ignore = '[ "$CACHED_COMMIT_REF" != "$COMMIT_REF" ] && git diff --quiet "$CACHED_COMMIT_REF" "$COMMIT_REF" -- site/ netlify.toml'
 
 [[headers]]
   for = "/*"
