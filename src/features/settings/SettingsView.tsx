@@ -19,6 +19,7 @@ import { ExportAllButton } from "../export/ExportBar";
 import { ModelOrigin } from "../summary/ModelOrigin";
 import { Markdown } from "../summary/Markdown";
 import { ModelSetup } from "../summary/ModelSetup";
+import { missingTerms, SOFTWARE_TERMS } from "./softwareTerms";
 
 export function SettingsView({ recording, onShowSetup }: { recording: boolean; onShowSetup: () => void }) {
   const [error, setError] = useState<string | null>(null);
@@ -724,6 +725,22 @@ function VocabularySection() {
     setRows((current) => current && current.filter((row) => row.key !== key));
   }
 
+  function addSoftwareTerms() {
+    if (!rows) return;
+    const added = missingTerms(
+      rows.map((row) => row.term),
+      SOFTWARE_TERMS,
+    );
+    if (added.length === 0) {
+      setStatus("Every software term is already in your vocabulary.");
+      return;
+    }
+    setRows([...rows, ...added.map((term) => ({ key: nextKey.current++, term, heardAs: "" }))]);
+    setStatus(
+      `Added ${added.length} software ${added.length === 1 ? "term" : "terms"}. Save the vocabulary to keep them.`,
+    );
+  }
+
   async function save() {
     if (!rows) return;
     setSaving(true);
@@ -754,7 +771,8 @@ function VocabularySection() {
         Names your meetings use, such as products, customers, and colleagues. Transcription listens for them from
         the next recording, and summaries spell them as written. Under <strong>Heard as</strong>, list what
         transcription writes instead, separated by commas. Saving fixes those words in every transcript, and
-        removing them restores the original.
+        removing them restores the original. If your meetings are about software, <strong>Add software terms</strong>{" "}
+        adds technical terms that transcription often mishears, such as &ldquo;async&rdquo; and &ldquo;JSON&rdquo;.
       </p>
       {rows === null && !error && <p className="empty-hint">Loading…</p>}
       {rows !== null && (
@@ -797,6 +815,9 @@ function VocabularySection() {
           <div className="vocabulary-actions">
             <button type="button" className="button subtle" onClick={add}>
               Add term
+            </button>
+            <button type="button" className="button subtle" onClick={addSoftwareTerms}>
+              Add software terms
             </button>
             <button type="button" className="button" onClick={() => void save()} disabled={saving}>
               {saving ? "Saving…" : "Save vocabulary"}

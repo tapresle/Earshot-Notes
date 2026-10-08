@@ -1069,6 +1069,32 @@ describe("App", () => {
         expect(backend.state.vocabulary).toEqual([{ term: "Corvina", heardAs: [] }]);
       });
 
+      it("adds the software terms that are missing, for you to save", async () => {
+        const { backend, user } = await openWith((state) => {
+          state.vocabulary = [{ term: "Async", heardAs: ["a sink"] }];
+        });
+
+        await user.click(screen.getByRole("button", { name: "Add software terms" }));
+
+        expect(screen.getByRole("status")).toHaveTextContent(
+          "Added 27 software terms. Save the vocabulary to keep them.",
+        );
+        expect(screen.getByLabelText("Term 1")).toHaveValue("Async");
+        expect(screen.getByLabelText("Term 2")).toHaveValue("await");
+        expect(screen.getByLabelText("Heard as, term 2")).toHaveValue("");
+        expect(backend.state.vocabulary).toHaveLength(1);
+
+        await user.click(screen.getByRole("button", { name: "Save vocabulary" }));
+
+        expect(await screen.findByRole("status")).toHaveTextContent("Saved");
+        expect(backend.state.vocabulary).toHaveLength(28);
+        expect(backend.state.vocabulary[0]).toEqual({ term: "Async", heardAs: ["a sink"] });
+
+        await user.click(screen.getByRole("button", { name: "Add software terms" }));
+
+        expect(screen.getByRole("status")).toHaveTextContent("Every software term is already in your vocabulary.");
+      });
+
       it("explains why a vocabulary can't be saved", async () => {
         const { user } = await openWith((state) => {
           state.vocabularyError = {
