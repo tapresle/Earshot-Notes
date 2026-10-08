@@ -375,7 +375,13 @@ mod tests {
     #[test]
     fn keeps_a_mid_sentence_pause_inside_one_segment() {
         // People pause this long mid-sentence; splitting there costs Whistle the context.
-        let audio = concat(&[silence(500), tone(1000), silence(1500), tone(1000), silence(3000)]);
+        let audio = concat(&[
+            silence(500),
+            tone(1000),
+            silence(1500),
+            tone(1000),
+            silence(3000),
+        ]);
 
         assert_eq!(run(&audio, 512).len(), 1);
     }
