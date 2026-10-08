@@ -2,6 +2,7 @@
 
 use std::sync::atomic::AtomicBool;
 
+use super::note_taker::{NoteTaker, you_for_me};
 use super::prompt::{self, combine_messages, part_messages, summary_messages, transcript_line};
 use super::template::{Message, TemplateError};
 use crate::store::TranscriptSegment;
@@ -71,7 +72,29 @@ pub struct Request<'a> {
 }
 
 /// Summarizes a meeting. Only the final notes stream through `on_text`.
+/// The notes call the note-taker "you" (see `note_taker`).
 pub fn summarize(
+    generator: &mut dyn Generator,
+    request: &Request,
+    cancel: &AtomicBool,
+    on_progress: &mut dyn FnMut(Progress),
+    on_text: &mut dyn FnMut(&str),
+) -> Result<String, SummaryError> {
+    let mut note_taker = NoteTaker::default();
+    let notes = write_notes(generator, request, cancel, on_progress, &mut |text| {
+        let shown = note_taker.push(text);
+        if !shown.is_empty() {
+            on_text(&shown);
+        }
+    })?;
+    let rest = note_taker.finish();
+    if !rest.is_empty() {
+        on_text(&rest);
+    }
+    Ok(you_for_me(&notes))
+}
+
+fn write_notes(
     generator: &mut dyn Generator,
     request: &Request,
     cancel: &AtomicBool,
@@ -168,6 +191,7 @@ mod tests {
     struct FakeModel {
         context: usize,
         calls: Vec<String>,
+        notes: &'static str,
     }
 
     impl FakeModel {
@@ -175,6 +199,7 @@ mod tests {
             Self {
                 context,
                 calls: Vec::new(),
+                notes: "## Notes\n- done",
             }
         }
     }
@@ -209,7 +234,7 @@ mod tests {
             let reply = if user.starts_with("Part ") {
                 format!("- condensed part {}", self.calls.len() + 1)
             } else {
-                "## Notes\n- done".to_string()
+                self.notes.to_string()
             };
             self.calls.push(user.clone());
             for piece in reply.split_inclusive(' ') {
@@ -266,6 +291,18 @@ mod tests {
         assert_eq!(progress, vec![Progress::Writing]);
         assert_eq!(streamed, "## Notes\n- done");
         assert_eq!(model.calls.len(), 1);
+    }
+
+    #[test]
+    fn calls_the_note_taker_you_in_streamed_and_returned_notes() {
+        let mut model = FakeModel::new(8192);
+        model.notes = "## Next steps\n- Me will write the alert (Me)";
+
+        let (result, _, streamed) = run(&mut model, &segments(10, 10), "");
+
+        let expected = "## Next steps\n- You will write the alert (you)";
+        assert_eq!(result.unwrap(), expected);
+        assert_eq!(streamed, expected);
     }
 
     #[test]
