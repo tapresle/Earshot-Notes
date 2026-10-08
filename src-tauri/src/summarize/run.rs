@@ -6,10 +6,19 @@ use super::prompt::{self, combine_messages, part_messages, summary_messages, tra
 use super::template::{Message, TemplateError};
 use crate::store::TranscriptSegment;
 
-/// Room for the finished notes.
-pub const MAX_SUMMARY_TOKENS: usize = 1536;
-/// Room for each condensed part of a long transcript.
-pub const MAX_PART_TOKENS: usize = 512;
+/// Room for the finished notes: a quarter of the context, at most 4,096
+/// tokens. Output room comes out of the same context as the transcript, so a
+/// larger share would push meetings into condensing sooner, which loses detail.
+pub fn summary_tokens(context: usize) -> usize {
+    (context / 4).min(4096)
+}
+
+/// Room for each condensed part of a long transcript: an eighth of the
+/// context, at most 1,024 tokens.
+pub fn part_tokens(context: usize) -> usize {
+    (context / 8).min(1024)
+}
+
 /// Slack for tokenizer differences between counting and generating.
 const MARGIN_TOKENS: usize = 64;
 
@@ -73,6 +82,7 @@ pub fn summarize(
         return Err(SummaryError::NothingToSummarize);
     }
     let context = generator.context_size();
+    let (summary_room, part_room) = (summary_tokens(context), part_tokens(context));
     let lines: Vec<String> = request.segments.iter().map(transcript_line).collect();
 
     let single = summary_messages(
@@ -81,15 +91,15 @@ pub fn summarize(
         request.terms,
         &lines.join("\n"),
     );
-    if fits(generator, &single, MAX_SUMMARY_TOKENS, context)? {
+    if fits(generator, &single, summary_room, context)? {
         on_progress(Progress::Writing);
-        return generator.generate(&single, MAX_SUMMARY_TOKENS, cancel, on_text);
+        return generator.generate(&single, summary_room, cancel, on_text);
     }
 
     // Too long for one pass: condense in parts until the parts fit together.
     let overhead = generator.prompt_tokens(&part_messages(1, 1, request.terms, ""))?;
     let budget = context
-        .checked_sub(overhead + MAX_PART_TOKENS + MARGIN_TOKENS)
+        .checked_sub(overhead + part_room + MARGIN_TOKENS)
         .filter(|b| *b > 0)
         .ok_or(SummaryError::ContextTooSmall)?;
     let mut pieces = lines;
@@ -110,14 +120,14 @@ pub fn summarize(
                 parts: windows.len(),
             });
             let messages = part_messages(i + 1, windows.len(), request.terms, window);
-            parts.push(generator.generate(&messages, MAX_PART_TOKENS, cancel, &mut |_| {})?);
+            parts.push(generator.generate(&messages, part_room, cancel, &mut |_| {})?);
         }
 
         let combined =
             combine_messages(request.title, request.notes_markdown, request.terms, &parts);
-        if fits(generator, &combined, MAX_SUMMARY_TOKENS, context)? {
+        if fits(generator, &combined, summary_room, context)? {
             on_progress(Progress::Writing);
-            return generator.generate(&combined, MAX_SUMMARY_TOKENS, cancel, on_text);
+            return generator.generate(&combined, summary_room, cancel, on_text);
         }
         pieces = parts;
     }
@@ -137,6 +147,22 @@ mod tests {
     use super::*;
     use crate::store::Source;
     use std::sync::atomic::Ordering;
+
+    #[test]
+    fn scales_output_room_with_the_context() {
+        // Ministral 3 14B, Qwen3 8B and Ministral 3 8B, then the 32K models.
+        assert_eq!((summary_tokens(8_192), part_tokens(8_192)), (2_048, 1_024));
+        assert_eq!(
+            (summary_tokens(16_384), part_tokens(16_384)),
+            (4_096, 1_024)
+        );
+        assert_eq!(
+            (summary_tokens(32_768), part_tokens(32_768)),
+            (4_096, 1_024)
+        );
+        // Small test models keep the same shares.
+        assert_eq!((summary_tokens(2_048), part_tokens(2_048)), (512, 256));
+    }
 
     /// Counts one token per word and replies with canned text.
     struct FakeModel {
