@@ -199,9 +199,10 @@ fn spawn_transcription(
 ) -> Result<(TranscriptionWorker, PathBuf), String> {
     let handle = app.handle().clone();
     TranscriptionWorker::spawn(candidates, move |job, transcription| {
-        // Corrected with the vocabulary as it's saved.
+        // Corrected with the vocabulary, and without echo, as it's saved.
+        let meeting_id = job.meeting_id;
         let saved = store.insert_transcribed_segment(NewSegment {
-            meeting_id: job.meeting_id,
+            meeting_id,
             source: job.source,
             start_ms: job.start_ms,
             end_ms: job.end_ms,
@@ -209,15 +210,23 @@ fn spawn_transcription(
             language: transcription.language,
         });
         match saved {
-            Ok(segment) => {
-                if let Err(error) = handle.emit("transcript:segment", &segment) {
+            Ok(saved) => {
+                if let Some(segment) = &saved.segment
+                    && let Err(error) = handle.emit("transcript:segment", segment)
+                {
                     log::warn!("couldn't send a transcript segment to the UI: {error}");
                 }
+                if !saved.removed.is_empty() {
+                    let removed =
+                        serde_json::json!({ "meetingId": meeting_id, "ids": saved.removed });
+                    if let Err(error) = handle.emit("transcript:removed", removed) {
+                        log::warn!("couldn't tell the UI about removed echoes: {error}");
+                    }
+                }
             }
-            Err(error) => log::error!(
-                "couldn't save a transcript segment for meeting {}: {error}",
-                job.meeting_id
-            ),
+            Err(error) => {
+                log::error!("couldn't save a transcript segment for meeting {meeting_id}: {error}")
+            }
         }
     })
     .map(|(worker, loaded)| {

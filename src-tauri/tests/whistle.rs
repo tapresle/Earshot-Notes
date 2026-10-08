@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
+use earshot_lib::transcribe::echo::is_echo;
 use earshot_lib::transcribe::whistle::{MAX_SAMPLES, SAMPLE_RATE, Whistle, WhistleError};
 
 const MODEL: &str = "resources/models/whistle.cact";
@@ -87,6 +88,56 @@ fn keywords_steer_toward_vocabulary_terms() {
         "keywords must not be invented from silence"
     );
     assert!(!unrelated.text.contains("Bluefin"), "{:?}", unrelated.text);
+}
+
+/// What the microphone hears of `clean` from the speakers: `gain` of it,
+/// 250 ms late, with a 40 ms reflection and some noise. Synthetic, so it's
+/// the same every run.
+fn echo_of(clean: &[f32], gain: f32) -> Vec<f32> {
+    const DELAY: usize = 4000;
+    const REFLECTION: usize = 640;
+    let mut seed: u32 = 7;
+    let mut out = vec![0.0; clean.len() + DELAY + REFLECTION];
+    for (i, sample) in clean.iter().enumerate() {
+        out[i + DELAY] += sample * gain;
+        out[i + DELAY + REFLECTION] += sample * gain * 0.4;
+    }
+    for sample in &mut out {
+        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        *sample += ((seed >> 8) as f32 / 16_777_216.0 - 0.5) * 0.004;
+    }
+    out
+}
+
+#[test]
+fn recognizes_synthetic_echo_but_keeps_your_own_speech() {
+    let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut whistle = Whistle::load(Path::new(MODEL)).unwrap();
+    let theirs_audio = speech_fixture();
+    let mine_audio = read_fixture("tests/fixtures/speech-vocabulary.wav");
+    let theirs = whistle.transcribe(&theirs_audio).unwrap().text;
+
+    for gain in [0.5, 0.25, 0.12] {
+        let echo = whistle
+            .transcribe(&echo_of(&theirs_audio, gain))
+            .unwrap()
+            .text;
+        assert!(
+            is_echo(&echo, &[&theirs]),
+            "at {gain}: {echo:?} vs {theirs:?}"
+        );
+    }
+    let mine = whistle.transcribe(&mine_audio).unwrap().text;
+    assert!(!is_echo(&mine, &[&theirs]), "{mine:?}");
+    // Talking over the echo: the quieter echo shouldn't make your words count as echo.
+    let mut over = mine_audio;
+    let echo = echo_of(&theirs_audio, 0.25);
+    over.resize(over.len().max(echo.len()), 0.0);
+    for (sample, e) in over.iter_mut().zip(&echo) {
+        *sample += e;
+    }
+    let mixed = whistle.transcribe(&over).unwrap().text;
+    assert!(!is_echo(&mixed, &[&theirs]), "{mixed:?}");
 }
 
 #[test]
