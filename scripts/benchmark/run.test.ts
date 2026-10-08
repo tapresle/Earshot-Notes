@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { contextUsed, fitMemory, parsePeakFootprint, renderReport, type Run } from "./run";
+import { contextUsed, fitMemory, parseTimeFigure, renderReport, type Run } from "./run";
 
 const GB = 1024 ** 3;
 
@@ -19,23 +19,25 @@ const run = (overrides: Partial<Run>): Run => ({
   found: 12,
   expected: 12,
   machine: { chip: "Apple M5 Max", memoryBytes: 128 * GB, macos: "27.0" },
-  peak_footprint_bytes: 4 * GB,
+  peak_resident_bytes: 4 * GB,
+  peak_footprint_bytes: GB,
   ...overrides,
 });
 
-describe("parsePeakFootprint", () => {
-  it("reads the footprint from macOS time output", () => {
-    const output = [
-      "        6.99 real         1.12 user         0.80 sys",
-      "          3532013568  maximum resident set size",
-      "          3402891264  peak memory footprint",
-    ].join("\n");
+describe("parseTimeFigure", () => {
+  const output = [
+    "        6.99 real         1.12 user         0.80 sys",
+    "          3532013568  maximum resident set size",
+    "          3402891264  peak memory footprint",
+  ].join("\n");
 
-    expect(parsePeakFootprint(output)).toBe(3402891264);
+  it("reads figures from macOS time output", () => {
+    expect(parseTimeFigure(output, "maximum resident set size")).toBe(3532013568);
+    expect(parseTimeFigure(output, "peak memory footprint")).toBe(3402891264);
   });
 
-  it("fails when the footprint is missing", () => {
-    expect(() => parsePeakFootprint("6.99 real")).toThrow(/peak memory footprint/);
+  it("fails when the figure is missing", () => {
+    expect(() => parseTimeFigure("6.99 real", "peak memory footprint")).toThrow(/peak memory footprint/);
   });
 });
 
@@ -53,8 +55,8 @@ describe("contextUsed", () => {
 describe("fitMemory", () => {
   it("separates fixed memory from memory per token", () => {
     const fit = fitMemory([
-      run({ prompt_tokens: 2000, peak_footprint_bytes: 3 * GB + 6096 * 100_000 }),
-      run({ prompt_tokens: 20_000, peak_footprint_bytes: 3 * GB + 24_096 * 100_000 }),
+      run({ prompt_tokens: 2000, peak_resident_bytes: 3 * GB + 6096 * 100_000 }),
+      run({ prompt_tokens: 20_000, peak_resident_bytes: 3 * GB + 24_096 * 100_000 }),
     ]);
 
     expect(fit?.bytesPerToken).toBeCloseTo(100_000);
@@ -71,9 +73,9 @@ describe("renderReport", () => {
   it("estimates the peak at the context limit and compares it with the budget", () => {
     // 3 GB fixed, plus 200,000 bytes a token: 3 GB + 32,768 * 200,000 is about 9.1 GB.
     const runs = [
-      run({ prompt_tokens: 2000, peak_footprint_bytes: 3 * GB + 6096 * 200_000 }),
-      run({ pad_minutes: 120, prompt_tokens: 20_000, peak_footprint_bytes: 3 * GB + 24_096 * 200_000 }),
-      run({ model: "model-b.gguf", context_size: 8192, peak_footprint_bytes: 11 * GB }),
+      run({ prompt_tokens: 2000, peak_resident_bytes: 3 * GB + 6096 * 200_000 }),
+      run({ pad_minutes: 120, prompt_tokens: 20_000, peak_resident_bytes: 3 * GB + 24_096 * 200_000 }),
+      run({ model: "model-b.gguf", context_size: 8192, peak_resident_bytes: 11 * GB }),
     ];
 
     const report = renderReport(runs);

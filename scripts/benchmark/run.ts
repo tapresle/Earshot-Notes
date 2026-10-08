@@ -1,8 +1,10 @@
 // Benchmarks summary models (#8): summarizes the synthetic meetings in
 // src-tauri/tests/fixtures/meetings/ with each model through the app's own
 // summary code (the summary_eval example), at three lengths, and measures each
-// run's peak memory. Each run is its own process under `/usr/bin/time -l`,
-// whose peak memory footprint includes Metal's allocations on Apple Silicon.
+// run's peak memory. Each run is its own process under `/usr/bin/time -l`.
+// Its maximum resident set size counts the model's memory-mapped weights and
+// Metal's buffers. The peak memory footprint leaves out the mapped weights, so
+// it's recorded but not compared with the budget.
 //
 //   npm run benchmark -- [--out results.jsonl] [model.gguf ...]
 //   npm run benchmark -- --report results.jsonl
@@ -48,16 +50,20 @@ export interface Run {
   found: number;
   expected: number;
   machine: Machine;
+  /** The mapped weights, Metal's buffers, and everything else resident. */
+  peak_resident_bytes: number;
+  /** The same without the mapped weights. */
   peak_footprint_bytes: number;
 }
 
-/** Reads the peak memory footprint from `/usr/bin/time -l` output on macOS. */
-export function parsePeakFootprint(timeOutput: string): number {
-  const match = /^\s*(\d+)\s+peak memory footprint\s*$/m.exec(timeOutput);
-  if (!match) {
-    throw new Error("no peak memory footprint in the time output");
+/** Reads a figure, such as "peak memory footprint", from `/usr/bin/time -l` output on macOS. */
+export function parseTimeFigure(timeOutput: string, label: string): number {
+  const line = timeOutput.split("\n").find((l) => l.trim().endsWith(label));
+  const value = line ? Number(line.trim().split(/\s+/)[0]) : NaN;
+  if (!Number.isFinite(value)) {
+    throw new Error(`no ${label} in the time output`);
   }
-  return Number(match[1]);
+  return value;
 }
 
 /**
@@ -81,7 +87,7 @@ export interface MemoryFit {
 
 /** Least-squares fit of peak memory against context used. Needs two or more distinct contexts. */
 export function fitMemory(runs: Run[]): MemoryFit | null {
-  const points = runs.map((run) => [contextUsed(run), run.peak_footprint_bytes] as const);
+  const points = runs.map((run) => [contextUsed(run), run.peak_resident_bytes] as const);
   const n = points.length;
   const meanX = points.reduce((sum, [x]) => sum + x, 0) / n;
   const meanY = points.reduce((sum, [, y]) => sum + y, 0) / n;
@@ -119,10 +125,10 @@ export function renderReport(runs: Run[]): string {
       const limit = modelRuns[0].context_size;
       const peaks = PAD_MINUTES.map((pad) => {
         const atPad = modelRuns.filter((run) => run.pad_minutes === pad);
-        return atPad.length === 0 ? "" : gb(Math.max(...atPad.map((run) => run.peak_footprint_bytes)));
+        return atPad.length === 0 ? "" : gb(Math.max(...atPad.map((run) => run.peak_resident_bytes)));
       }).join(" / ");
       const fit = fitMemory(modelRuns);
-      const measuredMax = Math.max(...modelRuns.map((run) => run.peak_footprint_bytes));
+      const measuredMax = Math.max(...modelRuns.map((run) => run.peak_resident_bytes));
       const atLimit = fit ? Math.max(fit.baseBytes + fit.bytesPerToken * limit, measuredMax) : measuredMax;
       const speeds = modelRuns.flatMap((run) => run.writing_tokens_per_second ?? []);
       const speed = speeds.length ? `${(speeds.reduce((a, b) => a + b, 0) / speeds.length).toFixed(0)} tokens/s` : "";
@@ -207,9 +213,13 @@ function main() {
           throw new Error(`summary_eval failed: ${result.stderr}`);
         }
         const run: Run = {
-          ...(JSON.parse(result.stdout.trim()) as Omit<Run, "machine" | "peak_footprint_bytes">),
+          ...(JSON.parse(result.stdout.trim()) as Omit<
+            Run,
+            "machine" | "peak_resident_bytes" | "peak_footprint_bytes"
+          >),
           machine: thisMachine,
-          peak_footprint_bytes: parsePeakFootprint(result.stderr),
+          peak_resident_bytes: parseTimeFigure(result.stderr, "maximum resident set size"),
+          peak_footprint_bytes: parseTimeFigure(result.stderr, "peak memory footprint"),
         };
         appendFileSync(out, `${JSON.stringify(run)}\n`);
       }
