@@ -10,11 +10,11 @@ use serde::{Deserialize, Serialize};
 
 /// Off until the repository is public: GitHub's releases API answers 404 for
 /// a private repository without signing in, and the app never carries a token.
-/// TODO(#62): turn this on when tapresle/Earshot is public, then remove it.
+/// TODO(#62): turn this on when tapresle/Earshot-Notes is public, then remove it.
 pub const ENABLED: bool = false;
 
-const REPOSITORY: &str = "https://github.com/tapresle/Earshot";
-const LATEST_RELEASE: &str = "https://api.github.com/repos/tapresle/Earshot/releases/latest";
+const REPOSITORY: &str = "https://github.com/tapresle/Earshot-Notes";
+const LATEST_RELEASE: &str = "https://api.github.com/repos/tapresle/Earshot-Notes/releases/latest";
 /// Release notes are a few kilobytes; anything far larger isn't a release.
 const MAX_RESPONSE_BYTES: u64 = 1 << 20;
 
@@ -255,7 +255,7 @@ mod tests {
         "prerelease": false,
         "html_url": "https://example.com/not-used",
         "published_at": "2026-11-02T18:00:00Z",
-        "body": "Released November 2, 2026.\n\n## Improved\n\n- **Faster summaries.** ([#90](https://github.com/tapresle/Earshot/issues/90))\n\n## Download\n\n`Earshot-Notes_0.2.0_aarch64.dmg`, SHA-256: `abc123`\n"
+        "body": "Released November 2, 2026.\n\n## Improved\n\n- **Faster summaries.** ([#90](https://github.com/tapresle/Earshot-Notes/issues/90))\n\n## Download\n\n`Earshot-Notes_0.2.0_aarch64.dmg`, SHA-256: `abc123`\n"
     }"#;
 
     #[test]
@@ -344,7 +344,7 @@ mod tests {
     fn builds_the_release_page_from_the_version_only() {
         assert_eq!(
             release_page("0.2.0").unwrap(),
-            "https://github.com/tapresle/Earshot/releases/tag/v0.2.0"
+            "https://github.com/tapresle/Earshot-Notes/releases/tag/v0.2.0"
         );
         assert!(release_page("0.2.0/../../evil").is_err());
     }

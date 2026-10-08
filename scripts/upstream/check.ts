@@ -188,7 +188,7 @@ const fetchJson: FetchJson = async (url, body) => {
   const response = await fetch(url, {
     method: body === undefined ? "GET" : "POST",
     // crates.io refuses requests without a user agent.
-    headers: { "User-Agent": "Earshot upstream check (github.com/tapresle/Earshot)", "Content-Type": "application/json" },
+    headers: { "User-Agent": "Earshot upstream check (github.com/tapresle/Earshot-Notes)", "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`${url} returned ${response.status}`);
