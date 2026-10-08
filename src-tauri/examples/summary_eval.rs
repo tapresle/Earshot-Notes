@@ -5,8 +5,12 @@
 //!   cargo run --release --example summary_eval -- \
 //!     --model tests/models/gemma-4-E4B-it-Q4_K_M.gguf \
 //!     [--sampling faithful|gemma4] [--context TOKENS] [--approach single|extract] \
-//!     [--noisy] [--pad MINUTES] [--terms "Name One, Name Two"] \
+//!     [--noisy] [--pad MINUTES] [--terms "Name One, Name Two"] [--json] \
 //!     tests/fixtures/meetings/*.json
+//!
+//! `--json` prints one JSON object per meeting instead of Markdown, with load
+//! time, time to the first text, writing speed, and token counts, for the
+//! model benchmark (`npm run benchmark`, #8).
 //!
 //! `--context` caps the model's context; a small value forces long-meeting
 //! condensing, which is how the "chunked" approach is measured. `--noisy`
@@ -25,7 +29,7 @@ use earshot_lib::summarize::llama::{LlamaGenerator, Sampling};
 use earshot_lib::summarize::prompt::{self, transcript_line};
 use earshot_lib::summarize::run::{Generator, Progress, Request, summarize};
 use earshot_lib::summarize::template::Message;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 struct Meeting {
@@ -48,56 +52,119 @@ struct Options {
     pad_minutes: u64,
     /// Vocabulary terms, as the app passes them.
     terms: Vec<String>,
+    json: bool,
     meetings: Vec<PathBuf>,
+}
+
+/// One meeting's result, as `--json` prints it.
+#[derive(Serialize)]
+struct Outcome {
+    model: String,
+    fixture: String,
+    title: String,
+    pad_minutes: u64,
+    noisy: bool,
+    load_seconds: f64,
+    context_size: usize,
+    /// Tokens of the one-pass prompt, whether or not it fit.
+    prompt_tokens: usize,
+    /// 0 when the meeting fit in one pass.
+    parts: usize,
+    /// From the start of the summary to the first text of the notes, which
+    /// includes reading the prompt and any condensing.
+    first_text_seconds: Option<f64>,
+    total_seconds: f64,
+    output_tokens: usize,
+    /// Output tokens per second after the first text.
+    writing_tokens_per_second: Option<f64>,
+    found: usize,
+    expected: usize,
+    missing: Vec<String>,
+    forbidden: Vec<String>,
+    notes: String,
 }
 
 fn main() {
     let options = options();
+    let loading = Instant::now();
     let mut generator = match options.context {
         Some(limit) => LlamaGenerator::load_with_context_limit(&options.model, limit),
         None => LlamaGenerator::load(&options.model),
     }
     .expect("couldn't load the model");
+    let load_seconds = loading.elapsed().as_secs_f64();
     generator.set_sampling(options.sampling);
-    println!(
-        "# {}\n\nsampling: {}, context: {}, approach: {}\n",
-        options.model.file_name().unwrap().to_string_lossy(),
-        options.sampling_name,
-        generator.context_size(),
-        if options.extract { "extract" } else { "single" },
-    );
-    if options.noisy || options.pad_minutes > 0 {
+    let model = options
+        .model
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    if !options.json {
         println!(
-            "transcripts: {}padded with {} minutes\n",
-            if options.noisy { "noisy, " } else { "" },
-            options.pad_minutes
+            "# {model}\n\nsampling: {}, context: {}, approach: {}\n",
+            options.sampling_name,
+            generator.context_size(),
+            if options.extract { "extract" } else { "single" },
         );
+        if options.noisy || options.pad_minutes > 0 {
+            println!(
+                "transcripts: {}padded with {} minutes\n",
+                if options.noisy { "noisy, " } else { "" },
+                options.pad_minutes
+            );
+        }
     }
     let mut total_found = 0;
     let mut total_expected = 0;
     for path in &options.meetings {
-        let (found, expected) = evaluate(
-            &mut generator,
-            path,
-            options.extract,
-            options.noisy,
-            options.pad_minutes,
-            &options.terms,
-        );
-        total_found += found;
-        total_expected += expected;
+        let mut outcome = evaluate(&mut generator, path, &options);
+        outcome.model = model.clone();
+        outcome.load_seconds = load_seconds;
+        total_found += outcome.found;
+        total_expected += outcome.expected;
+        if options.json {
+            println!("{}", serde_json::to_string(&outcome).expect("serializable"));
+        } else {
+            print_markdown(&outcome);
+        }
     }
-    println!("## Total\n\n{total_found} of {total_expected} specifics kept");
+    if !options.json {
+        println!("## Total\n\n{total_found} of {total_expected} specifics kept");
+    }
 }
 
-fn evaluate(
-    generator: &mut LlamaGenerator,
-    path: &Path,
-    extract: bool,
-    noisy_transcript: bool,
-    pad_minutes: u64,
-    terms: &[String],
-) -> (usize, usize) {
+fn print_markdown(outcome: &Outcome) {
+    println!(
+        "## {} ({})\n\n{:.1} s, {}, {} of {} specifics kept",
+        outcome.title,
+        outcome.fixture,
+        outcome.total_seconds,
+        if outcome.parts > 0 {
+            format!("condensed in {} parts", outcome.parts)
+        } else {
+            "one pass".into()
+        },
+        outcome.found,
+        outcome.expected,
+    );
+    if !outcome.missing.is_empty() {
+        println!("missing: {}", outcome.missing.join(", "));
+    }
+    if !outcome.forbidden.is_empty() {
+        println!("forbidden text present: {}", outcome.forbidden.join(", "));
+    }
+    println!("\n```markdown\n{}\n```\n", outcome.notes.trim());
+}
+
+fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> Outcome {
+    let Options {
+        extract,
+        noisy: noisy_transcript,
+        pad_minutes,
+        ref terms,
+        ..
+    } = *options;
     let mut meeting: Meeting =
         serde_json::from_str(&std::fs::read_to_string(path).expect("unreadable fixture"))
             .expect("fixture isn't a meeting");
@@ -126,11 +193,25 @@ fn evaluate(
             language: Some("en".into()),
         })
         .collect();
+    let transcript = segments
+        .iter()
+        .map(transcript_line)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let prompt_tokens = generator
+        .prompt_tokens(&prompt::summary_messages(
+            &meeting.title,
+            &meeting.notes,
+            terms,
+            &transcript,
+        ))
+        .expect("couldn't count the prompt");
     let cancel = AtomicBool::new(false);
     let started = Instant::now();
     let mut parts = 0;
+    let mut first_text = None;
     let notes = if extract {
-        extract_then_write(generator, &meeting, &segments, &cancel)
+        extract_then_write(generator, &meeting, &transcript, &cancel)
     } else {
         let request = Request {
             title: &meeting.title,
@@ -147,11 +228,18 @@ fn evaluate(
                     parts = n;
                 }
             },
-            &mut |_| {},
+            &mut |_| {
+                first_text.get_or_insert_with(|| started.elapsed());
+            },
         )
         .expect("summary failed")
     };
     let elapsed = started.elapsed();
+    let output_tokens = generator
+        .count_tokens(&notes)
+        .expect("couldn't count the notes");
+    let writing_tokens_per_second = first_text
+        .map(|first| output_tokens as f64 / (elapsed - first).as_secs_f64().max(f64::EPSILON));
 
     let has = |alternatives: &str| {
         let lower = notes.to_lowercase();
@@ -159,40 +247,28 @@ fn evaluate(
             .split('|')
             .any(|a| lower.contains(&a.to_lowercase()))
     };
-    let missing: Vec<&str> = meeting
-        .expect
-        .iter()
-        .map(String::as_str)
-        .filter(|e| !has(e))
-        .collect();
-    let forbidden: Vec<&str> = meeting
-        .forbid
-        .iter()
-        .map(String::as_str)
-        .filter(|f| has(f))
-        .collect();
-    let found = meeting.expect.len() - missing.len();
-    println!(
-        "## {} ({})\n\n{:.1} s, {}, {} of {} specifics kept",
-        meeting.title,
-        path.file_name().unwrap().to_string_lossy(),
-        elapsed.as_secs_f64(),
-        if parts > 0 {
-            format!("condensed in {parts} parts")
-        } else {
-            "one pass".into()
-        },
-        found,
-        meeting.expect.len(),
-    );
-    if !missing.is_empty() {
-        println!("missing: {}", missing.join(", "));
+    let missing: Vec<String> = meeting.expect.iter().filter(|e| !has(e)).cloned().collect();
+    let forbidden: Vec<String> = meeting.forbid.iter().filter(|f| has(f)).cloned().collect();
+    Outcome {
+        model: String::new(),
+        fixture: path.file_name().unwrap().to_string_lossy().into_owned(),
+        title: meeting.title,
+        pad_minutes,
+        noisy: noisy_transcript,
+        load_seconds: 0.0,
+        context_size: generator.context_size(),
+        prompt_tokens,
+        parts,
+        first_text_seconds: first_text.map(|d| d.as_secs_f64()),
+        total_seconds: elapsed.as_secs_f64(),
+        output_tokens,
+        writing_tokens_per_second,
+        found: meeting.expect.len() - missing.len(),
+        expected: meeting.expect.len(),
+        missing,
+        forbidden,
+        notes,
     }
-    if !forbidden.is_empty() {
-        println!("forbidden text present: {}", forbidden.join(", "));
-    }
-    println!("\n```markdown\n{}\n```\n", notes.trim());
-    (found, meeting.expect.len())
 }
 
 const EXTRACT_SYSTEM: &str = "You list the facts in a meeting transcript, so detailed notes can be written from them.
@@ -210,14 +286,9 @@ Rules:
 fn extract_then_write(
     generator: &mut LlamaGenerator,
     meeting: &Meeting,
-    segments: &[TranscriptSegment],
+    transcript: &str,
     cancel: &AtomicBool,
 ) -> String {
-    let transcript = segments
-        .iter()
-        .map(transcript_line)
-        .collect::<Vec<_>>()
-        .join("\n");
     let extract = [
         Message::system(EXTRACT_SYSTEM),
         Message::user(format!(
@@ -227,7 +298,7 @@ fn extract_then_write(
     let facts = generator
         .generate(&extract, 2048, cancel, &mut |_| {})
         .expect("extraction failed");
-    let mut messages = prompt::summary_messages(&meeting.title, &meeting.notes, &[], &transcript);
+    let mut messages = prompt::summary_messages(&meeting.title, &meeting.notes, &[], transcript);
     messages[1].content.push_str(&format!(
         "\n\nFacts already extracted from the transcript. Make sure the notes keep each of them:\n<facts>\n{}\n</facts>",
         facts.trim()
@@ -245,6 +316,7 @@ fn options() -> Options {
     let mut context = None;
     let mut extract = false;
     let mut noisy = false;
+    let mut json = false;
     let mut pad_minutes = 0;
     let mut terms = Vec::new();
     let mut meetings = Vec::new();
@@ -264,6 +336,7 @@ fn options() -> Options {
                 context = args.next().and_then(|v| v.parse().ok());
             }
             "--noisy" => noisy = true,
+            "--json" => json = true,
             "--terms" => {
                 terms = args
                     .next()
@@ -292,6 +365,7 @@ fn options() -> Options {
         noisy,
         pad_minutes,
         terms,
+        json,
         meetings,
     }
 }
