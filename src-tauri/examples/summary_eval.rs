@@ -28,7 +28,7 @@ use std::time::Instant;
 use earshot_lib::store::{Source, TranscriptSegment};
 use earshot_lib::summarize::llama::{LlamaGenerator, MAX_CONTEXT, Sampling};
 use earshot_lib::summarize::prompt::{self, transcript_line};
-use earshot_lib::summarize::run::{Generator, Progress, Request, summarize};
+use earshot_lib::summarize::run::{Generator, Progress, Request, SummaryError, summarize};
 use earshot_lib::summarize::template::Message;
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +71,9 @@ struct Outcome {
     prompt_tokens: usize,
     /// 0 when the meeting fit in one pass.
     parts: usize,
+    /// Specifics still present in the condensed parts, before the final pass,
+    /// when the meeting was condensed. Shows where specifics are lost (#95).
+    found_in_parts: Option<usize>,
     /// From the start of the summary to the first text of the notes, which
     /// includes reading the prompt and any condensing.
     first_text_seconds: Option<f64>,
@@ -227,6 +230,7 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
     let started = Instant::now();
     let mut parts = 0;
     let mut first_text = None;
+    let mut condensed = String::new();
     let notes = if extract {
         extract_then_write(generator, &meeting, &transcript, &cancel)
     } else {
@@ -236,8 +240,12 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
             segments: &segments,
             terms,
         };
-        summarize(
-            generator,
+        let mut recorder = Recorder {
+            inner: generator,
+            outputs: Vec::new(),
+        };
+        let notes = summarize(
+            &mut recorder,
             &request,
             &cancel,
             &mut |progress| {
@@ -249,7 +257,13 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
                 first_text.get_or_insert_with(|| started.elapsed());
             },
         )
-        .expect("summary failed")
+        .expect("summary failed");
+        // Every reply but the last is a condensed part.
+        condensed = recorder.outputs[..recorder.outputs.len() - 1].join("\n");
+        if std::env::var_os("SHOW_PARTS").is_some() {
+            eprintln!("{condensed}");
+        }
+        notes
     };
     let elapsed = started.elapsed();
     let output_tokens = generator
@@ -258,13 +272,15 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
     let writing_tokens_per_second = first_text
         .map(|first| output_tokens as f64 / (elapsed - first).as_secs_f64().max(f64::EPSILON));
 
-    let has = |alternatives: &str| {
-        let lower = notes.to_lowercase();
-        alternatives
-            .split('|')
-            .any(|a| lower.contains(&a.to_lowercase()))
-    };
+    let has = |alternatives: &str| contains_any(&notes, alternatives);
     let missing: Vec<String> = meeting.expect.iter().filter(|e| !has(e)).cloned().collect();
+    let found_in_parts = (parts > 0).then(|| {
+        meeting
+            .expect
+            .iter()
+            .filter(|e| contains_any(&condensed, e))
+            .count()
+    });
     let forbidden: Vec<String> = meeting.forbid.iter().filter(|f| has(f)).cloned().collect();
     Outcome {
         model: String::new(),
@@ -276,6 +292,7 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
         context_size: generator.context_size(),
         prompt_tokens,
         parts,
+        found_in_parts,
         first_text_seconds: first_text.map(|d| d.as_secs_f64()),
         total_seconds: elapsed.as_secs_f64(),
         output_tokens,
@@ -287,6 +304,47 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
         me_as_name: me_as_name(&notes),
         doubled_you: notes.to_lowercase().matches("you (you)").count(),
         notes,
+    }
+}
+
+/// Whether `text` contains any of the `|`-separated spellings, ignoring case.
+fn contains_any(text: &str, alternatives: &str) -> bool {
+    let lower = text.to_lowercase();
+    alternatives
+        .split('|')
+        .any(|a| lower.contains(&a.to_lowercase()))
+}
+
+/// Passes every call to the model through and keeps each reply, so the
+/// condensed parts can be checked as well as the final notes.
+struct Recorder<'a> {
+    inner: &'a mut LlamaGenerator,
+    outputs: Vec<String>,
+}
+
+impl Generator for Recorder<'_> {
+    fn context_size(&self) -> usize {
+        self.inner.context_size()
+    }
+
+    fn prompt_tokens(&mut self, messages: &[Message]) -> Result<usize, SummaryError> {
+        self.inner.prompt_tokens(messages)
+    }
+
+    fn count_tokens(&mut self, text: &str) -> Result<usize, SummaryError> {
+        self.inner.count_tokens(text)
+    }
+
+    fn generate(
+        &mut self,
+        messages: &[Message],
+        max_tokens: usize,
+        cancel: &AtomicBool,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<String, SummaryError> {
+        let reply = self.inner.generate(messages, max_tokens, cancel, on_text)?;
+        self.outputs.push(reply.clone());
+        Ok(reply)
     }
 }
 
