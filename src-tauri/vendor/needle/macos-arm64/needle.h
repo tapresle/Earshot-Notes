@@ -79,6 +79,30 @@ NEEDLE_API int needle_transcribe(
     int out_capacity
 );
 
+/* Live transcription: appends 16 kHz mono float PCM, about one second at a
+   time and at most 30 s per call, re-transcribes the buffered audio and commits
+   the words two consecutive passes agree on. language and keywords are as in
+   needle_transcribe. out receives the words this call committed, with times in
+   seconds from the start of the stream, and the unconfirmed tail; returns the
+   number of words committed:
+   {"text":"...","words":[{"word":"...","start":0.00,"end":0.00,"probability":0.000}],
+   "pending":"...","language":"en","received":0.00,"pass_ms":0.0} */
+NEEDLE_API int needle_stream_transcribe_process(
+    const float* pcm,
+    int samples,
+    const char* language,
+    const char* keywords,
+    char* out,
+    int out_capacity
+);
+
+/* Ends the stream: the tail becomes the committed words of out, and the next
+   needle_stream_transcribe_process starts a new stream. */
+NEEDLE_API int needle_stream_transcribe_stop(
+    char* out,
+    int out_capacity
+);
+
 /* Embeds text or speech: exactly one of input and pcm is non-null. Text returns
    the model's embedding dimension, speech one row of that width per 80 ms frame,
    flattened. A null output returns the float count without computing. */
