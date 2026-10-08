@@ -8,6 +8,8 @@
 // Pins are read from the files that define them, so this script never needs
 // editing when a pin moves. A Hugging Face pin counts as outdated only when
 // its pinned file changed on `main`; commits that touch only a README don't.
+// Upstream versions already reviewed and declined are listed in
+// scripts/upstream/reviewed.json and aren't reported again.
 
 import { readFile } from "node:fs/promises";
 
@@ -32,6 +34,15 @@ export interface Update {
   pinned: string;
   upstream: string;
 }
+
+/** Upstream versions reviewed and declined, from reviewed.json. */
+export interface Reviewed {
+  /** Each with the upstream file's SHA-256. */
+  files: { repo: string; path: string; sha256: string; reason: string; date: string }[];
+  crates: { name: string; version: string; reason: string; date: string }[];
+}
+
+export const NOTHING_REVIEWED: Reviewed = { files: [], crates: [] };
 
 /** Fetches JSON from a URL, as a POST when there's a body. Throws on any failure. */
 export type FetchJson = (url: string, body?: unknown) => Promise<unknown>;
@@ -98,7 +109,11 @@ interface PathInfo {
 }
 
 /** Reports a pinned file whose content on `main` differs from the pinned checksum. */
-export async function checkFile(pin: FilePin, fetchJson: FetchJson): Promise<Update | null> {
+export async function checkFile(
+  pin: FilePin,
+  fetchJson: FetchJson,
+  reviewed: Reviewed = NOTHING_REVIEWED,
+): Promise<Update | null> {
   const url = `https://huggingface.co/api/models/${pin.repo}/paths-info/main`;
   const [info] = (await fetchJson(url, { paths: [pin.path], expand: true })) as PathInfo[];
   const pinned = `\`${pin.path}\` at [\`${short(pin.revision)}\`](https://huggingface.co/${pin.repo}/tree/${pin.revision})`;
@@ -110,6 +125,10 @@ export async function checkFile(pin: FilePin, fetchJson: FetchJson): Promise<Upd
     };
   }
   if (info.lfs?.oid === pin.sha256) return null;
+  const declined = reviewed.files.some(
+    (r) => r.repo === pin.repo && r.path === pin.path && r.sha256 === info.lfs?.oid,
+  );
+  if (declined) return null;
   const commit = info.lastCommit;
   return {
     name: pin.name,
@@ -125,9 +144,14 @@ interface CrateInfo {
 }
 
 /** Reports a crate whose newest stable release is newer than the locked version. */
-export async function checkCrate(pin: CratePin, fetchJson: FetchJson): Promise<Update | null> {
+export async function checkCrate(
+  pin: CratePin,
+  fetchJson: FetchJson,
+  reviewed: Reviewed = NOTHING_REVIEWED,
+): Promise<Update | null> {
   const { crate } = (await fetchJson(`https://crates.io/api/v1/crates/${pin.name}`)) as CrateInfo;
   if (compareVersions(crate.max_stable_version, pin.version) <= 0) return null;
+  if (reviewed.crates.some((r) => r.name === pin.name && r.version === crate.max_stable_version)) return null;
   const releases = crate.repository ? `, see [the releases](${crate.repository}/releases)` : "";
   return {
     name: `\`${pin.name}\``,
@@ -161,14 +185,19 @@ export function renderReport(updates: Update[]): string {
 }
 
 /** Checks every pin, one request at a time; there are only a handful. */
-export async function checkAll(files: FilePin[], crates: CratePin[], fetchJson: FetchJson): Promise<Update[]> {
+export async function checkAll(
+  files: FilePin[],
+  crates: CratePin[],
+  fetchJson: FetchJson,
+  reviewed: Reviewed = NOTHING_REVIEWED,
+): Promise<Update[]> {
   const updates: Update[] = [];
   for (const pin of files) {
-    const update = await checkFile(pin, fetchJson);
+    const update = await checkFile(pin, fetchJson, reviewed);
     if (update) updates.push(update);
   }
   for (const pin of crates) {
-    const update = await checkCrate(pin, fetchJson);
+    const update = await checkCrate(pin, fetchJson, reviewed);
     if (update) updates.push(update);
   }
   return updates;
@@ -203,7 +232,8 @@ async function main() {
     ...readModelPins(await read("src-tauri/src/models/mod.rs")),
   ];
   const crates = [readCratePin(await read("src-tauri/Cargo.lock"), "llama-cpp-2")];
-  process.stdout.write(renderReport(await checkAll(files, crates, fetchJson)));
+  const reviewed = JSON.parse(await read("scripts/upstream/reviewed.json")) as Reviewed;
+  process.stdout.write(renderReport(await checkAll(files, crates, fetchJson, reviewed)));
 }
 
 if (import.meta.main) {

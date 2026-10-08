@@ -12,6 +12,7 @@ import {
   renderReport,
   type FetchJson,
   type FilePin,
+  type Reviewed,
 } from "./check";
 
 const repoFile = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -162,6 +163,40 @@ describe("checking crates", () => {
     expect(compareVersions("0.1.160", "0.1.158")).toBe(1);
     expect(compareVersions("0.1.99", "0.1.158")).toBe(-1);
     expect(compareVersions("0.2.0", "0.2.0")).toBe(0);
+  });
+});
+
+describe("reviewed versions", () => {
+  const declined = (sha256: string, version: string): Reviewed => ({
+    files: [{ repo: NEEDLE.repo, path: NEEDLE.path, sha256, reason: "no gain on the fixtures", date: "2026-10-08" }],
+    crates: [{ name: "llama-cpp-2", version, reason: "waiting for a model that needs it", date: "2026-10-08" }],
+  });
+
+  it("doesn't report a file version that was reviewed and declined", async () => {
+    const { fetchJson } = recorded({ [paths(NEEDLE.repo)]: NEEDLE_CHANGED });
+
+    const reviewed = declined("98da47c15e1065b4cdc7ddc55e825be78414d4586832db3becaeded39a373df4", "0.0.0");
+    expect(await checkFile(NEEDLE, fetchJson, reviewed)).toBeNull();
+  });
+
+  it("reports a file that changed again after the declined version", async () => {
+    const { fetchJson } = recorded({ [paths(NEEDLE.repo)]: NEEDLE_CHANGED });
+
+    expect(await checkFile(NEEDLE, fetchJson, declined("0".repeat(64), "0.0.0"))).not.toBeNull();
+  });
+
+  it("doesn't report a declined crate version, but reports a newer one", async () => {
+    const { fetchJson } = recorded({ [CRATE_URL]: crate("0.1.160") });
+    const pin = { name: "llama-cpp-2", version: "0.1.158" };
+
+    expect(await checkCrate(pin, fetchJson, declined("0".repeat(64), "0.1.160"))).toBeNull();
+    expect(await checkCrate(pin, fetchJson, declined("0".repeat(64), "0.1.159"))).not.toBeNull();
+  });
+
+  it("reads the committed reviewed list", () => {
+    const reviewed = JSON.parse(repoFile("scripts/upstream/reviewed.json")) as Reviewed;
+
+    expect(Array.isArray(reviewed.files) && Array.isArray(reviewed.crates)).toBe(true);
   });
 });
 

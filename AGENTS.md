@@ -99,6 +99,8 @@ The upstream workflow reports the first three; it counts a Hugging Face pin as o
 - **A summary model's file changed:** compare the new file with the old one in the summary benchmark (#8) before moving the pin. Earlier releases are unaffected: they download from the revision they pin and check its SHA-256.
 - **Dependabot's grouped updates:** when CI passes. Read the changelogs of major version bumps first.
 
+To decline an update, add it to `scripts/upstream/reviewed.json`, with the upstream file's SHA-256 or the crate version, a reason, and the date. The weekly check stops reporting that version and reports the next one. Record the measurements behind the decision in the tracking issue.
+
 Every pin change gets a line in the next release notes.
 
 ## Releases
