@@ -79,7 +79,9 @@ impl From<StoreError> for CommandError {
             StoreError::ModelNotFound(_) => ErrorKind::NotFound {
                 missing: Missing::Model,
             },
-            StoreError::SchemaTooNew { .. } | StoreError::Sqlite(_) => ErrorKind::Internal,
+            StoreError::SchemaTooNew { .. }
+            | StoreError::UnreadableSetting { .. }
+            | StoreError::Sqlite(_) => ErrorKind::Internal,
         };
         Self {
             kind,

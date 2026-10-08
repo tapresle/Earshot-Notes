@@ -163,7 +163,9 @@ impl Vocabulary {
             let same_words = candidate
                 .iter()
                 .zip(rule)
-                .all(|(&(from, to), word)| text[from..to].to_lowercase() == *word);
+                .all(|(&(from, to), word)| {
+                    text[from..to].chars().flat_map(char::to_lowercase).eq(word.chars())
+                });
             let spaced = candidate
                 .windows(2)
                 .all(|pair| text[pair[0].1..pair[1].0].chars().all(char::is_whitespace));

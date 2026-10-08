@@ -197,7 +197,8 @@ fn spawn_transcription(
 ) -> Result<(TranscriptionWorker, PathBuf), String> {
     let handle = app.handle().clone();
     TranscriptionWorker::spawn(candidates, move |job, transcription| {
-        let saved = store.insert_segment(NewSegment {
+        // Corrected with the vocabulary as it's saved.
+        let saved = store.insert_transcribed_segment(NewSegment {
             meeting_id: job.meeting_id,
             source: job.source,
             start_ms: job.start_ms,

@@ -12,6 +12,8 @@ pub const ON: &str = "on";
 pub const MIC_SENSITIVITY: &str = "mic_speech_sensitivity";
 /// How readily quiet system audio counts as speech; absent means normal.
 pub const SYSTEM_SENSITIVITY: &str = "system_speech_sensitivity";
+/// The vocabulary's terms as JSON (`vocabulary::Term`).
+pub const VOCABULARY: &str = "vocabulary";
 
 /// The setting that holds a source's speech sensitivity.
 pub fn sensitivity_key(source: Source) -> &'static str {

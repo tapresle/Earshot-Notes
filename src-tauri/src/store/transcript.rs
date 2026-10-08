@@ -1,4 +1,4 @@
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use super::{Store, StoreError, now_ms};
@@ -110,36 +110,7 @@ impl Store {
     }
 
     pub fn insert_segment(&self, segment: NewSegment) -> Result<TranscriptSegment, StoreError> {
-        let conn = self.conn();
-        conn.execute(
-            "INSERT INTO transcript_segments (meeting_id, source, start_ms, end_ms, text, language)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                segment.meeting_id,
-                segment.source.as_str(),
-                segment.start_ms,
-                segment.end_ms,
-                segment.text,
-                segment.language,
-            ],
-        )
-        .map_err(|e| match e {
-            rusqlite::Error::SqliteFailure(f, _)
-                if f.code == rusqlite::ErrorCode::ConstraintViolation =>
-            {
-                StoreError::MeetingNotFound(segment.meeting_id)
-            }
-            other => other.into(),
-        })?;
-        Ok(TranscriptSegment {
-            id: conn.last_insert_rowid(),
-            meeting_id: segment.meeting_id,
-            source: segment.source,
-            start_ms: segment.start_ms,
-            end_ms: segment.end_ms,
-            text: segment.text,
-            language: segment.language,
-        })
+        insert_segment(&self.conn(), segment, None)
     }
 
     /// The meeting's transcript in timeline order.
@@ -164,6 +135,43 @@ impl Store {
             .collect::<Result<_, _>>()?;
         Ok(segments)
     }
+}
+
+/// Saves a segment. `heard_text` is what Whistle heard, when the vocabulary
+/// corrected it into `segment.text`.
+pub(super) fn insert_segment(
+    conn: &Connection,
+    segment: NewSegment,
+    heard_text: Option<&str>,
+) -> Result<TranscriptSegment, StoreError> {
+    conn.execute(
+        "INSERT INTO transcript_segments (meeting_id, source, start_ms, end_ms, text, language, heard_text)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            segment.meeting_id,
+            segment.source.as_str(),
+            segment.start_ms,
+            segment.end_ms,
+            segment.text,
+            segment.language,
+            heard_text,
+        ],
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::SqliteFailure(f, _) if f.code == rusqlite::ErrorCode::ConstraintViolation => {
+            StoreError::MeetingNotFound(segment.meeting_id)
+        }
+        other => other.into(),
+    })?;
+    Ok(TranscriptSegment {
+        id: conn.last_insert_rowid(),
+        meeting_id: segment.meeting_id,
+        source: segment.source,
+        start_ms: segment.start_ms,
+        end_ms: segment.end_ms,
+        text: segment.text,
+        language: segment.language,
+    })
 }
 
 #[cfg(test)]
