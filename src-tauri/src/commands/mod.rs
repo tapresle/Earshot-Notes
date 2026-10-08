@@ -12,6 +12,7 @@ pub mod recordings;
 pub mod settings;
 pub mod setup;
 pub mod summaries;
+pub mod updates;
 
 use serde::Serialize;
 

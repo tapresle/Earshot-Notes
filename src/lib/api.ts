@@ -71,6 +71,16 @@ export interface RecordingChanged {
   meetingId: number | null;
 }
 
+/** What checking GitHub for a newer release found. */
+export interface UpdateCheck {
+  current: string;
+  latest: string;
+  /** Whether `latest` is newer than the running version. */
+  newer: boolean;
+  /** The latest release's notes, as Markdown without links. */
+  notes: string;
+}
+
 /** Whether the app opens at login, as macOS reports it. */
 export interface LaunchAtLogin {
   enabled: boolean;
@@ -306,6 +316,10 @@ export const api = {
   installedModels: () => invoke<InstalledModels>("installed_models"),
   selectSummaryModel: (modelId: string) => invoke<void>("select_summary_model", { modelId }),
   openModelPage: (modelId: string) => invoke<void>("open_model_page", { modelId }),
+  updateCheckEnabled: () => invoke<boolean>("update_check_enabled"),
+  /** Contacts GitHub. Call only when the user asks. */
+  checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
+  openReleasePage: (version: string) => invoke<void>("open_release_page", { version }),
   removeSummaryModel: (modelId: string) => invoke<void>("remove_summary_model", { modelId }),
   micPermission: () => invoke<Permission>("mic_permission"),
   requestMicPermission: () => invoke<Permission>("request_mic_permission"),
