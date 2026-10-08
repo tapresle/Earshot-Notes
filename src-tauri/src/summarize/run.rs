@@ -120,7 +120,13 @@ fn write_notes(
     }
 
     // Too long for one pass: condense in parts until the parts fit together.
-    let overhead = generator.prompt_tokens(&part_messages(1, 1, request.terms, ""))?;
+    let overhead = generator.prompt_tokens(&part_messages(
+        1,
+        1,
+        request.notes_markdown,
+        request.terms,
+        "",
+    ))?;
     let budget = context
         .checked_sub(overhead + part_room + MARGIN_TOKENS)
         .filter(|b| *b > 0)
@@ -142,7 +148,13 @@ fn write_notes(
                 part: i + 1,
                 parts: windows.len(),
             });
-            let messages = part_messages(i + 1, windows.len(), request.terms, window);
+            let messages = part_messages(
+                i + 1,
+                windows.len(),
+                request.notes_markdown,
+                request.terms,
+                window,
+            );
             parts.push(generator.generate(&messages, part_room, cancel, &mut |_| {})?);
         }
 
@@ -231,7 +243,7 @@ mod tests {
                 return Err(SummaryError::Cancelled);
             }
             let user = &messages[1].content;
-            let reply = if user.starts_with("Part ") {
+            let reply = if user.contains(" of the transcript:\n<transcript>") {
                 format!("- condensed part {}", self.calls.len() + 1)
             } else {
                 self.notes.to_string()
@@ -307,11 +319,11 @@ mod tests {
 
     #[test]
     fn condenses_a_long_meeting_in_parts_first() {
-        // 200 segments of 30 words is about 6,600 tokens; a 4,096 context leaves
-        // about 3,500 per part, so it takes two parts.
+        // 150 segments of 30 words is about 5,000 tokens; a 4,096 context leaves
+        // about 3,400 per part, so it takes two parts.
         let mut model = FakeModel::new(4096);
 
-        let (result, progress, streamed) = run(&mut model, &segments(200, 30), "- agenda");
+        let (result, progress, streamed) = run(&mut model, &segments(150, 30), "- agenda");
 
         assert_eq!(result.unwrap(), "## Notes\n- done");
         let parts = progress.len() - 1;
@@ -323,6 +335,9 @@ mod tests {
         let last = model.calls.last().unwrap();
         assert!(last.contains("Part 1:\n- condensed part 1"), "{last}");
         assert!(last.contains("<notes>\n- agenda\n</notes>"), "{last}");
+        // Each part sees the notes too, so it knows what matters.
+        let first = &model.calls[0];
+        assert!(first.contains("<notes>\n- agenda\n</notes>"), "{first}");
     }
 
     #[test]

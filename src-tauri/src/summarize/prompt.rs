@@ -29,8 +29,10 @@ const PART_SYSTEM: &str =
     "You condense one part of a longer meeting transcript into factual bullet points that later become detailed meeting notes.
 
 Rules:
-- Keep every specific exactly: ticket and issue numbers, error codes and messages, amounts, dates, and the names of people, systems, products, customers, and settings.
+- Specifics come first. Keep every specific exactly: ticket and issue numbers, error codes and messages, amounts, dates, and the names of people, systems, products, customers, and settings.
 - Keep every decision with its reason, problem with its cause, change made with its result, rejected option, open question, risk, how-to explanation as steps, and task with its owner and any condition.
+- When the note-taker's notes are given, cover every point in them that this part of the transcript discusses.
+- Compress routine status updates, such as \"no change\" or \"ready for review next week\", to at most one short bullet per project or person, and put them last. Never let routine updates crowd out specifics.
 - State what happened or was found, not that it was discussed.
 - When a speaker corrects themselves, keep only the corrected statement.
 - \"Me\" is the note-taker. \"Meeting Participants\" is everyone else on the call.
@@ -102,13 +104,20 @@ pub fn summary_messages(
 pub fn part_messages(
     part: usize,
     parts: usize,
+    notes_markdown: &str,
     terms: &[String],
     transcript: &str,
 ) -> Vec<Message> {
+    let notes = notes_markdown.trim();
+    let notes = if notes.is_empty() {
+        String::new()
+    } else {
+        format!("The note-taker's notes, which mark what matters:\n<notes>\n{notes}\n</notes>\n\n")
+    };
     vec![
         Message::system(PART_SYSTEM),
         Message::user(format!(
-            "{}Part {part} of {parts} of the transcript:\n<transcript>\n{transcript}\n</transcript>",
+            "{}{notes}Part {part} of {parts} of the transcript:\n<transcript>\n{transcript}\n</transcript>",
             terms_section(terms)
         )),
     ]
@@ -218,7 +227,7 @@ mod tests {
         let terms = ["Bluefin Ledger".to_owned(), "Corvina".to_owned()];
 
         let with_terms = &summary_messages("Sync", "", &terms, "[0:01] Me: Hi")[1].content;
-        let part = &part_messages(1, 2, &terms, "[0:01] Me: Hi")[1].content;
+        let part = &part_messages(1, 2, "", &terms, "[0:01] Me: Hi")[1].content;
         let combined = &combine_messages("Sync", "", &terms, &["- a".into()])[1].content;
         let without = &summary_messages("Sync", "", &[], "[0:01] Me: Hi")[1].content;
 
@@ -263,5 +272,18 @@ mod tests {
         let windows = windows(&lines, &[1, 50, 1], 5);
 
         assert_eq!(windows, vec!["short", "huge", "short"]);
+    }
+
+    #[test]
+    fn gives_each_part_the_notes_when_there_are_any() {
+        let with_notes =
+            &part_messages(1, 3, "- budget\n- move date", &[], "[0:01] Me: Hi")[1].content;
+        let without = &part_messages(1, 3, "  \n", &[], "[0:01] Me: Hi")[1].content;
+
+        assert!(
+            with_notes.contains("<notes>\n- budget\n- move date\n</notes>\n\nPart 1 of 3"),
+            "{with_notes}"
+        );
+        assert!(!without.contains("<notes>"), "{without}");
     }
 }
