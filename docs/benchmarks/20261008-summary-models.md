@@ -64,7 +64,7 @@ The three models with lower limits also ran at the app-wide 32K cap (`20261008-s
 - **Ministral 3 14B stays at 8K.** At 32K it's over budget, and it keeps fewer specifics. It's trained on 16K and stretched to 256K with YaRN, so a longer context reads worse.
 - **The per-token figures match the architectures.** Gemma 4 attends to only a short window in most layers, so its cache grows two to six times slower than the others'. That's why E2B's peak barely moves from a short meeting to a two-hour one.
 
-Scaling the limits with the Mac's memory, and measuring quality past 32K, is a follow-up.
+Scaling the limits with the Mac's memory, and measuring quality past 32K, is [#93](https://github.com/tapresle/Earshot-Notes/issues/93).
 
 ## Quality
 
