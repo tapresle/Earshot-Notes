@@ -75,12 +75,12 @@ From the saved notes for each run:
 - **Qwen3 4B Instruct** is the strongest small model: detailed notes with numbered next steps, and the fastest writing apart from Gemma 4 E2B.
 - **Qwen3 8B** is detailed, but sometimes names "Meeting Participants" as a task's owner instead of leaving the owner out.
 - **Gemma 4 E4B** keeps nearly everything in short and one-hour meetings, with well-structured cause-and-effect notes, but lost most of the office move in one two-hour meeting (4 of 12).
-- **Gemma 4 E2B** writes good notes for short meetings, but loses specifics as meetings grow. In one two-hour meeting it summarized only the status updates and kept none of the planted specifics.
+- **Gemma 4 E2B** writes good notes for short meetings, but loses specifics as meetings grow. In one two-hour meeting it summarized only the status updates and kept none of the planted specifics. Whether it should stay the recommended model is [#96](https://github.com/tapresle/Earshot-Notes/issues/96).
 - **Phi-4 mini** writes the shortest notes and drops causes and error messages even in short meetings.
 
 ### Long meetings lose the specifics
 
-Most models kept fewer specifics in the two-hour meetings, where the transcript is condensed in parts; only Ministral 3 8B and 14B held steady. The padding here is extreme, more than 90% routine status updates, but it shows a real risk: when condensing, a smaller model can keep the repetitive material and drop the few minutes that mattered. That needs its own follow-up.
+Most models kept fewer specifics in the two-hour meetings, where the transcript is condensed in parts; only Ministral 3 8B and 14B held steady. The padding here is extreme, more than 90% routine status updates, but it shows a real risk: when condensing, a smaller model can keep the repetitive material and drop the few minutes that mattered. That's [#95](https://github.com/tapresle/Earshot-Notes/issues/95).
 
 ## Later, with a 16 GB Mac
 
