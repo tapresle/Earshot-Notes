@@ -29,8 +29,8 @@ pub enum VocabularyError {
     EmptyTerm,
     #[error("\"{0}\" is longer than {MAX_LENGTH} characters")]
     TooLong(String),
-    #[error("\"{0}\" can't contain a line break")]
-    LineBreak(String),
+    #[error("\"{0}\" can't contain line breaks or other control characters")]
+    ControlCharacter(String),
     #[error("\"{0}\" is listed more than once")]
     DuplicateTerm(String),
     #[error("\"{0}\" can have at most {MAX_HEARD_AS} mishearings")]
@@ -160,12 +160,12 @@ impl Vocabulary {
     fn rule_at(&self, text: &str, words: &[(usize, usize)], start: usize) -> Option<(usize, &str)> {
         self.rules.iter().find_map(|(rule, term)| {
             let candidate = words.get(start..start + rule.len())?;
-            let same_words = candidate
-                .iter()
-                .zip(rule)
-                .all(|(&(from, to), word)| {
-                    text[from..to].chars().flat_map(char::to_lowercase).eq(word.chars())
-                });
+            let same_words = candidate.iter().zip(rule).all(|(&(from, to), word)| {
+                text[from..to]
+                    .chars()
+                    .flat_map(char::to_lowercase)
+                    .eq(word.chars())
+            });
             let spaced = candidate
                 .windows(2)
                 .all(|pair| text[pair[0].1..pair[1].0].chars().all(char::is_whitespace));
@@ -177,8 +177,9 @@ impl Vocabulary {
 /// Trims an entry and checks its length and line breaks.
 fn checked(entry: &str) -> Result<String, VocabularyError> {
     let entry = entry.trim();
-    if entry.contains(['\n', '\r']) {
-        return Err(VocabularyError::LineBreak(entry.to_owned()));
+    // Terms reach needle as a C string of lines, so they can't hold a NUL or a line break.
+    if entry.chars().any(char::is_control) {
+        return Err(VocabularyError::ControlCharacter(entry.to_owned()));
     }
     if entry.chars().count() > MAX_LENGTH {
         return Err(VocabularyError::TooLong(entry.to_owned()));
@@ -310,7 +311,7 @@ mod tests {
             ),
             (
                 vec![term("A\nB", &[])],
-                VocabularyError::LineBreak("A\nB".into()),
+                VocabularyError::ControlCharacter("A\nB".into()),
             ),
             (
                 vec![term("Corvina", &[]), term("corvina", &[])],

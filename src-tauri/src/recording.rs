@@ -1,6 +1,7 @@
 //! Runs a recording: capture, then downmix, resample, chunk, and hand speech
 //! segments to the transcription worker.
 
+use std::ffi::CString;
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
@@ -108,6 +109,12 @@ pub fn start_recording(
     }
     let offset_ms = store.recording_offset(meeting_id)?;
     let keep_audio = store.setting(KEEP_AUDIO)?.as_deref() == Some(ON);
+    // The vocabulary forbids control characters, so the terms never contain a NUL.
+    let keywords = store
+        .vocabulary()?
+        .keywords()
+        .and_then(|terms| CString::new(terms).ok())
+        .map(Arc::new);
 
     let mut started = Vec::new();
     let mut report = StartReport::default();
@@ -143,7 +150,8 @@ pub fn start_recording(
     let mut captures = Vec::new();
     let mut pipelines = Vec::new();
     for (source, capture, format, resampler, frames, sensitivity) in started {
-        let config = Pipeline::new(source, meeting_id, offset_ms, sensitivity);
+        let config = Pipeline::new(source, meeting_id, offset_ms, sensitivity)
+            .with_keywords(keywords.clone());
         log::info!(
             "{source:?} speech sensitivity is {sensitivity:?} (floor {} RMS)",
             config.min_speech_rms
@@ -228,7 +236,7 @@ pub fn stop_recording(store: &Store, recorder: &Recorder) -> Result<Option<i64>,
 }
 
 /// What one source's pipeline records into, and how it detects speech.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Pipeline {
     pub source: Source,
     pub meeting_id: i64,
@@ -236,6 +244,8 @@ pub struct Pipeline {
     pub offset_ms: i64,
     /// The absolute floor below which audio isn't speech.
     pub min_speech_rms: f32,
+    /// Vocabulary terms that bias transcription, one per line.
+    pub keywords: Option<Arc<CString>>,
 }
 
 impl Pipeline {
@@ -250,7 +260,14 @@ impl Pipeline {
             meeting_id,
             offset_ms,
             min_speech_rms,
+            keywords: None,
         }
+    }
+
+    /// Biases this pipeline's transcription toward `keywords`.
+    pub fn with_keywords(mut self, keywords: Option<Arc<CString>>) -> Self {
+        self.keywords = keywords;
+        self
     }
 }
 
@@ -272,6 +289,7 @@ pub fn run_pipeline(
         meeting_id,
         offset_ms,
         min_speech_rms,
+        keywords,
     } = pipeline;
     let mut chunker = Chunker::new(min_speech_rms);
     let mut emit = |segment: crate::chunker::Segment| {
@@ -282,6 +300,7 @@ pub fn run_pipeline(
             end_ms: offset_ms + segment.end_ms() as i64,
             samples: segment.samples,
             speech: segment.speech,
+            keywords: keywords.clone(),
         });
     };
     let mut push = |samples: &[f32]| {
@@ -463,6 +482,45 @@ mod tests {
     /// Runs mono audio through the pipeline as 48 kHz stereo and collects its jobs.
     fn pipeline_jobs(source: Source, audio: &[f32]) -> Vec<Job> {
         run_buffers(source, RATE, stereo_buffers(audio))
+    }
+
+    #[test]
+    fn passes_the_vocabulary_keywords_to_every_job() {
+        let audio = [
+            silence(1000),
+            tone(1500),
+            silence(1000),
+            tone(1500),
+            silence(1000),
+        ]
+        .concat();
+        let buffers = stereo_buffers(&audio);
+        let (tx, rx) = sync_channel(buffers.len());
+        for buffer in buffers {
+            tx.send(buffer).unwrap();
+        }
+        drop(tx);
+        let keywords = Arc::new(CString::new("Bluefin Ledger\nCorvina").unwrap());
+        let mut jobs = Vec::new();
+
+        run_pipeline(
+            rx,
+            CaptureFormat {
+                sample_rate: RATE,
+                channels: 2,
+            },
+            To16k::new(RATE).unwrap(),
+            Pipeline::new(Source::Them, 7, 0, Sensitivity::Normal)
+                .with_keywords(Some(keywords.clone())),
+            None,
+            |job| jobs.push(job),
+        );
+
+        assert!(!jobs.is_empty());
+        assert!(
+            jobs.iter()
+                .all(|job| job.keywords.as_ref() == Some(&keywords))
+        );
     }
 
     #[test]

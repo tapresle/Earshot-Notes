@@ -57,6 +57,38 @@ fn transcribes_as_english_without_detecting_the_language() {
     assert_eq!(result.language.as_deref(), Some("en"));
 }
 
+/// The fixture says invented names, generated with
+/// `say -v Samantha -o tests/fixtures/speech-vocabulary.wav --data-format=LEI16@16000 "We moved
+/// the quarterly invoices over to Bluefin Ledger yesterday, and Corvina approved the export."`.
+/// Without keywords, Whistle heard "Bluef in leisure".
+#[test]
+fn keywords_steer_toward_vocabulary_terms() {
+    let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut whistle = Whistle::load(Path::new(MODEL)).unwrap();
+    let keywords = c"Bluefin Ledger\nCorvina";
+
+    let biased = whistle
+        .transcribe_with_keywords(
+            &read_fixture("tests/fixtures/speech-vocabulary.wav"),
+            Some(keywords),
+        )
+        .unwrap();
+    let silence = whistle
+        .transcribe_with_keywords(&vec![0.0; SAMPLE_RATE as usize * 5], Some(keywords))
+        .unwrap();
+    let unrelated = whistle
+        .transcribe_with_keywords(&speech_fixture(), Some(keywords))
+        .unwrap();
+
+    assert!(biased.text.contains("Bluefin Ledger"), "{:?}", biased.text);
+    assert!(biased.text.contains("Corvina"), "{:?}", biased.text);
+    assert_eq!(
+        silence.text, "",
+        "keywords must not be invented from silence"
+    );
+    assert!(!unrelated.text.contains("Bluefin"), "{:?}", unrelated.text);
+}
+
 #[test]
 fn returns_empty_text_for_silence() {
     let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
@@ -188,6 +220,7 @@ mod worker {
                 ms: 5000,
                 margin: 10.0,
             },
+            keywords: None,
         };
 
         worker.submit(job(0, vec![0.0; 16_000])).unwrap();
