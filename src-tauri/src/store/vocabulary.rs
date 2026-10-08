@@ -3,7 +3,6 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::settings::VOCABULARY;
-use super::transcript::{NewSegment, TranscriptSegment, insert_segment};
 use super::{Store, StoreError};
 use crate::vocabulary::{Term, Vocabulary};
 
@@ -33,25 +32,9 @@ impl Store {
         tx.commit()?;
         Ok(changed)
     }
-
-    /// Saves a segment as Whistle transcribed it, corrected with the saved
-    /// vocabulary. Reading the vocabulary and saving happen under one lock, so
-    /// a segment can't miss a vocabulary change that's being saved.
-    pub fn insert_transcribed_segment(
-        &self,
-        mut segment: NewSegment,
-    ) -> Result<TranscriptSegment, StoreError> {
-        let conn = self.conn();
-        let corrected = vocabulary(&conn)?.apply(&segment.text).into_owned();
-        if corrected == segment.text {
-            return insert_segment(&conn, segment, None);
-        }
-        let heard = std::mem::replace(&mut segment.text, corrected);
-        insert_segment(&conn, segment, Some(&heard))
-    }
 }
 
-fn vocabulary(conn: &Connection) -> Result<Vocabulary, StoreError> {
+pub(super) fn vocabulary(conn: &Connection) -> Result<Vocabulary, StoreError> {
     let saved: Option<String> = conn
         .query_row(
             "SELECT value FROM settings WHERE key = ?1",
@@ -111,7 +94,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::*;
-    use crate::store::Source;
+    use crate::store::{NewSegment, Source, TranscriptSegment};
 
     // Invented names only.
     fn ledger(heard_as: &[&str]) -> Vocabulary {
@@ -132,6 +115,8 @@ mod tests {
                 text: text.into(),
                 language: Some("en".into()),
             })
+            .unwrap()
+            .segment
             .unwrap()
     }
 

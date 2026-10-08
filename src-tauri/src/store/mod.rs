@@ -7,6 +7,7 @@ mod models;
 mod search;
 pub mod settings;
 mod summaries;
+mod transcribed;
 mod transcript;
 mod vocabulary;
 
@@ -22,6 +23,7 @@ pub use meetings::{
 };
 pub use models::{ModelRecord, ModelSource};
 pub use summaries::{NewSummary, Summary};
+pub use transcribed::Saved;
 pub use transcript::{NewSegment, Source, TranscriptSegment};
 
 #[derive(Debug, thiserror::Error)]
