@@ -169,6 +169,8 @@ pub fn run() {
             commands::updates::update_check_enabled,
             commands::updates::check_for_update,
             commands::updates::open_release_page,
+            commands::vocabulary::vocabulary,
+            commands::vocabulary::set_vocabulary,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

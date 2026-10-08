@@ -13,6 +13,7 @@ import {
   type SpeechSensitivity,
   type TranscriptionModel,
   type UpdateCheck,
+  type VocabularyTerm,
 } from "../../lib/api";
 import { ExportAllButton } from "../export/ExportBar";
 import { ModelOrigin } from "../summary/ModelOrigin";
@@ -37,6 +38,7 @@ export function SettingsView({ recording, onShowSetup }: { recording: boolean; o
       <StartupSection />
       <MicrophoneSection />
       <SpeechDetectionSection />
+      <VocabularySection />
       <AudioRecordingsSection recording={recording} />
       <SummaryModelSection />
       <TranscriptionSection />
@@ -679,3 +681,140 @@ function UpdatesSection() {
     </section>
   );
 }
+
+interface VocabularyRow {
+  key: number;
+  term: string;
+  /** Mishearings, separated by commas. */
+  heardAs: string;
+}
+
+function VocabularySection() {
+  const [rows, setRows] = useState<VocabularyRow[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const nextKey = useRef(0);
+
+  const toRows = useCallback(
+    (terms: VocabularyTerm[]) =>
+      terms.map((t) => ({ key: nextKey.current++, term: t.term, heardAs: t.heardAs.join(", ") })),
+    [],
+  );
+
+  useEffect(() => {
+    api
+      .vocabulary()
+      .then((terms) => setRows(toRows(terms)))
+      .catch((e) => setError(errorMessage(e)));
+  }, [toRows]);
+
+  function change(key: number, field: "term" | "heardAs", value: string) {
+    setStatus(null);
+    setRows((current) => current && current.map((row) => (row.key === key ? { ...row, [field]: value } : row)));
+  }
+
+  function add() {
+    setStatus(null);
+    setRows((current) => [...(current ?? []), { key: nextKey.current++, term: "", heardAs: "" }]);
+  }
+
+  function remove(key: number) {
+    setStatus(null);
+    setRows((current) => current && current.filter((row) => row.key !== key));
+  }
+
+  async function save() {
+    if (!rows) return;
+    setSaving(true);
+    setStatus(null);
+    setError(null);
+    try {
+      const terms = rows
+        .filter((row) => row.term.trim() || row.heardAs.trim())
+        .map((row) => ({ term: row.term, heardAs: row.heardAs.split(",") }));
+      const saved = await api.setVocabulary(terms);
+      setRows(toRows(saved.terms));
+      setStatus(
+        saved.updated === 0
+          ? "Saved"
+          : `Saved. Corrected ${saved.updated} transcript ${saved.updated === 1 ? "line" : "lines"}.`,
+      );
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="settings-section" aria-labelledby="vocabulary-heading">
+      <h2 id="vocabulary-heading">Vocabulary</h2>
+      <p className="settings-help">
+        Names your meetings use, such as products, customers, and colleagues. Transcription listens for them from
+        the next recording, and summaries spell them as written. Under <strong>Heard as</strong>, list what
+        transcription writes instead, separated by commas. Saving fixes those words in every transcript, and
+        removing them restores the original.
+      </p>
+      {rows === null && !error && <p className="empty-hint">Loading…</p>}
+      {rows !== null && (
+        <>
+          {rows.length > 0 && (
+            <div className="vocabulary-grid">
+              <span className="vocabulary-heading" aria-hidden="true">
+                Term
+              </span>
+              <span className="vocabulary-heading" aria-hidden="true">
+                Heard as
+              </span>
+              <span aria-hidden="true" />
+              {rows.map((row, index) => (
+                <Fragment key={row.key}>
+                  <input
+                    className="vocabulary-input"
+                    aria-label={`Term ${index + 1}`}
+                    value={row.term}
+                    onChange={(e) => change(row.key, "term", e.target.value)}
+                  />
+                  <input
+                    className="vocabulary-input"
+                    aria-label={`Heard as, term ${index + 1}`}
+                    value={row.heardAs}
+                    onChange={(e) => change(row.key, "heardAs", e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="button subtle"
+                    aria-label={`Remove term ${index + 1}`}
+                    onClick={() => remove(row.key)}
+                  >
+                    Remove
+                  </button>
+                </Fragment>
+              ))}
+            </div>
+          )}
+          <div className="vocabulary-actions">
+            <button type="button" className="button subtle" onClick={add}>
+              Add term
+            </button>
+            <button type="button" className="button" onClick={() => void save()} disabled={saving}>
+              {saving ? "Saving…" : "Save vocabulary"}
+            </button>
+          </div>
+        </>
+      )}
+      {status && (
+        <p className="settings-saved" role="status">
+          {status}
+        </p>
+      )}
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+

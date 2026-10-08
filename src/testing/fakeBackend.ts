@@ -1,5 +1,12 @@
 // Synthetic data only: these fixtures also render the committed screenshots.
-import type { MeetingDetail, ModelRecord, Summary, TranscriptSegment, UpdateCheck } from "../lib/api";
+import type {
+  MeetingDetail,
+  ModelRecord,
+  Summary,
+  TranscriptSegment,
+  UpdateCheck,
+  VocabularyTerm,
+} from "../lib/api";
 
 type Args = Record<string, unknown>;
 
@@ -51,6 +58,9 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     systemAudioPermission: "authorized" as string | null,
     systemAudioAnswer: "authorized" as string | null,
     openedPanes: [] as string[],
+    vocabulary: [] as VocabularyTerm[],
+    vocabularyUpdated: 0,
+    vocabularyError: null as unknown,
     updateCheckEnabled: false,
     updateChecks: 0,
     updateCheck: { current: "0.1.6", latest: "0.1.6", newer: false, notes: "" } as UpdateCheck,
@@ -182,6 +192,16 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     },
     input_devices: () => state.devices,
     input_device: () => state.inputDevice,
+    vocabulary: () => state.vocabulary.map((t) => ({ ...t, heardAs: [...t.heardAs] })),
+    set_vocabulary: ({ terms }) => {
+      if (state.vocabularyError) throw state.vocabularyError;
+      // Trims like the real command, which also validates.
+      state.vocabulary = (terms as VocabularyTerm[]).map((t) => ({
+        term: t.term.trim(),
+        heardAs: t.heardAs.map((h) => h.trim()).filter(Boolean),
+      }));
+      return { terms: state.vocabulary, updated: state.vocabularyUpdated };
+    },
     update_check_enabled: () => state.updateCheckEnabled,
     check_for_update: () => {
       if (!state.updateCheckEnabled) throw { kind: "unavailable", message: "checking for updates isn't available" };

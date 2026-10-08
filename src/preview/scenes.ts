@@ -114,6 +114,10 @@ export const scenes: Record<string, () => FakeBackend> = {
     return backend;
   },
 
-  /** Settings, with a summary model installed. */
-  settings: () => withHistory(),
+  /** Settings, with a summary model installed and a vocabulary term. */
+  settings: () => {
+    const backend = withHistory();
+    backend.state.vocabulary = [{ term: "Bluefin Ledger", heardAs: ["blue fin ledger", "bluefinn ledger"] }];
+    return backend;
+  },
 };

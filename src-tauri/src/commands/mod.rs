@@ -13,6 +13,7 @@ pub mod settings;
 pub mod setup;
 pub mod summaries;
 pub mod updates;
+pub mod vocabulary;
 
 use serde::Serialize;
 
