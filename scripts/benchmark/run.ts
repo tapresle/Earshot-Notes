@@ -10,7 +10,8 @@
 //   npm run benchmark -- --report results.jsonl
 //
 // Without models, it runs every GGUF in src-tauri/tests/models/ except the
-// test model. Results are appended to the JSONL file one run per line, with
+// test model. Results go to docs/benchmarks/YYYYMMDD-summary-models.jsonl by
+// default. Each run is appended as one line, with
 // the machine's details, so runs from several Macs can share a file. Prints a
 // Markdown report at the end, or for an existing file with `--report`.
 
@@ -183,7 +184,8 @@ function main() {
     process.stdout.write(renderReport(readRuns(report)));
     return;
   }
-  const out = option("--out") ?? join(root, "docs/benchmarks/summary-models.jsonl");
+  const today = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+  const out = option("--out") ?? join(root, `docs/benchmarks/${today}-summary-models.jsonl`);
   const modelsDir = join(tauri, "tests/models");
   const models = args.length
     ? args
