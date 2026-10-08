@@ -425,7 +425,7 @@ mod pipeline {
         // Three sentences with clear pauses: one segment each.
         for _ in 0..3 {
             audio.extend(&sentence);
-            audio.extend(pause(1000));
+            audio.extend(pause(2500));
         }
         // Then about 35 s of near-continuous speech, longer than one Whistle pass.
         for _ in 0..8 {

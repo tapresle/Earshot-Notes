@@ -4,6 +4,11 @@
 //! silence. A segment starts at the first speech frame (with a short pre-roll so
 //! the first syllable isn't clipped) and ends after a pause, earlier on a
 //! shorter pause once the segment is long, or at the hard length cap.
+//!
+//! The pause that ends a segment is long (2 s), because people pause mid-sentence
+//! and Whistle transcribes a whole sentence far better than its pieces: a word
+//! like "async" needs the words around it. A closed segment keeps only
+//! `TRAILING_SILENCE_FRAMES` of the pause, so clips don't end in long silence.
 
 use std::collections::VecDeque;
 
@@ -13,7 +18,8 @@ use crate::transcribe::whistle::SAMPLE_RATE;
 
 const FRAME: usize = SAMPLE_RATE as usize / 50; // 20 ms
 const PREROLL_FRAMES: usize = 10; // 200 ms
-const END_SILENCE_FRAMES: usize = 25; // 500 ms
+const END_SILENCE_FRAMES: usize = 100; // 2 s
+const TRAILING_SILENCE_FRAMES: usize = 25; // 500 ms kept after the last speech
 const LONG_SEGMENT_FRAMES: usize = 20 * 50; // 20 s
 const LONG_SEGMENT_SILENCE_FRAMES: usize = 8; // 160 ms
 const MAX_SEGMENT_FRAMES: usize = 28 * 50; // 28 s, under Whistle's 30 s limit
@@ -238,7 +244,12 @@ impl Chunker {
     }
 }
 
-fn into_segment(current: Current) -> Option<Segment> {
+fn into_segment(mut current: Current) -> Option<Segment> {
+    // Keep at most TRAILING_SILENCE_FRAMES of the pause after the last speech.
+    if current.silence_run > TRAILING_SILENCE_FRAMES {
+        let keep = (current.frames - current.silence_run + TRAILING_SILENCE_FRAMES) * FRAME;
+        current.samples.truncate(keep);
+    }
     (current.speech_frames >= MIN_SPEECH_FRAMES).then(|| Segment {
         start_sample: current.start_sample,
         samples: current.samples,
@@ -346,12 +357,12 @@ mod tests {
 
     #[test]
     fn splits_utterances_separated_by_a_pause() {
-        let audio = concat(&[tone(1000), silence(1000), tone(1000), silence(1000)]);
+        let audio = concat(&[tone(1000), silence(2500), tone(1000), silence(1000)]);
 
         let segments = run(&audio, 512);
 
         assert_eq!(segments.len(), 2);
-        assert_eq!(segments[1].start_ms(), 1800);
+        assert_eq!(segments[1].start_ms(), 3300);
     }
 
     #[test]
@@ -359,6 +370,35 @@ mod tests {
         let audio = concat(&[tone(1000), silence(200), tone(1000), silence(1000)]);
 
         assert_eq!(run(&audio, 512).len(), 1);
+    }
+
+    #[test]
+    fn keeps_a_mid_sentence_pause_inside_one_segment() {
+        // People pause this long mid-sentence; splitting there costs Whistle the context.
+        let audio = concat(&[silence(500), tone(1000), silence(1500), tone(1000), silence(3000)]);
+
+        assert_eq!(run(&audio, 512).len(), 1);
+    }
+
+    #[test]
+    fn trims_the_ending_pause_to_half_a_second() {
+        // The last syllable's gap starts at 1960 ms, so speech ends there.
+        let audio = concat(&[silence(1000), tone(1000), silence(3000), tone(1000)]);
+
+        let segments = run(&audio, 512);
+
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].end_ms(), 2460);
+    }
+
+    #[test]
+    fn trims_the_pause_from_the_segment_flushed_on_finish() {
+        let audio = concat(&[silence(1000), tone(1000), silence(1500)]);
+
+        let segments = run(&audio, 512);
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].end_ms(), 2460);
     }
 
     #[test]
