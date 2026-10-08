@@ -1,0 +1,20 @@
+# The website (#45): a static page in site/, served as is, with no build step.
+
+[build]
+  publish = "site"
+  # Nothing to build. Netlify deploys the folder.
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Everything the page uses comes from this site: no scripts, fonts, or requests elsewhere.
+    Content-Security-Policy = "default-src 'none'; img-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+[[headers]]
+  for = "/images/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"

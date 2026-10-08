@@ -1,0 +1,408 @@
+/* Earshot Notes website. System fonts only: the site loads nothing from other domains. */
+
+:root {
+  --bg: #fbfaf8;
+  --bg-alt: #f3f1ee;
+  --surface: #ffffff;
+  --text: #1f1e1c;
+  --text-secondary: #57564f;
+  --border: rgba(0, 0, 0, 0.1);
+  /* The icon's violet, darkened for text and controls to meet WCAG AA. */
+  --accent: #5b21b6;
+  --button: #6d28d9;
+  --button-hover: #5b21b6;
+  --on-button: #ffffff;
+  --focus: #6d28d9;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 12px 40px rgba(40, 20, 80, 0.12);
+
+  color-scheme: light dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161518;
+    --bg-alt: #1d1c20;
+    --surface: #24232a;
+    --text: #ecebee;
+    --text-secondary: #b6b3bd;
+    --border: rgba(255, 255, 255, 0.12);
+    --accent: #c4b5fd;
+    --button: #7c3aed;
+    --button-hover: #6d28d9;
+    --on-button: #ffffff;
+    --focus: #c4b5fd;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 0.15em;
+}
+
+a:focus-visible,
+.button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: 2rem;
+  margin: 0 0 0.5rem;
+}
+
+h3 {
+  font-size: 1.05rem;
+  margin: 0 0 0.35rem;
+}
+
+p {
+  margin: 0 0 1rem;
+}
+
+.container {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.container.narrow {
+  max-width: 680px;
+  text-align: center;
+}
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -100px;
+  padding: 8px 12px;
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  z-index: 10;
+}
+
+.skip-link:focus {
+  top: 8px;
+}
+
+/* Header */
+
+.site-header {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.header-link {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.header-link:hover {
+  text-decoration: underline;
+}
+
+/* Hero */
+
+.hero {
+  padding: 64px 0 72px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--bg-alt), var(--bg) 60%);
+}
+
+.hero-text {
+  max-width: 720px;
+}
+
+.hero-icon {
+  display: block;
+  margin: 0 auto 16px;
+}
+
+.hero h1 {
+  font-size: 1.25rem;
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.tagline {
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 0 0 20px;
+}
+
+.lead {
+  font-size: 1.15rem;
+  color: var(--text-secondary);
+}
+
+.actions {
+  margin: 28px 0 12px;
+}
+
+.button {
+  display: inline-block;
+  padding: 14px 28px;
+  border-radius: 10px;
+  background: var(--button);
+  color: var(--on-button);
+  font-weight: 600;
+  font-size: 1.05rem;
+  text-decoration: none;
+}
+
+.button:hover {
+  background: var(--button-hover);
+}
+
+.fine-print {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.wide {
+  max-width: 1120px;
+  margin-top: 48px;
+}
+
+.screenshot {
+  display: block;
+  margin: 0 auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+/* Sections */
+
+.section {
+  padding: 80px 0;
+}
+
+.section.alt {
+  background: var(--bg-alt);
+}
+
+.section-lead {
+  font-size: 1.15rem;
+  color: var(--text-secondary);
+  max-width: 640px;
+  margin-bottom: 32px;
+}
+
+/* Comparison */
+
+.compare {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.compare th,
+.compare td {
+  padding: 14px 18px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+
+.compare tr:last-child td {
+  border-bottom: 0;
+}
+
+.compare th {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.compare th:last-child,
+.compare td:last-child {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.compare th:last-child {
+  color: var(--accent);
+}
+
+.compare td:first-child {
+  color: var(--text-secondary);
+  width: 45%;
+}
+
+/* Steps */
+
+.steps {
+  list-style: none;
+  counter-reset: step;
+  padding: 0;
+  margin: 32px 0 0;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.steps li {
+  counter-increment: step;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.steps li::before {
+  content: counter(step);
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 12px;
+  border-radius: 50%;
+  background: var(--button);
+  color: var(--on-button);
+  font-weight: 700;
+}
+
+.steps p,
+.features p,
+.cards p {
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* Features and cards */
+
+.features,
+.cards {
+  list-style: none;
+  padding: 0;
+  margin: 32px 0 0;
+  display: grid;
+  gap: 28px 32px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.cards {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.cards li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.figure {
+  margin: 56px 0 0;
+}
+
+.figure figcaption {
+  margin-top: 16px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.note {
+  margin-top: 28px;
+  color: var(--text-secondary);
+}
+
+/* Footer */
+
+.site-footer {
+  border-top: 1px solid var(--border);
+  padding: 32px 0 40px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.footer-row p {
+  margin: 0 0 6px;
+}
+
+/* Narrow screens */
+
+@media (max-width: 820px) {
+  .steps,
+  .features,
+  .cards {
+    grid-template-columns: 1fr;
+  }
+
+  .section {
+    padding: 56px 0;
+  }
+
+  h2 {
+    font-size: 1.6rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero {
+    padding: 40px 0 48px;
+  }
+
+  .compare th,
+  .compare td {
+    padding: 12px;
+    font-size: 0.95rem;
+  }
+}
