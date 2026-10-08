@@ -13,6 +13,7 @@ pub mod summarize;
 pub mod transcribe;
 pub mod tray;
 pub mod updates;
+pub mod vocabulary;
 pub mod window;
 
 use std::path::PathBuf;
