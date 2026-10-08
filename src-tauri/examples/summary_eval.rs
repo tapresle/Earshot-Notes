@@ -82,6 +82,10 @@ struct Outcome {
     expected: usize,
     missing: Vec<String>,
     forbidden: Vec<String>,
+    /// "Me" written as a name, as in "Me suggested", instead of "you" (#100).
+    me_as_name: usize,
+    /// "You (you)", which an earlier prompt produced (#70).
+    doubled_you: usize,
     notes: String,
 }
 
@@ -157,6 +161,12 @@ fn print_markdown(outcome: &Outcome) {
     );
     if !outcome.missing.is_empty() {
         println!("missing: {}", outcome.missing.join(", "));
+    }
+    if outcome.me_as_name > 0 || outcome.doubled_you > 0 {
+        println!(
+            "\"Me\" as a name: {}, \"You (you)\": {}",
+            outcome.me_as_name, outcome.doubled_you
+        );
     }
     if !outcome.forbidden.is_empty() {
         println!("forbidden text present: {}", outcome.forbidden.join(", "));
@@ -274,8 +284,19 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
         expected: meeting.expect.len(),
         missing,
         forbidden,
+        me_as_name: me_as_name(&notes),
+        doubled_you: notes.to_lowercase().matches("you (you)").count(),
         notes,
     }
+}
+
+/// Counts "Me" written as a word with a capital M. Notes have no reason to
+/// use it: the note-taker should be "you".
+fn me_as_name(notes: &str) -> usize {
+    notes
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| *word == "Me")
+        .count()
 }
 
 const EXTRACT_SYSTEM: &str = "You list the facts in a meeting transcript, so detailed notes can be written from them.
