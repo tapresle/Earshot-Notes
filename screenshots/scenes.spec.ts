@@ -75,3 +75,24 @@ test("settings scroll inside their pane, not the window", async ({ page }) => {
   }));
   expect(size.height).toBeLessThanOrEqual(size.window);
 });
+
+test("the meeting list scrolls while New meeting, search, and Settings stay put", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 420 });
+  await open(page, "meeting");
+  const newMeeting = page.getByRole("button", { name: "New meeting" });
+  const settings = sidebar(page).getByRole("button", { name: "Settings" });
+  const list = page.locator(".sidebar-list");
+  await expect(newMeeting).toBeVisible();
+  const before = { top: await newMeeting.boundingBox(), bottom: await settings.boundingBox() };
+
+  const scrolled = await list.evaluate((pane) => {
+    pane.scrollTo(0, pane.scrollHeight);
+    return pane.scrollTop;
+  });
+
+  expect(scrolled, "the list should overflow at this height").toBeGreaterThan(0);
+  expect(await newMeeting.boundingBox()).toEqual(before.top);
+  expect(await settings.boundingBox()).toEqual(before.bottom);
+  await expect(page.getByRole("searchbox")).toBeInViewport();
+  await expect(settings).toBeInViewport();
+});
