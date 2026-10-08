@@ -130,16 +130,18 @@ export default function App() {
           />
         }
         emptyHint={query === "" ? undefined : `No meetings match “${query}”.`}
+        listEnd={
+          list.kind === "ready" && (
+            <LoadMore
+              hasMore={list.next !== null}
+              loading={list.loadingMore}
+              error={list.moreError}
+              onLoadMore={loadMore}
+            />
+          )
+        }
         footer={
           <>
-            {list.kind === "ready" && (
-              <LoadMore
-                hasMore={list.next !== null}
-                loading={list.loadingMore}
-                error={list.moreError}
-                onLoadMore={loadMore}
-              />
-            )}
             <ExportSelectionBar
               selectedIds={selection.ids}
               onClearSelection={() => setSelection({ ids: selectedId === null ? [] : [selectedId], anchor: selectedId })}

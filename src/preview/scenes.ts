@@ -64,7 +64,7 @@ function transcript(meetingId: number, lines: [number, "me" | "them", string][],
   return lines.map(([startMs, source, text], i) => segment(firstId + i, meetingId, source, startMs, text));
 }
 
-/** The meetings shown in the sidebar, across several days. */
+/** The meetings shown in the sidebar, across several weeks: more than fit, so screenshots show the list scrolling. */
 function history(): MeetingDetail[] {
   return [
     meeting(1, "Design sync", 90, 42, DESIGN_NOTES),
@@ -72,6 +72,15 @@ function history(): MeetingDetail[] {
     meeting(3, "Weekly 1:1", DAY / MINUTE + 120, 25),
     meeting(4, "Hiring debrief", (3 * DAY) / MINUTE, 45),
     meeting(5, "Quarterly roadmap review", (8 * DAY) / MINUTE, 60),
+    // Older meetings, so the list overflows and scrolls under New meeting and Settings.
+    meeting(10, "Support handoff", (9 * DAY) / MINUTE, 20),
+    meeting(11, "Pricing page review", (10 * DAY) / MINUTE + 90, 35),
+    meeting(12, "Accessibility audit kickoff", (12 * DAY) / MINUTE, 50),
+    meeting(13, "Weekly 1:1", (15 * DAY) / MINUTE + 120, 25),
+    meeting(14, "Partner onboarding call", (16 * DAY) / MINUTE, 40),
+    meeting(15, "Release retrospective", (17 * DAY) / MINUTE + 60, 55),
+    meeting(16, "Search rewrite planning", (19 * DAY) / MINUTE, 45),
+    meeting(17, "Customer interview", (22 * DAY) / MINUTE, 30),
   ];
 }
 

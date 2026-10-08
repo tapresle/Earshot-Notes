@@ -14,6 +14,9 @@ interface MeetingListProps {
   onSelect: (id: number, mode: SelectMode) => void;
   onCreate: () => void;
   creating: boolean;
+  /** Shown after the last meeting, scrolling with the list, such as Load more. */
+  listEnd?: ReactNode;
+  /** Kept at the bottom of the sidebar while the list scrolls. */
   footer?: ReactNode;
   /** Shown under the New meeting button, such as a search field. */
   search?: ReactNode;
@@ -31,6 +34,7 @@ export function MeetingList({
   onSelect,
   onCreate,
   creating,
+  listEnd,
   footer,
   search,
   emptyHint = "Your meetings appear here.",
@@ -41,11 +45,15 @@ export function MeetingList({
 
   return (
     <nav className="sidebar" aria-label="Meetings">
-      <button type="button" className="button primary full-width" onClick={onCreate} disabled={creating}>
-        {creating ? "Creating…" : "New meeting"}
-      </button>
-      {search}
+      <div className="sidebar-top">
+        <button type="button" className="button primary full-width" onClick={onCreate} disabled={creating}>
+          {creating ? "Creating…" : "New meeting"}
+        </button>
+        {search}
+      </div>
 
+      {/* Only the list scrolls; New meeting, search, and the footer stay in place. */}
+      <div className="sidebar-list">
       {groups.length === 0 ? (
         <p className="empty-hint sidebar-hint">{emptyHint}</p>
       ) : (
@@ -83,7 +91,9 @@ export function MeetingList({
           </section>
         ))
       )}
-      {footer}
+      {listEnd}
+      </div>
+      {footer && <div className="sidebar-bottom">{footer}</div>}
     </nav>
   );
 }

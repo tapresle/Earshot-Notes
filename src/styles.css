@@ -76,6 +76,36 @@ body {
   overflow-y: auto;
 }
 
+/* The sidebar itself doesn't scroll: only its meeting list does, between
+   New meeting and search above and the footer below. */
+.sidebar {
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.sidebar-top {
+  flex: none;
+  padding-bottom: 4px;
+}
+
+.sidebar-list {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Reach the sidebar's edges, so focus rings and the scrollbar aren't clipped. */
+  margin: 0 -16px;
+  padding: 0 16px 16px;
+}
+
+.sidebar-bottom {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0 16px;
+  border-top: 1px solid var(--border);
+}
+
 .sidebar {
   border-right: 1px solid var(--border);
 }
@@ -719,6 +749,11 @@ body {
 
 .export-bar + .settings-button {
   margin-top: 8px;
+}
+
+.sidebar-bottom .export-bar {
+  margin-top: 0;
+  padding-top: 0;
 }
 
 .settings-button[aria-current="page"] {
