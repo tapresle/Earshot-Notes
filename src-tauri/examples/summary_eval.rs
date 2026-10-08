@@ -12,7 +12,8 @@
 //! time, time to the first text, writing speed, and token counts, for the
 //! model benchmark (`npm run benchmark`, #8).
 //!
-//! `--context` caps the model's context; a small value forces long-meeting
+//! Known models run with their registry context limit, as in the app.
+//! `--context` sets the limit instead; a small value forces long-meeting
 //! condensing, which is how the "chunked" approach is measured. `--noisy`
 //! makes each transcript look like real speech recognition output (set
 //! `SHOW_TRANSCRIPT=1` to print the transcript each meeting was summarized from) (see
@@ -25,7 +26,7 @@ use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use earshot_lib::store::{Source, TranscriptSegment};
-use earshot_lib::summarize::llama::{LlamaGenerator, Sampling};
+use earshot_lib::summarize::llama::{LlamaGenerator, MAX_CONTEXT, Sampling};
 use earshot_lib::summarize::prompt::{self, transcript_line};
 use earshot_lib::summarize::run::{Generator, Progress, Request, summarize};
 use earshot_lib::summarize::template::Message;
@@ -87,11 +88,17 @@ struct Outcome {
 fn main() {
     let options = options();
     let loading = Instant::now();
-    let mut generator = match options.context {
-        Some(limit) => LlamaGenerator::load_with_context_limit(&options.model, limit),
-        None => LlamaGenerator::load(&options.model),
-    }
-    .expect("couldn't load the model");
+    // Like the app, a known model runs with its registry limit. Matching by
+    // file name avoids hashing the model on every run.
+    let limit = options.context.unwrap_or_else(|| {
+        let file_name = options.model.file_name().unwrap().to_string_lossy();
+        earshot_lib::models::KNOWN_MODELS
+            .iter()
+            .find(|k| k.file_name == file_name)
+            .map_or(MAX_CONTEXT, |k| k.context_limit)
+    });
+    let mut generator = LlamaGenerator::load_with_context_limit(&options.model, limit)
+        .expect("couldn't load the model");
     let load_seconds = loading.elapsed().as_secs_f64();
     generator.set_sampling(options.sampling);
     let model = options
