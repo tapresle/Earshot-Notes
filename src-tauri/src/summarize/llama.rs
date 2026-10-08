@@ -45,12 +45,67 @@ pub enum Placement {
     Cpu,
 }
 
+/// How each next token is chosen.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Sampling {
+    pub temperature: f32,
+    pub top_k: i32,
+    pub top_p: f32,
+    /// 0 turns min-p off.
+    pub min_p: f32,
+    /// 1 turns the repeat penalty off.
+    pub repeat_penalty: f32,
+}
+
+impl Sampling {
+    /// Earshot's settings: a low temperature keeps notes faithful to the
+    /// transcript, and a mild repeat penalty stops small models from looping.
+    pub const FAITHFUL: Sampling = Sampling {
+        temperature: 0.3,
+        top_k: 40,
+        top_p: 0.9,
+        min_p: 0.05,
+        repeat_penalty: 1.1,
+    };
+
+    /// Google's published settings for Gemma 4, from its `generation_config.json`.
+    pub const GEMMA_4: Sampling = Sampling {
+        temperature: 1.0,
+        top_k: 64,
+        top_p: 0.95,
+        min_p: 0.0,
+        repeat_penalty: 1.0,
+    };
+
+    fn sampler(&self, n_vocab: i32) -> LlamaSampler {
+        let mut chain = Vec::new();
+        if self.repeat_penalty != 1.0 {
+            chain.push(LlamaSampler::penalties(
+                n_vocab,
+                256,
+                self.repeat_penalty,
+                0.0,
+                0.0,
+            ));
+        }
+        chain.push(LlamaSampler::top_k(self.top_k));
+        chain.push(LlamaSampler::top_p(self.top_p, 1));
+        if self.min_p > 0.0 {
+            chain.push(LlamaSampler::min_p(self.min_p, 1));
+        }
+        chain.push(LlamaSampler::temp(self.temperature));
+        chain.push(LlamaSampler::dist(1234));
+        LlamaSampler::chain_simple(chain)
+    }
+}
+
 pub struct LlamaGenerator {
     model: LlamaModel,
     template: String,
     tokens: SpecialTokens,
     context_size: usize,
     placement: Placement,
+    sampling: Sampling,
 }
 
 impl LlamaGenerator {
@@ -109,7 +164,13 @@ impl LlamaGenerator {
             tokens,
             context_size,
             placement,
+            sampling: Sampling::FAITHFUL,
         })
+    }
+
+    /// Changes how tokens are chosen. The app uses `Sampling::FAITHFUL`.
+    pub fn set_sampling(&mut self, sampling: Sampling) {
+        self.sampling = sampling;
     }
 
     fn render(&self, messages: &[Message]) -> Result<String, SummaryError> {
@@ -183,17 +244,8 @@ impl Generator for LlamaGenerator {
             ctx.decode(&mut batch).map_err(|e| model_error(&e))?;
         }
 
-        // Low temperature keeps notes faithful to the transcript; a mild repeat
-        // penalty stops small models from looping.
         let vocab = self.model.vocab();
-        let mut sampler = LlamaSampler::chain_simple([
-            LlamaSampler::penalties(self.model.n_vocab(), 256, 1.1, 0.0, 0.0),
-            LlamaSampler::top_k(40),
-            LlamaSampler::top_p(0.9, 1),
-            LlamaSampler::min_p(0.05, 1),
-            LlamaSampler::temp(0.3),
-            LlamaSampler::dist(1234),
-        ]);
+        let mut sampler = self.sampling.sampler(self.model.n_vocab());
         let mut stream = Utf8Stream::default();
         let mut output = String::new();
         for pos in (prompt.len()..).take(max_tokens) {

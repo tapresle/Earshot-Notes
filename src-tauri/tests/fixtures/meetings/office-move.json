@@ -1,0 +1,164 @@
+{
+  "about": "Synthetic planning meeting for evaluating summaries (#70). Every name, place, and number is invented. It plants: budget numbers, a self-corrected date, a decision with its reason, an open question, a rejected option, and tasks with owners and a conditional plan. Each expect entry lists accepted spellings separated by |.",
+  "title": "Office move planning",
+  "notes": "- budget\n- move date\n- Harbor Street vs Elm Court",
+  "segments": [
+    [
+      "me",
+      0,
+      "Thanks everyone. Today we need to pick the new office and lock the move date."
+    ],
+    [
+      "them",
+      5000,
+      "Priyanka here. I visited both places last week, Harbor Street and Elm Court."
+    ],
+    [
+      "them",
+      11000,
+      "Harbor Street is forty-eight thousand dollars a year, Elm Court is fifty-five thousand."
+    ],
+    [
+      "me",
+      18000,
+      "What do we get for the extra seven thousand at Elm Court?"
+    ],
+    [
+      "them",
+      22000,
+      "Mostly parking. Elm Court includes twelve parking spaces. Harbor Street has none, but it's two blocks from the train."
+    ],
+    [
+      "them",
+      30000,
+      "Jonah. Honestly, almost everyone takes the train now. In the survey only four people said they drive."
+    ],
+    [
+      "me",
+      36000,
+      "Then parking isn't worth seven thousand a year. Any other differences?"
+    ],
+    [
+      "them",
+      41000,
+      "Harbor Street has one more meeting room, three instead of two. Elm Court is a bit bigger overall, about nine hundred square feet more."
+    ],
+    [
+      "me",
+      49000,
+      "We don't need the extra space with the hybrid schedule. I think Harbor Street is the right call."
+    ],
+    [
+      "them",
+      55000,
+      "Agreed. Harbor Street, then."
+    ],
+    [
+      "me",
+      58000,
+      "Great, decision made. Now the date. When does our current lease end?"
+    ],
+    [
+      "them",
+      63000,
+      "The lease ends on the thirtieth of November, so we have to be out by then."
+    ],
+    [
+      "them",
+      69000,
+      "Harbor Street can give us the keys on November fourteenth, no wait, sorry, it's the twenty-first. The fourteenth was the other building."
+    ],
+    [
+      "me",
+      77000,
+      "So keys on the twenty-first and out by the thirtieth. That's nine days. Tight, but doable."
+    ],
+    [
+      "them",
+      84000,
+      "Priyanka. The movers I talked to want two weeks' notice, and they quoted three thousand two hundred dollars for a weekend move."
+    ],
+    [
+      "me",
+      92000,
+      "Let's plan the move for the weekend of the twenty-second and twenty-third, then."
+    ],
+    [
+      "them",
+      98000,
+      "Works for me. I'll book the movers this week so we stay inside their two weeks."
+    ],
+    [
+      "me",
+      103000,
+      "What about internet? Last time that took forever."
+    ],
+    [
+      "them",
+      107000,
+      "Jonah. The building's provider needs ten business days to install fiber. If I order it Monday, it should be in by the twentieth."
+    ],
+    [
+      "me",
+      115000,
+      "And if it's not ready by the twenty-first?"
+    ],
+    [
+      "them",
+      119000,
+      "Then we use the hotspots for a few days. We have six of them in the storage room."
+    ],
+    [
+      "me",
+      125000,
+      "Okay. One open question, do we keep the old desks or buy new ones?"
+    ],
+    [
+      "them",
+      130000,
+      "Nobody knows yet. Facilities is checking whether the old desks even fit the new layout. They'll tell us by next Wednesday."
+    ],
+    [
+      "me",
+      138000,
+      "Let's leave that open until Wednesday then."
+    ],
+    [
+      "me",
+      142000,
+      "So, to recap. Harbor Street, forty-eight thousand a year. Keys on the twenty-first, move the weekend of the twenty-second."
+    ],
+    [
+      "me",
+      150000,
+      "Priyanka books the movers this week. Jonah orders the fiber on Monday, and if it's late we fall back to the hotspots."
+    ],
+    [
+      "me",
+      158000,
+      "And I'll sign the Harbor Street lease by Friday. Desks wait for facilities on Wednesday."
+    ],
+    [
+      "them",
+      165000,
+      "Sounds good."
+    ]
+  ],
+  "expect": [
+    "Harbor Street",
+    "48,000|48000|forty-eight thousand|48 thousand|48k",
+    "21|twenty-first",
+    "parking",
+    "train",
+    "3,200|3200|three thousand two hundred|3.2 thousand",
+    "Priyanka",
+    "Jonah",
+    "fiber",
+    "hotspot",
+    "desks",
+    "Wednesday"
+  ],
+  "forbid": [
+    "14th|fourteenth"
+  ]
+}

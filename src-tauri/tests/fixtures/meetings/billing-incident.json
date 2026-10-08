@@ -1,0 +1,246 @@
+{
+  "about": "Synthetic engineering meeting for evaluating summaries (#70). Every name, number, product, and ticket is invented. It plants: a ticket number, a quoted error and an HTTP status, a self-corrected value, a product misspelled in the transcript but spelled in the notes, a configuration change and what it proved, a how-to explanation, and tasks with owners and a conditional plan. Each expect entry lists accepted spellings separated by |.",
+  "title": "Billing sync",
+  "notes": "- SUP-4821 duplicate charges\n- Corvina retry setting?\n- how to export a test user",
+  "segments": [
+    [
+      "me",
+      0,
+      "Okay, let's get started. The main thing today is SUP-4821, the duplicate charges ticket."
+    ],
+    [
+      "them",
+      6000,
+      "Right. So Dana here. We confirmed it yesterday afternoon. Customers on the Lakeside tenant got charged twice for the October renewal."
+    ],
+    [
+      "me",
+      14000,
+      "How many customers are we talking about?"
+    ],
+    [
+      "them",
+      17000,
+      "Forty-two accounts so far. Every one of them is on Lakeside, none on the other tenants."
+    ],
+    [
+      "me",
+      23000,
+      "And do we know why it's only Lakeside?"
+    ],
+    [
+      "them",
+      26000,
+      "That's the interesting part. Lakeside is the only tenant that still has auto retry turned on in Corvena."
+    ],
+    [
+      "them",
+      33000,
+      "When the payment call times out, Corvena retries it, but the first charge actually went through. So the customer gets charged twice."
+    ],
+    [
+      "me",
+      41000,
+      "So the timeout is the real trigger. What's timing out?"
+    ],
+    [
+      "them",
+      44000,
+      "The payment gateway. In the logs we see it return a 503, sorry, not a 503, it's a 502, bad gateway, about four seconds into the call."
+    ],
+    [
+      "them",
+      53000,
+      "And then on the retry we get this error in our service: token exchange failed: invalid_grant."
+    ],
+    [
+      "me",
+      60000,
+      "Is the invalid_grant a separate bug, or part of the same thing?"
+    ],
+    [
+      "them",
+      64000,
+      "Marcus thinks it's the same thing. The retry reuses the token from the first attempt, and that token was already spent."
+    ],
+    [
+      "them",
+      71000,
+      "Marcus here. Yeah, the token is single use, so the second attempt can never succeed on its own. It only looks like a failure."
+    ],
+    [
+      "me",
+      79000,
+      "Okay. So what did we try?"
+    ],
+    [
+      "them",
+      82000,
+      "This morning I turned off auto retry for Lakeside in the Corvena admin console, at about nine thirty."
+    ],
+    [
+      "them",
+      89000,
+      "Since then we've had zero duplicate charges, and we've had eleven gateway timeouts in that window. So turning off retry stopped the duplicates."
+    ],
+    [
+      "me",
+      97000,
+      "That's pretty convincing. Any downside to leaving retry off?"
+    ],
+    [
+      "them",
+      101000,
+      "The downside is that a real failure won't get retried automatically, so a customer whose payment genuinely failed has to retry it themselves."
+    ],
+    [
+      "them",
+      109000,
+      "Support would see more of those tickets. It's probably a handful a week."
+    ],
+    [
+      "me",
+      114000,
+      "I can live with that for now. The bigger worry is whether other tenants could hit this if someone turns retry back on."
+    ],
+    [
+      "them",
+      121000,
+      "Agreed. There's no alert for this either. We only found it because a customer emailed us with two receipts."
+    ],
+    [
+      "me",
+      128000,
+      "Let's talk about refunds. Who's handling the forty-two accounts?"
+    ],
+    [
+      "them",
+      132000,
+      "Dana again. I can issue the refunds from the billing dashboard, it's about two hours of work. I'll start today."
+    ],
+    [
+      "me",
+      139000,
+      "Great. And we should email those customers before they notice."
+    ],
+    [
+      "them",
+      143000,
+      "I'll draft the email, and Marcus can review it."
+    ],
+    [
+      "me",
+      147000,
+      "Next thing, I keep forgetting how to export a test user so we can reproduce this. Can someone walk me through it?"
+    ],
+    [
+      "them",
+      154000,
+      "Sure. Open the Corvena admin console, go to Accounts, and search for the test account by email."
+    ],
+    [
+      "them",
+      162000,
+      "Then open the account, click the three dots in the top right, and choose Export as JSON."
+    ],
+    [
+      "them",
+      169000,
+      "Save that file, and when you want to log in as that user later, you use Import from JSON on the same page."
+    ],
+    [
+      "me",
+      176000,
+      "Got it, Accounts, three dots, Export as JSON, then Import later. Thanks."
+    ],
+    [
+      "me",
+      182000,
+      "Okay, what about the gateway itself? Are we talking to the vendor?"
+    ],
+    [
+      "them",
+      186000,
+      "Marcus. I opened a case with them yesterday. Their status page says everything's fine, which doesn't match what we see."
+    ],
+    [
+      "them",
+      193000,
+      "If they don't respond by Friday, I think we should roll back the 4.2 release, because the timeouts started the day 4.2 shipped."
+    ],
+    [
+      "me",
+      201000,
+      "That's a good catch. Is that a coincidence, or did 4.2 change something about the gateway calls?"
+    ],
+    [
+      "them",
+      207000,
+      "4.2 lowered our client timeout from ten seconds to five. So calls that used to finish in six or seven seconds now count as timeouts."
+    ],
+    [
+      "me",
+      215000,
+      "So we might be causing the timeouts ourselves."
+    ],
+    [
+      "them",
+      218000,
+      "Possibly. Raising the timeout back to ten seconds would be the quick test."
+    ],
+    [
+      "me",
+      223000,
+      "Let's do that before we roll anything back. Marcus, can you raise it on staging today and watch it overnight?"
+    ],
+    [
+      "them",
+      229000,
+      "Yes, I'll do that today."
+    ],
+    [
+      "me",
+      232000,
+      "Okay. So to recap the plan. Dana does refunds and the customer email."
+    ],
+    [
+      "me",
+      237000,
+      "Marcus raises the client timeout to ten seconds on staging today, and keeps the vendor case going."
+    ],
+    [
+      "me",
+      243000,
+      "If the vendor hasn't answered by Friday and staging still shows timeouts, we roll back 4.2."
+    ],
+    [
+      "me",
+      250000,
+      "And I'll write up an alert for duplicate charges so we hear about this before a customer does."
+    ],
+    [
+      "them",
+      257000,
+      "Sounds good. Talk Friday."
+    ]
+  ],
+  "expect": [
+    "SUP-4821",
+    "Lakeside",
+    "42|forty-two",
+    "502",
+    "invalid_grant",
+    "Corvina",
+    "auto retry|auto-retry|automatic retry",
+    "Export as JSON",
+    "4.2",
+    "Friday",
+    "Dana",
+    "Marcus",
+    "10 seconds|ten seconds"
+  ],
+  "forbid": [
+    "503",
+    "Corvena"
+  ]
+}
