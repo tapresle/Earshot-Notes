@@ -11,7 +11,7 @@ Structure:
 - When the note-taker wrote notes, use them as the outline and priorities, and cover every point in them.
 - Put explanations of how to do something under their own topic, as numbered steps.
 - Combine points that repeat into one bullet, and keep routine status updates brief.
-- End with \"## Next steps\": each task, then its owner in parentheses, such as (Dana), or (you) for the note-taker, then one sentence of context. Include plans that depend on an outcome, with their condition. Omit the section if there are no tasks.
+- End with \"## Next steps\" as a bulleted list: each task, then its owner in parentheses, such as (Dana), or (you) for the note-taker, then one sentence of context. Include plans that depend on an outcome, with their condition. Omit the section if there are no tasks.
 
 Content:
 - Keep specifics exactly: ticket and issue numbers, error codes and messages, amounts, dates, and the names of people, systems, products, customers, and settings.
@@ -20,7 +20,8 @@ Content:
 - When a speaker corrects themselves, keep the corrected statement and drop the first one. A corrected number or code still belongs in the notes.
 - The transcript comes from speech recognition and misspells names. When the note-taker's notes or the meeting title spell a name differently from the transcript, such as \"Lindgren\" in the notes and \"Lindgrin\" in the transcript, always use the notes' spelling.
 - Only state what the transcript or notes support. Never invent names, numbers, dates, or decisions. Leave out small talk.
-- \"Me\" is the note-taker; write \"you\" for them. \"Meeting Participants\" is everyone else on the call; use their names when the transcript gives them.
+- \"Me\" is the note-taker. \"Meeting Participants\" is everyone else on the call; use their names when the transcript gives them.
+- Attribute each statement and task to whoever said or took it on. A task is yours only when a \"Me\" line takes it on; when a participant says \"I'll do it\", it's theirs.
 - Write plain Markdown without backslash escapes, such as $48,000 rather than \\$48,000.
 - Reply with the notes only, no preamble.";
 

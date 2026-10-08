@@ -10,7 +10,8 @@
 //!
 //! `--context` caps the model's context; a small value forces long-meeting
 //! condensing, which is how the "chunked" approach is measured. `--noisy`
-//! makes each transcript look like real speech recognition output (see
+//! makes each transcript look like real speech recognition output (set
+//! `SHOW_TRANSCRIPT=1` to print the transcript each meeting was summarized from) (see
 //! [`noisy`]) without touching the planted specifics. `--pad MINUTES` spreads
 //! the meeting across that many minutes of unrelated status updates (see
 //! [`padded`]), to test whether specifics survive a long meeting.
@@ -105,6 +106,11 @@ fn evaluate(
     }
     if noisy_transcript {
         meeting.segments = noisy(&meeting.segments);
+    }
+    if std::env::var_os("SHOW_TRANSCRIPT").is_some() {
+        for (source, start_ms, text) in &meeting.segments {
+            eprintln!("[{start_ms}] {}: {text}", source.label());
+        }
     }
     let segments: Vec<TranscriptSegment> = meeting
         .segments
