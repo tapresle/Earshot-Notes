@@ -1,11 +1,14 @@
 # Checks that docs/screenshots matches the UI. Runs on macOS because the UI
 # uses the system font, which Linux would replace. macOS minutes cost more, so
-# this runs only when the UI, the preview, or the screenshots change.
+# until the repository is public (#78) this runs only on request: add the
+# `macos-ci` label to a pull request, or run it from the Actions tab. It also
+# runs only when the UI, the preview, or the screenshots change.
 name: Screenshots
 
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - "src/**"
       - "index.html"
@@ -17,30 +20,19 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/screenshots.yml"
-  push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "index.html"
-      - "preview.html"
-      - "screenshots/**"
-      - "docs/screenshots/**"
-      - "playwright.config.ts"
-      - "vite.config.ts"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/screenshots.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   screenshots:
     name: Screenshots match the UI
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'macos-ci')
+    # At the job, so a run for another label, which skips this job, can't cancel one in progress.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: macos-26
     timeout-minutes: 15
     steps:

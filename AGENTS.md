@@ -43,13 +43,15 @@ Before you hand off work, run the lint, typecheck, test, format, and screenshot 
 
 ## Continuous integration
 
-GitHub Actions runs these checks on every pull request to `main` and every push to `main`:
+GitHub Actions runs these checks on pull requests to `main`, and the Linux ones on pushes to `main` too:
 
 | Workflow | Runner | Jobs |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | `ubuntu-latest` | Frontend lint, typecheck, and tests; `./scripts/generate-notices.sh --check` |
-| `.github/workflows/screenshots.yml` | `macos-26` | `npm run screenshots:check`; on failure, uploads the rendered screenshots and their differences as the `screenshots` artifact |
-| `.github/workflows/rust.yml` | `macos-26` (Apple Silicon) | `./scripts/fetch-native.sh`, then `cargo fmt --check`, clippy, and `cargo test --workspace` (summary tests on the CPU, see **Summary tests**) |
+| `.github/workflows/screenshots.yml` | `macos-26`, on request | `npm run screenshots:check`; on failure, uploads the rendered screenshots and their differences as the `screenshots` artifact |
+| `.github/workflows/rust.yml` | `macos-26` (Apple Silicon), on request | `./scripts/fetch-native.sh`, then `cargo fmt --check`, clippy, and `cargo test --workspace` (summary tests on the CPU, see **Summary tests**) |
+
+macOS minutes are expensive for a private repository, so until it's public (#78) the two macOS workflows run only on request: add the `macos-ci` label to a pull request (each later push reruns them while the label is on), or run them from the **Actions** tab. Nothing runs on macOS for pushes to `main`. Run the macOS checks locally before every handoff; CI may not repeat them.
 
 The screenshots workflow runs on macOS because the UI uses the system font, and only when the UI, the preview, or the screenshots change. The Rust workflow needs macOS 26 on Apple Silicon, because the prebuilt needle engine supports nothing else. macOS minutes cost more, so it runs only when `src-tauri/`, `scripts/fetch-native.sh`, or the workflow itself changes. It caches the fetched native files (keyed on `fetch-native.sh`, whose checksums are still verified) and the cargo build (keyed on the repository name, the Rust version, and `Cargo.lock`; the build records absolute paths, which include the checkout folder named after the repository). A newer run on the same pull request cancels the older one. To rerun a failed job, use **Re-run failed jobs** on the run's page, or `gh run rerun <run id> --failed`. Workflows keep `permissions: contents: read` and pin each action to a full commit SHA, with its version in a comment.
 
