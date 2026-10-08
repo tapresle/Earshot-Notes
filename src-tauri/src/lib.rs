@@ -211,10 +211,11 @@ fn spawn_transcription(
         });
         match saved {
             Ok(saved) => {
-                if let Some(segment) = &saved.segment
-                    && let Err(error) = handle.emit("transcript:segment", segment)
-                {
-                    log::warn!("couldn't send a transcript segment to the UI: {error}");
+                // An updated segment goes out again under its ID, replacing the shown one.
+                for segment in saved.segment.iter().chain(&saved.updated) {
+                    if let Err(error) = handle.emit("transcript:segment", segment) {
+                        log::warn!("couldn't send a transcript segment to the UI: {error}");
+                    }
                 }
                 if !saved.removed.is_empty() {
                     let removed =

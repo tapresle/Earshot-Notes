@@ -571,11 +571,11 @@ mod tests {
     fn keeps_timing_and_pitch_when_the_capture_rate_changes() {
         // A Bluetooth headset drops from 48 kHz to 24 kHz partway through.
         let low = 24_000;
-        let before = stereo_buffers(&[silence(1000), tone(1500), silence(1000)].concat());
+        let before = stereo_buffers(&[silence(1000), tone(1500), silence(1500)].concat());
         let after = stereo_buffers_at(
             low,
             &[
-                silence_at(low, 1000),
+                silence_at(low, 1500),
                 tone_at(low, 1500),
                 silence_at(low, 1000),
             ]
@@ -590,15 +590,15 @@ mod tests {
             "{:?}",
             jobs.iter().map(|j| j.start_ms).collect::<Vec<_>>()
         );
-        // Speech starts at 1000 ms and 4500 ms; each job has 200 ms of pre-roll.
+        // Speech starts at 1000 ms and 5500 ms; each job has 200 ms of pre-roll.
         assert!(
             (60_780..=60_800).contains(&jobs[0].start_ms),
             "{}",
             jobs[0].start_ms
         );
         // Audio lost or added at the switch would move the second job by a frame.
-        assert_eq!(jobs[1].start_ms - jobs[0].start_ms, 3500);
-        for (job, speech_ms) in jobs.iter().zip([1000, 4500]) {
+        assert_eq!(jobs[1].start_ms - jobs[0].start_ms, 4500);
+        for (job, speech_ms) in jobs.iter().zip([1000, 5500]) {
             assert_eq!(job.samples.len() as i64, (job.end_ms - job.start_ms) * 16);
             let pitch = pitch_hz(job, 60_000, speech_ms + 50);
             assert!(
@@ -1070,9 +1070,9 @@ mod tests {
     fn a_blocked_writer_never_delays_transcription_jobs() {
         let (writer, release, written) = crate::recordings::testing::blocked_writer();
         let kept = KeptAudio::spawn(writer).unwrap();
-        // Ten seconds of speech bursts, more than the writer's backlog holds.
+        // Seventeen and a half seconds of speech bursts, more than the writer's backlog holds.
         let audio: Vec<f32> = (0..5)
-            .flat_map(|_| [tone(1000), silence(1000)].concat())
+            .flat_map(|_| [tone(1000), silence(2500)].concat())
             .collect();
         let buffers = stereo_buffers(&audio);
         let buffer_count = buffers.len();
@@ -1106,6 +1106,6 @@ mod tests {
         pipeline.join().unwrap();
         // The audio that didn't fit while blocked is kept as silence, so the length still matches.
         let written = written.lock().unwrap().len();
-        assert!(written.abs_diff(10_000 * 16) <= KEPT_TOLERANCE, "{written}");
+        assert!(written.abs_diff(17_500 * 16) <= KEPT_TOLERANCE, "{written}");
     }
 }

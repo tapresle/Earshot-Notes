@@ -6,7 +6,8 @@ use rusqlite::{Connection, params};
 use super::transcript::{NewSegment, Source, TranscriptSegment, insert_segment};
 use super::vocabulary::vocabulary;
 use super::{Store, StoreError};
-use crate::transcribe::echo::{WINDOW_MS, is_echo};
+use crate::transcribe::echo::{WINDOW_MS, is_echo, without_echo};
+use crate::vocabulary::Vocabulary;
 
 /// What saving a transcribed segment changed.
 #[derive(Debug, Default, PartialEq)]
@@ -15,27 +16,32 @@ pub struct Saved {
     pub segment: Option<TranscriptSegment>,
     /// Earlier "Me" segments removed as echoes of this one.
     pub removed: Vec<i64>,
+    /// Earlier "Me" segments that kept your words but lost echo of this one.
+    pub updated: Vec<TranscriptSegment>,
 }
 
 impl Store {
     /// Saves a segment as Whistle transcribed it, corrected with the saved
     /// vocabulary, and drops echo either way round: a "Me" segment that
     /// repeats nearby participants isn't saved, and a participant segment
-    /// removes the "Me" segments that repeated it before it arrived. Each
+    /// removes the "Me" segments that repeated it before it arrived. A "Me"
+    /// segment that mixes your words with echo keeps only your words. Each
     /// source closes segments on its own pauses, so either can come first.
     /// Everything happens under one lock and in one transaction.
     pub fn insert_transcribed_segment(&self, mut segment: NewSegment) -> Result<Saved, StoreError> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        let corrected = vocabulary(&tx)?.apply(&segment.text).into_owned();
-        let heard =
-            (corrected != segment.text).then(|| std::mem::replace(&mut segment.text, corrected));
+        let vocabulary = vocabulary(&tx)?;
 
         let saved = match segment.source {
             Source::Me => {
                 let theirs =
                     participant_lines(&tx, segment.meeting_id, segment.start_ms, segment.end_ms)?;
-                if is_echo(&segment.text, &as_refs(&theirs)) {
+                let theirs = as_refs(&theirs);
+                let whole = vocabulary.apply(&segment.text).into_owned();
+                let heard = without_echo(&segment.text, &theirs).unwrap_or(segment.text);
+                let (text, heard) = corrected(&vocabulary, heard);
+                if is_echo(&whole, &theirs) || text.trim().is_empty() {
                     log::debug!(
                         "dropped an echo for meeting {} at {} ms",
                         segment.meeting_id,
@@ -43,18 +49,22 @@ impl Store {
                     );
                     Saved::default()
                 } else {
+                    segment.text = text;
                     Saved {
                         segment: Some(insert_segment(&tx, segment, heard.as_deref())?),
-                        removed: Vec::new(),
+                        ..Saved::default()
                     }
                 }
             }
             Source::Them => {
+                let (text, heard) = corrected(&vocabulary, std::mem::take(&mut segment.text));
+                segment.text = text;
                 let saved = insert_segment(&tx, segment, heard.as_deref())?;
-                let removed = remove_echoes_of(&tx, &saved)?;
+                let (removed, updated) = remove_echoes_of(&tx, &vocabulary, &saved)?;
                 Saved {
                     segment: Some(saved),
                     removed,
+                    updated,
                 }
             }
         };
@@ -63,10 +73,24 @@ impl Store {
     }
 }
 
-/// Removes the "Me" segments near `theirs` that repeat what participants said.
-fn remove_echoes_of(conn: &Connection, theirs: &TranscriptSegment) -> Result<Vec<i64>, StoreError> {
+/// The text to save for what Whistle heard, and what it heard when the
+/// vocabulary changed it.
+fn corrected(vocabulary: &Vocabulary, heard: String) -> (String, Option<String>) {
+    let text = vocabulary.apply(&heard).into_owned();
+    let heard = (text != heard).then_some(heard);
+    (text, heard)
+}
+
+/// Removes the "Me" segments near `theirs` that repeat what participants
+/// said, and the echo inside those that mix it with your words. Returns the
+/// removed IDs and the updated segments.
+fn remove_echoes_of(
+    conn: &Connection,
+    vocabulary: &Vocabulary,
+    theirs: &TranscriptSegment,
+) -> Result<(Vec<i64>, Vec<TranscriptSegment>), StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT id, start_ms, end_ms, text FROM transcript_segments
+        "SELECT id, start_ms, end_ms, text, heard_text, language FROM transcript_segments
          WHERE meeting_id = ?1 AND source = 'me' AND start_ms <= ?3 AND end_ms >= ?2
          ORDER BY start_ms, id",
     )?;
@@ -78,28 +102,55 @@ fn remove_echoes_of(conn: &Connection, theirs: &TranscriptSegment) -> Result<Vec
                 theirs.end_ms + WINDOW_MS
             ],
             |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
+                let segment = TranscriptSegment {
+                    id: row.get(0)?,
+                    meeting_id: theirs.meeting_id,
+                    source: Source::Me,
+                    start_ms: row.get(1)?,
+                    end_ms: row.get(2)?,
+                    text: row.get(3)?,
+                    language: row.get(5)?,
+                };
+                Ok((segment, row.get::<_, Option<String>>(4)?))
             },
         )?
         .collect::<Result<Vec<_>, _>>()?;
-    let mut removed = Vec::new();
-    for (id, start_ms, end_ms, text) in mine {
-        let participants = participant_lines(conn, theirs.meeting_id, start_ms, end_ms)?;
-        if is_echo(&text, &as_refs(&participants)) {
-            conn.execute("DELETE FROM transcript_segments WHERE id = ?1", [id])?;
+    let (mut removed, mut updated) = (Vec::new(), Vec::new());
+    for (mut segment, heard) in mine {
+        let participants =
+            participant_lines(conn, theirs.meeting_id, segment.start_ms, segment.end_ms)?;
+        let participants = as_refs(&participants);
+        let stripped = without_echo(heard.as_deref().unwrap_or(&segment.text), &participants);
+        let (text, heard) = match stripped {
+            Some(stripped) => corrected(vocabulary, stripped),
+            None => (segment.text.clone(), heard),
+        };
+        if is_echo(&segment.text, &participants) || text.trim().is_empty() {
+            conn.execute(
+                "DELETE FROM transcript_segments WHERE id = ?1",
+                [segment.id],
+            )?;
             log::debug!(
-                "removed an echo for meeting {} at {start_ms} ms",
-                theirs.meeting_id
+                "removed an echo for meeting {} at {} ms",
+                theirs.meeting_id,
+                segment.start_ms
             );
-            removed.push(id);
+            removed.push(segment.id);
+        } else if text != segment.text {
+            conn.execute(
+                "UPDATE transcript_segments SET text = ?2, heard_text = ?3 WHERE id = ?1",
+                params![segment.id, text, heard],
+            )?;
+            log::debug!(
+                "removed echo inside a segment for meeting {} at {} ms",
+                theirs.meeting_id,
+                segment.start_ms
+            );
+            segment.text = text;
+            updated.push(segment);
         }
     }
-    Ok(removed)
+    Ok((removed, updated))
 }
 
 /// What participants said within the echo window of `start_ms` to `end_ms`.
@@ -275,5 +326,96 @@ mod tests {
         let echo = heard(&store, Source::Me, 200, 3300, "send it to blue fin ledger");
 
         assert!(echo.segment.is_none());
+    }
+
+    const THEIRS: &str = "We moved the invoices over to the new ledger yesterday.";
+    const MIXED: &str =
+        "we moved the invoices over to the ledger yesterday, okay, can you send me the totals";
+
+    #[test]
+    fn keeps_your_words_from_a_segment_that_arrives_mixed_with_echo() {
+        let store = store();
+        heard(&store, Source::Them, 10_000, 14_000, THEIRS);
+
+        let mine = heard(&store, Source::Me, 10_200, 17_000, MIXED);
+
+        assert_eq!(
+            mine.segment.map(|s| s.text).as_deref(),
+            Some("okay, can you send me the totals")
+        );
+    }
+
+    #[test]
+    fn removes_echo_from_an_earlier_segment_when_its_source_arrives() {
+        let store = store();
+        let mine = heard(&store, Source::Me, 10_200, 17_000, MIXED)
+            .segment
+            .unwrap();
+
+        let theirs = heard(&store, Source::Them, 10_000, 14_000, THEIRS);
+
+        assert!(theirs.removed.is_empty());
+        assert_eq!(theirs.updated.len(), 1);
+        assert_eq!(theirs.updated[0].id, mine.id);
+        assert_eq!(theirs.updated[0].text, "okay, can you send me the totals");
+        assert_eq!(
+            texts(&store),
+            [
+                (Source::Them, THEIRS.into()),
+                (Source::Me, "okay, can you send me the totals".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_a_segment_without_echo_alone_when_a_participant_line_arrives() {
+        let store = store();
+        heard(
+            &store,
+            Source::Me,
+            10_200,
+            13_000,
+            "Can you have that done by Thursday?",
+        );
+
+        let theirs = heard(&store, Source::Them, 10_000, 14_000, THEIRS);
+
+        assert!(theirs.removed.is_empty() && theirs.updated.is_empty());
+    }
+
+    #[test]
+    fn keeps_vocabulary_corrections_in_a_segment_that_lost_echo() {
+        // Invented names only.
+        let store = store();
+        store
+            .set_vocabulary(
+                &crate::vocabulary::Vocabulary::new(vec![crate::vocabulary::Term {
+                    term: "Bluefin Ledger".into(),
+                    heard_as: vec!["blue fin ledger".into()],
+                }])
+                .unwrap(),
+            )
+            .unwrap();
+        heard(
+            &store,
+            Source::Me,
+            10_200,
+            17_000,
+            "we moved the invoices over to the ledger yesterday, okay, send the blue fin ledger totals",
+        );
+
+        heard(&store, Source::Them, 10_000, 14_000, THEIRS);
+
+        let text = |store: &Store| {
+            texts(store)
+                .into_iter()
+                .find(|(s, _)| *s == Source::Me)
+                .unwrap()
+                .1
+        };
+        assert_eq!(text(&store), "okay, send the Bluefin Ledger totals");
+        // Reapplying the vocabulary starts from what Whistle heard, without the echo.
+        store.set_vocabulary(&store.vocabulary().unwrap()).unwrap();
+        assert_eq!(text(&store), "okay, send the Bluefin Ledger totals");
     }
 }
