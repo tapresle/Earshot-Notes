@@ -28,6 +28,23 @@ describe("Markdown", () => {
     expect(html("**Dana** owns `budget.xlsx`")).toBe("<p><strong>Dana</strong> owns <code>budget.xlsx</code></p>");
   });
 
+  it("drops the backslash from escaped punctuation", () => {
+    expect(html("Harbor Street costs \\$48,000 a year")).toBe("<p>Harbor Street costs $48,000 a year</p>");
+    expect(html("\\*\\*not bold\\*\\*")).toBe("<p>**not bold**</p>");
+    expect(html("**\\$5** each")).toBe("<p><strong>$5</strong> each</p>");
+  });
+
+  it("keeps escaped block markers as text", () => {
+    expect(html("\\# not a heading")).toBe("<p># not a heading</p>");
+    expect(html("\\- not a list")).toBe("<p>- not a list</p>");
+  });
+
+  it("keeps a backslash before anything else, and inside code", () => {
+    expect(html("Saved to C:\\Users\\dana")).toBe("<p>Saved to C:\\Users\\dana</p>");
+    expect(html("Run `grep \\$HOME`")).toBe("<p>Run <code>grep \\$HOME</code></p>");
+    expect(html("ends with \\")).toBe("<p>ends with \\</p>");
+  });
+
   it("shows HTML from the model as text instead of markup", () => {
     const output = html('<img src=x onerror="alert(1)"> <script>alert(2)</script>');
 
