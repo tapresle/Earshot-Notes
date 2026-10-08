@@ -106,16 +106,46 @@ function renderBlock(block: Block, key: number): ReactNode {
   }
 }
 
-/** Bold (`**text**`) and inline code (`` `text` ``); everything else is plain text. */
+/** ASCII punctuation, which a backslash escapes in Markdown. */
+const ESCAPABLE = /[!-/:-@[-`{-~]/;
+
+/**
+ * Bold (`**text**`), inline code (`` `text` ``), and backslash escapes such as
+ * `\$48,000`; everything else is plain text. A backslash before punctuation is
+ * dropped, except inside code, so escaped asterisks are never bold markers.
+ */
 function inline(text: string): ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>;
+  const nodes: ReactNode[] = [];
+  let plain = "";
+  const flush = () => {
+    if (plain) nodes.push(<Fragment key={nodes.length}>{plain}</Fragment>);
+    plain = "";
+  };
+  let i = 0;
+  while (i < text.length) {
+    const rest = text.slice(i);
+    if (rest[0] === "\\" && rest.length > 1 && ESCAPABLE.test(rest[1])) {
+      plain += rest[1];
+      i += 2;
+      continue;
     }
-    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
-      return <code key={i}>{part.slice(1, -1)}</code>;
+    const code = /^`([^`]+)`/.exec(rest);
+    if (code) {
+      flush();
+      nodes.push(<code key={nodes.length}>{code[1]}</code>);
+      i += code[0].length;
+      continue;
     }
-    return <Fragment key={i}>{part}</Fragment>;
-  });
+    const bold = /^\*\*((?:\\.|[^*\\])+)\*\*/.exec(rest);
+    if (bold) {
+      flush();
+      nodes.push(<strong key={nodes.length}>{inline(bold[1])}</strong>);
+      i += bold[0].length;
+      continue;
+    }
+    plain += rest[0];
+    i += 1;
+  }
+  flush();
+  return nodes;
 }
