@@ -46,6 +46,17 @@ pub fn transcript_line(segment: &TranscriptSegment) -> String {
     format!("[{stamp}] {speaker}: {}", segment.text)
 }
 
+/// Asks the model to spell the vocabulary's terms exactly. Empty without terms.
+fn terms_section(terms: &[String]) -> String {
+    if terms.is_empty() {
+        return String::new();
+    }
+    format!(
+        "Spell these names and terms exactly as written here, including when the transcript spells them differently: {}.\n\n",
+        terms.join(", ")
+    )
+}
+
 fn notes_section(notes_markdown: &str) -> String {
     let notes = notes_markdown.trim();
     if notes.is_empty() {
@@ -56,28 +67,45 @@ fn notes_section(notes_markdown: &str) -> String {
 }
 
 /// One pass over the whole transcript.
-pub fn summary_messages(title: &str, notes_markdown: &str, transcript: &str) -> Vec<Message> {
+pub fn summary_messages(
+    title: &str,
+    notes_markdown: &str,
+    terms: &[String],
+    transcript: &str,
+) -> Vec<Message> {
     vec![
         Message::system(SYSTEM),
         Message::user(format!(
-            "Meeting: {title}\n\n{}\n\nTranscript:\n<transcript>\n{transcript}\n</transcript>",
+            "Meeting: {title}\n\n{}{}\n\nTranscript:\n<transcript>\n{transcript}\n</transcript>",
+            terms_section(terms),
             notes_section(notes_markdown)
         )),
     ]
 }
 
 /// Condenses one window of a transcript too long for a single pass.
-pub fn part_messages(part: usize, parts: usize, transcript: &str) -> Vec<Message> {
+pub fn part_messages(
+    part: usize,
+    parts: usize,
+    terms: &[String],
+    transcript: &str,
+) -> Vec<Message> {
     vec![
         Message::system(PART_SYSTEM),
         Message::user(format!(
-            "Part {part} of {parts} of the transcript:\n<transcript>\n{transcript}\n</transcript>"
+            "{}Part {part} of {parts} of the transcript:\n<transcript>\n{transcript}\n</transcript>",
+            terms_section(terms)
         )),
     ]
 }
 
 /// The final pass when the transcript was condensed in parts.
-pub fn combine_messages(title: &str, notes_markdown: &str, parts: &[String]) -> Vec<Message> {
+pub fn combine_messages(
+    title: &str,
+    notes_markdown: &str,
+    terms: &[String],
+    parts: &[String],
+) -> Vec<Message> {
     let condensed = parts
         .iter()
         .enumerate()
@@ -87,7 +115,8 @@ pub fn combine_messages(title: &str, notes_markdown: &str, parts: &[String]) -> 
     vec![
         Message::system(SYSTEM),
         Message::user(format!(
-            "Meeting: {title}\n\n{}\n\nThe transcript was long, so here it is condensed in order:\n<transcript>\n{condensed}\n</transcript>",
+            "Meeting: {title}\n\n{}{}\n\nThe transcript was long, so here it is condensed in order:\n<transcript>\n{condensed}\n</transcript>",
+            terms_section(terms),
             notes_section(notes_markdown)
         )),
     ]
@@ -159,7 +188,7 @@ mod tests {
 
     #[test]
     fn includes_notes_title_and_transcript() {
-        let messages = summary_messages("Design sync", "- dark mode first", "[0:01] Me: Hi");
+        let messages = summary_messages("Design sync", "- dark mode first", &[], "[0:01] Me: Hi");
 
         assert_eq!(messages[0].role, "system");
         let user = &messages[1].content;
@@ -169,8 +198,25 @@ mod tests {
     }
 
     #[test]
+    fn asks_for_the_vocabulary_spellings_only_when_there_are_terms() {
+        // Invented names only.
+        let terms = ["Bluefin Ledger".to_owned(), "Corvina".to_owned()];
+
+        let with_terms = &summary_messages("Sync", "", &terms, "[0:01] Me: Hi")[1].content;
+        let part = &part_messages(1, 2, &terms, "[0:01] Me: Hi")[1].content;
+        let combined = &combine_messages("Sync", "", &terms, &["- a".into()])[1].content;
+        let without = &summary_messages("Sync", "", &[], "[0:01] Me: Hi")[1].content;
+
+        for content in [with_terms, part, combined] {
+            assert!(content.contains("exactly as written here"), "{content}");
+            assert!(content.contains("Bluefin Ledger, Corvina."), "{content}");
+        }
+        assert!(!without.contains("exactly as written"));
+    }
+
+    #[test]
     fn says_when_there_are_no_notes() {
-        let user = &summary_messages("Sync", "  \n", "[0:01] Me: Hi")[1].content;
+        let user = &summary_messages("Sync", "  \n", &[], "[0:01] Me: Hi")[1].content;
 
         assert!(user.contains("didn't write any notes"));
         assert!(!user.contains("<notes>"));
@@ -178,7 +224,7 @@ mod tests {
 
     #[test]
     fn combines_condensed_parts_in_order() {
-        let user = &combine_messages("Sync", "", &["- a".into(), "- b".into()])[1].content;
+        let user = &combine_messages("Sync", "", &[], &["- a".into(), "- b".into()])[1].content;
 
         assert!(user.contains("Part 1:\n- a\n\nPart 2:\n- b"));
     }

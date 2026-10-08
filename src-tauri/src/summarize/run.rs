@@ -57,6 +57,8 @@ pub struct Request<'a> {
     pub title: &'a str,
     pub notes_markdown: &'a str,
     pub segments: &'a [TranscriptSegment],
+    /// The vocabulary's terms, spelled as the summary should spell them.
+    pub terms: &'a [String],
 }
 
 /// Summarizes a meeting. Only the final notes stream through `on_text`.
@@ -73,14 +75,19 @@ pub fn summarize(
     let context = generator.context_size();
     let lines: Vec<String> = request.segments.iter().map(transcript_line).collect();
 
-    let single = summary_messages(request.title, request.notes_markdown, &lines.join("\n"));
+    let single = summary_messages(
+        request.title,
+        request.notes_markdown,
+        request.terms,
+        &lines.join("\n"),
+    );
     if fits(generator, &single, MAX_SUMMARY_TOKENS, context)? {
         on_progress(Progress::Writing);
         return generator.generate(&single, MAX_SUMMARY_TOKENS, cancel, on_text);
     }
 
     // Too long for one pass: condense in parts until the parts fit together.
-    let overhead = generator.prompt_tokens(&part_messages(1, 1, ""))?;
+    let overhead = generator.prompt_tokens(&part_messages(1, 1, request.terms, ""))?;
     let budget = context
         .checked_sub(overhead + MAX_PART_TOKENS + MARGIN_TOKENS)
         .filter(|b| *b > 0)
@@ -102,11 +109,12 @@ pub fn summarize(
                 part: i + 1,
                 parts: windows.len(),
             });
-            let messages = part_messages(i + 1, windows.len(), window);
+            let messages = part_messages(i + 1, windows.len(), request.terms, window);
             parts.push(generator.generate(&messages, MAX_PART_TOKENS, cancel, &mut |_| {})?);
         }
 
-        let combined = combine_messages(request.title, request.notes_markdown, &parts);
+        let combined =
+            combine_messages(request.title, request.notes_markdown, request.terms, &parts);
         if fits(generator, &combined, MAX_SUMMARY_TOKENS, context)? {
             on_progress(Progress::Writing);
             return generator.generate(&combined, MAX_SUMMARY_TOKENS, cancel, on_text);
@@ -210,6 +218,7 @@ mod tests {
             title: "Sync",
             notes_markdown: notes,
             segments,
+            terms: &[],
         };
         let result = summarize(
             model,
@@ -290,6 +299,7 @@ mod tests {
             title: "Sync",
             notes_markdown: "- x",
             segments: &segments(3, 5),
+            terms: &[],
         };
 
         let result = summarize(
