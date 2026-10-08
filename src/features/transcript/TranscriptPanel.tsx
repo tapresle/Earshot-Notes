@@ -15,11 +15,17 @@ interface TranscriptPanelProps {
 
 type LoadState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready" };
 
-/** Merges segments by id and keeps them in timeline order. */
-function merge(current: TranscriptSegment[], incoming: TranscriptSegment[]): TranscriptSegment[] {
+/** Merges segments by id, leaves out removed ones, and keeps them in timeline order. */
+function merge(
+  current: TranscriptSegment[],
+  incoming: TranscriptSegment[],
+  removed: ReadonlySet<number>,
+): TranscriptSegment[] {
   const byId = new Map(current.map((s) => [s.id, s]));
   for (const segment of incoming) byId.set(segment.id, segment);
-  return [...byId.values()].sort((a, b) => a.startMs - b.startMs || a.id - b.id);
+  return [...byId.values()]
+    .filter((s) => !removed.has(s.id))
+    .sort((a, b) => a.startMs - b.startMs || a.id - b.id);
 }
 
 export function TranscriptPanel({ meetingId, recording }: TranscriptPanelProps) {
@@ -44,25 +50,34 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
 
   useEffect(() => {
     let cancelled = false;
-    let unlisten: (() => void) | undefined;
+    const stops: (() => void)[] = [];
+    // Echo found after it was shown is removed. Remembered, so a transcript
+    // loaded before the removal can't bring it back.
+    const removed = new Set<number>();
 
     // Subscribe before loading so no segment slips between the two.
-    api
-      .onTranscriptSegment((segment) => {
-        if (!cancelled && segment.meetingId === meetingId) setSegments((s) => merge(s, [segment]));
-      })
-      .then((stop) => (cancelled ? stop() : (unlisten = stop)))
+    Promise.all([
+      api.onTranscriptSegment((segment) => {
+        if (!cancelled && segment.meetingId === meetingId) setSegments((s) => merge(s, [segment], removed));
+      }),
+      api.onTranscriptRemoved((event) => {
+        if (cancelled || event.meetingId !== meetingId) return;
+        event.ids.forEach((id) => removed.add(id));
+        setSegments((s) => merge(s, [], removed));
+      }),
+    ])
+      .then((unlisten) => (cancelled ? unlisten.forEach((stop) => stop()) : stops.push(...unlisten)))
       .then(() => api.listTranscript(meetingId))
       .then((loaded) => {
         if (cancelled) return;
-        setSegments((s) => merge(s, loaded ?? []));
+        setSegments((s) => merge(s, loaded ?? [], removed));
         setState({ kind: "ready" });
       })
       .catch((error) => !cancelled && setState({ kind: "error", message: errorMessage(error) }));
 
     return () => {
       cancelled = true;
-      unlisten?.();
+      stops.forEach((stop) => stop());
     };
   }, [meetingId, attempt]);
 

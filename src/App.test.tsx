@@ -370,6 +370,25 @@ describe("App", () => {
     expect(within(transcript).queryByText("Not for this meeting")).not.toBeInTheDocument();
   });
 
+  it("removes an echo line it already showed", async () => {
+    fakeBackend([seedMeeting(1, "Open")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Open/ }));
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+    const transcript = screen.getByRole("complementary", { name: "Transcript" });
+    await within(transcript).findByText(/Listening/);
+
+    emit("transcript:segment", segment(20, 1, "me", 1300, "I'll send the strings tonight"));
+    emit("transcript:segment", segment(21, 1, "them", 1000, "I'll send the strings tonight."));
+    expect(await within(transcript).findByText("I'll send the strings tonight")).toBeInTheDocument();
+    emit("transcript:removed", { meetingId: 2, ids: [21] });
+    emit("transcript:removed", { meetingId: 1, ids: [20] });
+
+    await waitFor(() => expect(within(transcript).queryByText("I'll send the strings tonight")).not.toBeInTheDocument());
+    expect(within(transcript).getByText("I'll send the strings tonight.")).toBeInTheDocument();
+  });
+
   it("shows transcript empty states", async () => {
     fakeBackend([seedMeeting(1, "Quiet")]);
     const user = userEvent.setup();

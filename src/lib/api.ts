@@ -67,6 +67,11 @@ export interface RecordingIssue extends SourceProblem {
 }
 
 /** A recording started or stopped, from the window or the menu bar. Null means none is running. */
+export interface TranscriptRemoved {
+  meetingId: number;
+  ids: number[];
+}
+
 export interface RecordingChanged {
   meetingId: number | null;
 }
@@ -271,6 +276,9 @@ export const api = {
   listTranscript: (meetingId: number) => invoke<TranscriptSegment[]>("list_transcript", { meetingId }),
   onTranscriptSegment: (handler: (segment: TranscriptSegment) => void): Promise<UnlistenFn> =>
     listen<TranscriptSegment>("transcript:segment", (event) => handler(event.payload)),
+  /** Segments removed after they were shown, such as echo found once its source arrived. */
+  onTranscriptRemoved: (handler: (removed: TranscriptRemoved) => void): Promise<UnlistenFn> =>
+    listen<TranscriptRemoved>("transcript:removed", (event) => handler(event.payload)),
   onRecordingIssue: (handler: (issue: RecordingIssue) => void): Promise<UnlistenFn> =>
     listen<RecordingIssue>("recording:issue", (event) => handler(event.payload)),
   onRecordingChanged: (handler: (change: RecordingChanged) => void): Promise<UnlistenFn> =>
