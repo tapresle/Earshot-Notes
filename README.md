@@ -1,79 +1,76 @@
 # Earshot Notes
 
-Earshot Notes is a meeting notes app that runs entirely on your Mac. It transcribes your microphone and the other side of your calls with [Cactus Whistle](https://huggingface.co/Cactus-Compute/whistle), gives you a notepad during the meeting, and on request turns your notes and the transcript into meeting notes with a local language model through [llama.cpp](https://github.com/ggml-org/llama.cpp). Nothing leaves your computer. The only network request is the optional, one-time model download you start yourself.
+**Meeting notes that never leave your Mac.**
 
-Learn more at [earshotnotes.com](https://earshotnotes.com).
+Earshot Notes transcribes your calls, gives you a notepad while you talk, and turns your notes and the transcript into meeting notes. All of it runs on your Mac.
 
-## Requirements
+**[Download the latest release](https://github.com/tapresle/Earshot-Notes/releases/latest)** for Macs with Apple Silicon and macOS 26 or later.
 
-- A Mac with Apple Silicon running macOS 26 or later
-- Xcode, Rust, Node.js, and CMake to build
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/meeting-dark.png">
+  <img alt="Earshot Notes showing a meeting's notes beside its live transcript" src="docs/screenshots/meeting-light.png">
+</picture>
 
-## Build and install
+## Private by design
 
-1. Fetch the native engine and models (checksums are verified):
+Your meetings stay on your Mac.
 
-   ```bash
-   ./scripts/fetch-native.sh
-   ```
+- **On-device:** transcription and summaries run on your Mac. Audio, transcripts, notes, and summaries are stored on it and nowhere else.
+- **Nothing to sign up for:** no account, no cloud service, no subscription, and no analytics. The app's logs stay on your Mac too.
+- **Works offline:** once a summary model is downloaded, Earshot Notes makes no network requests. The only one it ever makes is the model download you start.
+- **No recordings by default:** audio is transcribed and discarded. It's kept only if you turn on **Keep audio recordings** in **Settings**.
 
-2. Install JavaScript dependencies:
+## How it's different
 
-   ```bash
-   npm install
-   ```
+| Most AI note takers | Earshot Notes |
+|---|---|
+| Upload your audio to their servers | Transcribes and summarizes on your Mac |
+| Need an account and a subscription | Needs neither |
+| Use whichever model the vendor picked | Lets you choose the model, or bring your own |
+| Stop working without a connection | Works offline once a model is downloaded |
 
-3. Build the signed app and disk image:
+## What it does
 
-   ```bash
-   ./scripts/build-macos.sh
-   ```
+- **Both sides of the call:** a live transcript of your microphone and the other participants, labeled **Me** and **Meeting Participants**.
+- **A notepad during the meeting:** type rough notes as you go. They become the outline of the summary.
+- **Summaries on request:** during or after the meeting, notes grouped by topic, with the specifics kept and next steps with their owners.
+- **Your vocabulary:** list the names your meetings use, and what transcription mishears them as, so transcripts and summaries spell them right.
+- **Find and export:** search titles, notes, and transcripts, and export any meeting to Markdown. Untitled meetings are named from their summaries.
+- **Out of the way:** Earshot Notes lives in the menu bar, keeps recording with its window closed, and can open at login.
 
-4. Open `src-tauri/target/release/bundle/dmg/Earshot Notes_<version>_aarch64.dmg` and drag the app to **Applications**. If an older version named `Earshot.app` is installed, delete it: both use the same meetings and models, so don't run them at the same time.
+## Bring your own models
 
-For development, run `npm run tauri dev` instead. `AGENTS.md` lists every build and test command.
+You decide which model writes your notes.
 
-Release notes for each version are in [`docs/releases`](docs/releases).
+- **Choose from the list:** in **Settings**, download Gemma 4 E2B (recommended), Phi-4 mini, Qwen3 4B Instruct, Gemma 4 E4B, Qwen3 8B, Ministral 3 8B, or Ministral 3 14B. Each download is pinned to a checksum and verified before use.
+- **Or import your own:** import any GGUF model file you already have.
+- **Built for Apple Silicon:** summaries run through [llama.cpp](https://github.com/ggml-org/llama.cpp) with Metal. Every listed model is sized to leave room for your call on a Mac with 16 GB of memory.
+- **Transcription included:** [Cactus Whistle](https://huggingface.co/Cactus-Compute/whistle) comes with the app, so transcription works from the first launch. Support for other transcription models is planned.
 
-## Signing
+## How it works
 
-`scripts/build-macos.sh` signs the app with the first of these it finds:
+1. Earshot Notes listens to your microphone and to your Mac's audio output.
+2. Whistle transcribes each source on your Mac as you talk.
+3. When you ask for a summary, your notes and the transcript go to the local model you chose.
+4. The model writes your meeting notes, which stay on your Mac with the transcript.
 
-1. The identity in `APPLE_SIGNING_IDENTITY`, if you set it.
-2. A "Developer ID Application" or "Apple Development" certificate in your keychain.
-3. An ad-hoc signature.
+## Get started
 
-A free **Apple Development** certificate is enough for your own Mac. To create one, open Xcode, choose **Xcode** > **Settings** > **Accounts**, sign in with your Apple ID, select your **Personal Team**, click **Manage Certificates**, and add an **Apple Development** certificate. If `security find-identity -v -p codesigning` reports no valid identities afterward, install Apple's [Worldwide Developer Relations G3 intermediate certificate](https://www.apple.com/certificateauthority/).
+1. Check that your Mac has Apple Silicon and macOS 26 or later.
+2. Download the disk image from the [latest release](https://github.com/tapresle/Earshot-Notes/releases/latest), open it, and drag **Earshot Notes** to **Applications**.
+3. Open Earshot Notes. A checklist asks for two permissions:
+   - **Microphone:** for your side of the conversation.
+   - **Screen & System Audio Recording:** for the other side of your calls. Earshot Notes records only audio, never your screen. If you decline, recording continues with only your microphone.
+4. Download a summary model from the checklist or from **Settings**. Gemma 4 E2B, the recommended model, is 3.1 GB.
 
-With an ad-hoc signature the app also runs, but macOS treats each build as a new app, so it asks for microphone and audio recording permission again after every rebuild.
+What's new in each version is on the [releases page](https://github.com/tapresle/Earshot-Notes/releases).
 
-### Running the app on another Mac
+## Build from source
 
-Releases are notarized, so the disk image from a GitHub release opens on any Mac with Apple Silicon and macOS 26.
-
-A build you make yourself is notarized only when it's signed with a **Developer ID Application** certificate and you set notarization credentials before running `scripts/build-macos.sh`. Use an App Store Connect API key (`APPLE_API_KEY`, `APPLE_API_ISSUER`, and `APPLE_API_KEY_PATH`), or an Apple ID (`APPLE_ID`, `APPLE_PASSWORD` as an app-specific password, and `APPLE_TEAM_ID`). The script then notarizes and staples both the app and the disk image, and checks them with Gatekeeper.
-
-Otherwise the build isn't notarized, and Gatekeeper blocks it on other Macs. Open it once, then choose **System Settings** > **Privacy & Security** > **Open Anyway**, or remove the quarantine flag:
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/Earshot Notes.app"
-```
-
-## Permissions
-
-On first launch, a checklist walks you through these:
-
-- **Microphone:** needed for your side of the conversation.
-- **Screen & System Audio Recording:** needed for the other side of your calls. The checklist asks for it up front. If you decline, recording continues with only your microphone and says how to turn it on.
-
-If recording goes silent after you install a new build, open **System Settings** > **Privacy & Security**, and turn **Earshot Notes** off and on again under **Microphone** and **Screen & System Audio Recording**.
-
-## Summaries
-
-Summaries need a local model. In **Settings**, or on a meeting's **Summary** tab, download the recommended model (Gemma 4 E2B, 3.1 GB) or one of the alternatives (Qwen3 4B Instruct, Phi-4 mini, Gemma 4 E4B, Qwen3 8B, Ministral 3 8B, or Ministral 3 14B), or import any GGUF file you already have. Downloads resume if interrupted and are verified against a pinned SHA-256 checksum before use. To free disk space, click **Remove** next to an installed model in **Settings**.
+With Xcode, Rust, Node.js, and CMake installed, run `./scripts/fetch-native.sh`, `npm install`, and `./scripts/build-macos.sh`. [Building Earshot Notes](docs/building.md) covers each step, signing, and notarizing.
 
 ## License
 
-Earshot Notes is free software, licensed under the [GNU General Public License, version 3](LICENSE) only (`GPL-3.0-only`). You can use, study, change, and share it. If you distribute a modified version, you must make its source available under the same license.
+Earshot Notes is free software, licensed under the [GNU General Public License, version 3](LICENSE) only (`GPL-3.0-only`).
 
-The app bundles the needle engine and Whistle model (Apache 2.0) and links llama.cpp (MIT), both compatible with GPL 3.0. The `needle-sys` crate, which includes needle's C header, stays under Apache 2.0. All of these license texts, including Earshot's, are in the app bundle under `Contents/Resources/licenses`, along with `third-party-notices.txt`, which holds the license notices for every Rust crate and JavaScript package compiled into the app.
+It bundles the needle engine and the Whistle model (Apache 2.0) and links llama.cpp (MIT). Their licenses, and the notices for every Rust crate and JavaScript package compiled into the app, are in the app bundle under `Contents/Resources/licenses`.
