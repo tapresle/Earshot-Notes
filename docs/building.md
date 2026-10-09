@@ -9,7 +9,7 @@ To build Earshot Notes from source, you need:
 
 ## Build and install
 
-1. Fetch the native engine and models (checksums are verified):
+1. Fetch the native engine and models (checksums are verified), and build whisper.cpp from source:
 
    ```bash
    ./scripts/fetch-native.sh

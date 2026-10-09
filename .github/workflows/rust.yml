@@ -12,6 +12,7 @@ on:
     paths:
       - "src-tauri/**"
       - "scripts/fetch-native.sh"
+      - "scripts/build-whisper.sh"
       - ".github/workflows/rust.yml"
   workflow_dispatch:
 
@@ -43,17 +44,19 @@ jobs:
           rustup default stable
           rustup component add clippy rustfmt
           echo "rustc=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
-      # Keyed on the pins in the script, so a changed pin refetches. The script
-      # verifies every file's checksum either way.
-      - name: Cache native engine and models
+      # Keyed on the pins in the scripts and the whisper.cpp interface, so a
+      # change refetches or rebuilds. fetch-native.sh verifies every file's
+      # checksum either way.
+      - name: Cache native engines and models
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             src-tauri/vendor/needle/macos-arm64/libneedle.a
+            src-tauri/vendor/whisper/macos-arm64
             src-tauri/resources/models/whistle.cact
             src-tauri/tests/models
-          key: native-${{ hashFiles('scripts/fetch-native.sh') }}
-      - name: Fetch native engine and models
+          key: native-${{ hashFiles('scripts/fetch-native.sh', 'scripts/build-whisper.sh', 'src-tauri/crates/whisper-sys/native/**') }}
+      - name: Fetch native engines and models, and build whisper.cpp
         run: ../scripts/fetch-native.sh
       - name: Cache cargo registry and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
