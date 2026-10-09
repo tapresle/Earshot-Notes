@@ -89,20 +89,22 @@ impl Recorder {
 }
 
 /// Starts every source it can and records the meeting if at least one works.
+/// `transcription` is the worker and the engine for this recording's segments,
+/// or why transcription is unavailable.
 /// The meeting is marked as recording only after a capture is running, so a
 /// failed start leaves it unchanged.
 pub fn start_recording(
     store: &Store,
     recorder: &Recorder,
-    worker: Result<&TranscriptionWorker, &str>,
+    transcription: Result<(&TranscriptionWorker, Engine), &str>,
     meeting_id: i64,
     sources: Vec<(Source, CaptureStarter)>,
     on_issue: IssueSink,
     recordings: &Recordings,
 ) -> Result<StartReport, RecordingError> {
-    let worker = worker
-        .map_err(|reason| RecordingError::TranscriptionUnavailable(reason.to_owned()))?
-        .clone();
+    let (worker, engine) = transcription
+        .map(|(worker, engine)| (worker.clone(), engine))
+        .map_err(|reason| RecordingError::TranscriptionUnavailable(reason.to_owned()))?;
     let mut active = recorder.lock();
     if let Some(current) = active.as_ref() {
         return Err(RecordingError::AlreadyRecording(current.meeting_id));
@@ -151,7 +153,8 @@ pub fn start_recording(
     let mut pipelines = Vec::new();
     for (source, capture, format, resampler, frames, sensitivity) in started {
         let config = Pipeline::new(source, meeting_id, offset_ms, sensitivity)
-            .with_keywords(keywords.clone());
+            .with_keywords(keywords.clone())
+            .with_engine(engine.clone());
         log::info!(
             "{source:?} speech sensitivity is {sensitivity:?} (floor {} RMS)",
             config.min_speech_rms
@@ -246,6 +249,8 @@ pub struct Pipeline {
     pub min_speech_rms: f32,
     /// Vocabulary terms that bias transcription, one per line.
     pub keywords: Option<Arc<CString>>,
+    /// The model that transcribes this pipeline's segments.
+    pub engine: Engine,
 }
 
 impl Pipeline {
@@ -261,12 +266,19 @@ impl Pipeline {
             offset_ms,
             min_speech_rms,
             keywords: None,
+            engine: Engine::Whistle,
         }
     }
 
     /// Biases this pipeline's transcription toward `keywords`.
     pub fn with_keywords(mut self, keywords: Option<Arc<CString>>) -> Self {
         self.keywords = keywords;
+        self
+    }
+
+    /// Transcribes this pipeline's segments with `engine`.
+    pub fn with_engine(mut self, engine: Engine) -> Self {
+        self.engine = engine;
         self
     }
 }
@@ -290,6 +302,7 @@ pub fn run_pipeline(
         offset_ms,
         min_speech_rms,
         keywords,
+        engine,
     } = pipeline;
     let mut chunker = Chunker::new(min_speech_rms);
     let mut emit = |segment: crate::chunker::Segment| {
@@ -301,7 +314,7 @@ pub fn run_pipeline(
             samples: segment.samples,
             speech: segment.speech,
             keywords: keywords.clone(),
-            engine: Engine::Whistle,
+            engine: engine.clone(),
         });
     };
     let mut push = |samples: &[f32]| {
@@ -659,7 +672,7 @@ mod tests {
         assert_eq!(jobs_at(Source::Me, Sensitivity::Normal, &audio), 1);
     }
 
-    fn worker_unavailable() -> Result<&'static TranscriptionWorker, &'static str> {
+    fn worker_unavailable() -> Result<(&'static TranscriptionWorker, Engine), &'static str> {
         Err("no model")
     }
 
@@ -707,7 +720,7 @@ mod tests {
         let report = start_recording(
             &store,
             &recorder,
-            Ok(&worker),
+            Ok((&worker, Engine::Whistle)),
             meeting.id,
             mic_only(fake_capture(buffers)),
             ignore_issues(),
@@ -734,6 +747,31 @@ mod tests {
     }
 
     #[test]
+    fn transcribes_the_recording_with_its_engine() {
+        let store = Store::open_in_memory().unwrap();
+        let meeting = store.create_meeting("Sync").unwrap();
+        let recorder = Recorder::default();
+        let (worker, jobs) = worker();
+        let buffers = stereo_buffers(&[silence(500), tone(1000)].concat());
+        let whisper = Engine::Whisper(Arc::new(std::path::PathBuf::from("models/ggml-model.bin")));
+
+        start_recording(
+            &store,
+            &recorder,
+            Ok((&worker, whisper.clone())),
+            meeting.id,
+            mic_only(fake_capture(buffers)),
+            ignore_issues(),
+            &no_recordings(),
+        )
+        .unwrap();
+        stop_recording(&store, &recorder).unwrap();
+
+        let job = jobs.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(job.engine, whisper);
+    }
+
+    #[test]
     fn the_next_recording_uses_the_stored_sensitivity() {
         let store = Store::open_in_memory().unwrap();
         let meeting = store.create_meeting("Quiet").unwrap();
@@ -743,7 +781,7 @@ mod tests {
             start_recording(
                 &store,
                 &recorder,
-                Ok(&worker),
+                Ok((&worker, Engine::Whistle)),
                 meeting.id,
                 mic_only(fake_capture(stereo_buffers(audio))),
                 ignore_issues(),
@@ -782,7 +820,7 @@ mod tests {
         start_recording(
             &store,
             &recorder,
-            Ok(&worker),
+            Ok((&worker, Engine::Whistle)),
             meeting.id,
             vec![
                 (Source::Me, fake_capture(me)),
@@ -813,7 +851,7 @@ mod tests {
         let report = start_recording(
             &store,
             &recorder,
-            Ok(&worker),
+            Ok((&worker, Engine::Whistle)),
             meeting.id,
             vec![
                 (Source::Me, fake_capture(vec![])),
@@ -848,7 +886,7 @@ mod tests {
         let result = start_recording(
             &store,
             &recorder,
-            Ok(&worker),
+            Ok((&worker, Engine::Whistle)),
             meeting.id,
             vec![
                 (
@@ -906,7 +944,7 @@ mod tests {
         start_recording(
             &store,
             &recorder,
-            Ok(&worker),
+            Ok((&worker, Engine::Whistle)),
             meeting.id,
             mic_only(unplugged),
             on_issue,
@@ -931,7 +969,7 @@ mod tests {
         start_recording(
             &store,
             &recorder,
-            Ok(&worker),
+            Ok((&worker, Engine::Whistle)),
             first.id,
             mic_only(fake_capture(vec![])),
             ignore_issues(),
@@ -942,7 +980,7 @@ mod tests {
         let result = start_recording(
             &store,
             &recorder,
-            Ok(&worker),
+            Ok((&worker, Engine::Whistle)),
             second.id,
             mic_only(fake_capture(vec![])),
             ignore_issues(),
@@ -984,7 +1022,7 @@ mod tests {
         start_recording(
             store,
             &recorder,
-            Ok(&worker),
+            Ok((&worker, Engine::Whistle)),
             meeting_id,
             vec![
                 (Source::Me, fake_capture(stereo_buffers(me))),

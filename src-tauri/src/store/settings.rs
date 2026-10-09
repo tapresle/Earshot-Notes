@@ -14,6 +14,12 @@ pub const MIC_SENSITIVITY: &str = "mic_speech_sensitivity";
 pub const SYSTEM_SENSITIVITY: &str = "system_speech_sensitivity";
 /// The vocabulary's terms as JSON (`vocabulary::Term`).
 pub const VOCABULARY: &str = "vocabulary";
+/// The transcription model for new recordings, by id; absent means Whistle.
+pub const TRANSCRIPTION_MODEL: &str = "transcription_model";
+/// Whether the suggestion to download Whisper was dismissed; "dismissed" if so.
+pub const WHISPER_SUGGESTION: &str = "whisper_suggestion";
+/// The stored value of `WHISPER_SUGGESTION` once dismissed.
+pub const DISMISSED: &str = "dismissed";
 
 /// The setting that holds a source's speech sensitivity.
 pub fn sensitivity_key(source: Source) -> &'static str {

@@ -292,11 +292,10 @@ mod worker {
 
     /// Runs one speech job on `engine` and returns the engine that transcribed
     /// it, with its text.
-    fn transcribe_on(engine: Engine, whisper_enabled: bool) -> (Engine, String) {
+    fn transcribe_on(engine: Engine) -> (Engine, String) {
         let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
         let (results_tx, results) = mpsc::channel();
         let options = WorkerOptions {
-            whisper_enabled,
             use_gpu: std::env::var("EARSHOT_TEST_CPU").as_deref() != Ok("1"),
             ..WorkerOptions::default()
         };
@@ -327,22 +326,12 @@ mod worker {
     }
 
     #[test]
-    fn transcribes_a_whisper_job_with_whisper_when_enabled() {
+    fn transcribes_a_whisper_job_with_whisper() {
         let model = Engine::Whisper(Arc::new(PathBuf::from(WHISPER_MODEL)));
 
-        let (engine, text) = transcribe_on(model.clone(), true);
+        let (engine, text) = transcribe_on(model.clone());
 
         assert_eq!(engine, model);
-        assert!(normalize(&text).contains("budget report"), "{text}");
-    }
-
-    #[test]
-    fn transcribes_a_whisper_job_with_whistle_when_whisper_is_off() {
-        let model = Engine::Whisper(Arc::new(PathBuf::from(WHISPER_MODEL)));
-
-        let (engine, text) = transcribe_on(model, false);
-
-        assert_eq!(engine, Engine::Whistle);
         assert!(normalize(&text).contains("budget report"), "{text}");
     }
 
@@ -374,7 +363,7 @@ mod worker {
     fn falls_back_to_whistle_when_the_whisper_model_wont_load() {
         let missing = Engine::Whisper(Arc::new(PathBuf::from("nowhere/ggml-model.bin")));
 
-        let (engine, text) = transcribe_on(missing, true);
+        let (engine, text) = transcribe_on(missing);
 
         assert_eq!(engine, Engine::Whistle);
         assert!(normalize(&text).contains("budget report"), "{text}");

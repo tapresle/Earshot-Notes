@@ -6,8 +6,8 @@ use tauri::{AppHandle, Emitter, State};
 
 use super::summaries::models_dir;
 use super::{CommandError, CommandResult, ErrorKind, blocking, open_with_system};
-use crate::models::download::{HttpFetch, Phase, partial_path};
-use crate::models::manager::{DownloadEvent, Downloads, StartError};
+use crate::models::download::{HttpFetch, Phase, download, partial_path};
+use crate::models::manager::{DownloadEvent, Downloads, EventSink, StartError};
 use crate::models::{self, GEMMA_4_E2B, KNOWN_MODELS, KnownModel};
 use crate::store::Store;
 
@@ -125,36 +125,46 @@ pub fn download_model(
             message: format!("there's no downloadable model called {model_id}"),
         })?;
     let dir = models_dir(&app)?;
+    let store = Arc::clone(&store);
+    let fetch = HttpFetch::default();
+    downloads.start(
+        model,
+        Box::new(move |cancel, progress| download(model, &dir, &store, &fetch, cancel, progress)),
+        event_sink(&app, "model", |model| json!({ "model": model })),
+    )?;
+    Ok(())
+}
+
+/// Sends a download's events to the UI as `<prefix>:download-progress`,
+/// `<prefix>:download-done` (with `done`'s payload), and `<prefix>:download-failed`.
+pub(super) fn event_sink<T: 'static>(
+    app: &AppHandle,
+    prefix: &'static str,
+    done: fn(T) -> serde_json::Value,
+) -> EventSink<T> {
     let handle = app.clone();
-    let sink = Arc::new(move |event: DownloadEvent| {
+    Arc::new(move |event: DownloadEvent<T>| {
         let (name, payload) = match event {
             DownloadEvent::Progress { model_id, phase } => {
                 let mut payload = serde_json::to_value(phase).unwrap_or_default();
                 payload["modelId"] = json!(model_id);
-                ("model:download-progress", payload)
+                ("download-progress", payload)
             }
-            DownloadEvent::Done { model } => ("model:download-done", json!({ "model": model })),
+            DownloadEvent::Done(result) => ("download-done", done(result)),
             DownloadEvent::Failed {
                 model_id,
                 message,
                 cancelled,
             } => (
-                "model:download-failed",
+                "download-failed",
                 json!({ "modelId": model_id, "message": message, "cancelled": cancelled }),
             ),
         };
-        if let Err(error) = handle.emit(name, payload) {
+        let name = format!("{prefix}:{name}");
+        if let Err(error) = handle.emit(&name, payload) {
             log::warn!("couldn't send {name} to the UI: {error}");
         }
-    });
-    downloads.start(
-        model,
-        dir,
-        Arc::clone(&store),
-        Arc::new(HttpFetch::default()),
-        sink,
-    )?;
-    Ok(())
+    })
 }
 
 #[tauri::command]

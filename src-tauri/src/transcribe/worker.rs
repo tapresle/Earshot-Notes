@@ -9,7 +9,6 @@ use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
 
-use super::WHISPER_ENABLED;
 use super::phantom::is_phantom;
 use super::whisper::Whisper;
 use super::whistle::{Transcription, Whistle, WhistleError};
@@ -46,8 +45,6 @@ pub enum Engine {
 /// How the worker runs.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WorkerOptions {
-    /// Whether jobs may run on Whisper. When false, they run on Whistle.
-    pub whisper_enabled: bool,
     /// Whether Whisper runs on the GPU. Tests on CI turn it off.
     pub use_gpu: bool,
     /// How long Whisper stays loaded with no jobs. It takes most of a
@@ -58,7 +55,6 @@ pub struct WorkerOptions {
 impl Default for WorkerOptions {
     fn default() -> Self {
         Self {
-            whisper_enabled: WHISPER_ENABLED,
             use_gpu: true,
             whisper_idle: Duration::from_secs(5 * 60),
         }
@@ -246,7 +242,8 @@ impl Queue {
 struct Engines {
     whistle: Whistle,
     whisper: Option<(Arc<PathBuf>, Whisper)>,
-    /// A Whisper model that failed to load, so later jobs don't retry it.
+    /// A Whisper model that failed to load, so later jobs in the same meeting
+    /// don't retry it.
     failed: Option<Arc<PathBuf>>,
     options: WorkerOptions,
 }
@@ -262,8 +259,8 @@ impl Engines {
     }
 
     /// Transcribes on the job's engine. A Whisper job runs on Whistle instead
-    /// when Whisper is switched off or its model won't load, so the meeting is
-    /// still transcribed; `job.engine` then says Whistle.
+    /// when its model won't load, so the meeting is still transcribed;
+    /// `job.engine` then says Whistle.
     fn transcribe(&mut self, job: &mut Job) -> Result<Transcription, String> {
         let samples = std::mem::take(&mut job.samples);
         if let Engine::Whisper(model) = &job.engine {
@@ -287,7 +284,7 @@ impl Engines {
 
     /// The loaded Whisper model at `model`, loading it first if needed.
     fn whisper(&mut self, model: &Arc<PathBuf>) -> Option<&mut Whisper> {
-        if !self.options.whisper_enabled || self.failed.as_ref() == Some(model) {
+        if self.failed.as_ref() == Some(model) {
             return None;
         }
         if self
@@ -313,7 +310,10 @@ impl Engines {
         }
     }
 
+    /// Frees Whisper between meetings, and forgets a model that failed to
+    /// load, so the next meeting tries it again (it may have been downloaded again).
     fn unload_whisper(&mut self) {
+        self.failed = None;
         if self.whisper.take().is_some() {
             log::info!(
                 "unloaded Whisper after {:?} without jobs",
