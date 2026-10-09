@@ -10,3 +10,4 @@
 /vendor/needle/*/libneedle.a
 /resources/models/*.cact
 /tests/models/*.gguf
+/tests/models/*.bin
