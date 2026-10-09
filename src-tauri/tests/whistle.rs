@@ -304,6 +304,8 @@ mod worker {
                 results_tx.send((job.engine, t.text)).unwrap();
             })
             .unwrap();
+        // As a recording does when it starts.
+        worker.preload(&engine);
         worker
             .submit(Job {
                 meeting_id: 1,

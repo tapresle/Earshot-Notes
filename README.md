@@ -17,7 +17,7 @@ Your meetings stay on your Mac.
 
 - **On-device:** transcription and summaries run on your Mac. Audio, transcripts, notes, and summaries are stored on it and nowhere else.
 - **Nothing to sign up for:** no account, no cloud service, no subscription, and no analytics. The app's logs stay on your Mac too.
-- **Works offline:** once a summary model is downloaded, Earshot Notes makes no network requests. The only one it ever makes is the model download you start.
+- **Works offline:** once a summary model is downloaded, Earshot Notes makes no network requests. The only ones it ever makes are the model downloads you start.
 - **No recordings by default:** audio is transcribed and discarded. It's kept only if you turn on **Keep audio recordings** in **Settings**.
 
 ## How it's different
@@ -38,19 +38,32 @@ Your meetings stay on your Mac.
 - **Find and export:** search titles, notes, and transcripts, and export any meeting to Markdown. Untitled meetings are named from their summaries.
 - **Out of the way:** Earshot Notes lives in the menu bar, keeps recording with its window closed, and can open at login.
 
-## Bring your own models
+## Choose your transcription model
+
+Two models transcribe on your Mac. Choose one in **Settings** > **Transcription**; the choice applies from the next recording.
+
+| | Whistle | Whisper large-v3-turbo |
+|---|---|---|
+| **Get it** | Included, and works from the first launch | A 574 MB download from **Settings** |
+| **Accuracy** | Good with clear audio, such as your own microphone | About half the errors, and far more technical terms right |
+| **The other side of a call** | Struggles when the call app reduces audio to phone quality | Much better |
+| **Speed and memory** | Very fast, a fraction of a second per phrase, and very little memory | About 40 times faster than real time on Apple Silicon, under 1 GB of memory |
+| **Your vocabulary** | Listens for your terms as it transcribes | Doesn't listen for terms; **Heard as** corrections and summary spellings still apply |
+
+Whistle is the default. After your first recording, Earshot Notes suggests Whisper large-v3-turbo; the measurements are in [the transcription model comparison](docs/benchmarks/20261009-transcription-models.md).
+
+## Bring your own summary model
 
 You decide which model writes your notes.
 
 - **Choose from the list:** in **Settings**, download Gemma 4 E2B (recommended), Phi-4 mini, Qwen3 4B Instruct, Gemma 4 E4B, Qwen3 8B, Ministral 3 8B, or Ministral 3 14B. Each download is pinned to a checksum and verified before use.
 - **Or import your own:** import any GGUF model file you already have.
 - **Built for Apple Silicon:** summaries run through [llama.cpp](https://github.com/ggml-org/llama.cpp) with Metal. Every listed model is sized to leave room for your call on a Mac with 16 GB of memory.
-- **Transcription included:** [Cactus Whistle](https://huggingface.co/Cactus-Compute/whistle) comes with the app, so transcription works from the first launch. Support for other transcription models is planned.
 
 ## How it works
 
 1. Earshot Notes listens to your microphone and to your Mac's audio output.
-2. Whistle transcribes each source on your Mac as you talk.
+2. Whistle or Whisper transcribes each source on your Mac as you talk.
 3. When you ask for a summary, your notes and the transcript go to the local model you chose.
 4. The model writes your meeting notes, which stay on your Mac with the transcript.
 
@@ -73,4 +86,4 @@ With Xcode, Rust, Node.js, and CMake installed, run `./scripts/fetch-native.sh`,
 
 Earshot Notes is free software, licensed under the [GNU General Public License, version 3](LICENSE) only (`GPL-3.0-only`).
 
-It bundles the needle engine and the Whistle model (Apache 2.0) and links llama.cpp (MIT). Their licenses, and the notices for every Rust crate and JavaScript package compiled into the app, are in the app bundle under `Contents/Resources/licenses`.
+It bundles the needle engine and the Whistle model (Apache 2.0), links llama.cpp (MIT), and bundles whisper.cpp (MIT). [Cactus Whistle](https://huggingface.co/Cactus-Compute/whistle) is included; [Whisper large-v3-turbo](https://huggingface.co/ggerganov/whisper.cpp) (MIT) downloads when you ask. Their licenses, and the notices for every Rust crate and JavaScript package compiled into the app, are in the app bundle under `Contents/Resources/licenses`.

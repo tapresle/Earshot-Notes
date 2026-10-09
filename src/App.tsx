@@ -204,7 +204,11 @@ export default function App() {
           ))}
       </main>
 
-      <TranscriptPanel meetingId={selectedId} recording={selectedId !== null && selectedId === recordingMeetingId} />
+      <TranscriptPanel
+        meetingId={selectedId}
+        recording={selectedId !== null && selectedId === recordingMeetingId}
+        onOpenSettings={() => setView("settings")}
+      />
     </div>
   );
 }

@@ -70,7 +70,7 @@ impl From<RemoveError> for CommandError {
     }
 }
 
-const WHISTLE_DESCRIPTION: &str = "Included. Fast and light, and works from the first launch.";
+const WHISTLE_DESCRIPTION: &str = "Fast and light, and works from the first launch.";
 
 #[tauri::command]
 pub async fn transcription_models(

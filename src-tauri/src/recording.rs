@@ -148,6 +148,7 @@ pub fn start_recording(
         return Err(RecordingError::NoAudio(report.unavailable));
     }
     store.begin_recording(meeting_id)?;
+    worker.preload(&engine);
 
     let mut captures = Vec::new();
     let mut pipelines = Vec::new();
@@ -767,6 +768,10 @@ mod tests {
         .unwrap();
         stop_recording(&store, &recorder).unwrap();
 
+        assert_eq!(
+            jobs.preload(Duration::from_secs(5)).map(Engine::Whisper),
+            Some(whisper.clone())
+        );
         let job = jobs.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(job.engine, whisper);
     }

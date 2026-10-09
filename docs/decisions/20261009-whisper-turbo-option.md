@@ -9,7 +9,7 @@ Whistle, bundled with Earshot Notes through the needle engine, is tiny and fast 
 
 ## Decision
 
-Offer Whisper large-v3-turbo (`ggml-large-v3-turbo-q5_0.bin`, 547 MB) as an optional download, run through whisper.cpp built from source at a pinned release. Whistle stays bundled and the default, so transcription works from the first launch.
+Offer Whisper large-v3-turbo (`ggml-large-v3-turbo-q5_0.bin`, 574 MB) as an optional download, run through whisper.cpp built from source at a pinned release. Whistle stays bundled and the default, so transcription works from the first launch.
 
 ## Evidence
 
@@ -25,12 +25,12 @@ From [`docs/benchmarks/20261009-transcription-models.md`](../benchmarks/20261009
 - **Cactus's main engine (Whisper, Moonshine, and Parakeet as Cactus publishes them):** its license limits use to individuals, small organizations, education, and non-profits, so it can't ship in GPL-3.0-only Earshot. Only Whistle runs on needle.
 - **FluidAudio (Parakeet on Apple's Neural Engine):** fast and Apache 2.0, but Apple platforms only. Windows and Linux would need a second engine.
 - **sherpa-onnx (Parakeet, Whisper, and more):** cross-platform and Apache 2.0, but ships ONNX Runtime, a large dependency. Kept in reserve if Whisper had disappointed.
-- **Whisper small:** 181 MB and about 3.5 times faster on the CPU, but makes noticeably more errors (17.6% and 19.4%). Not offered on the Mac; revisit as the fallback for Windows and Linux machines whose CPUs can't keep up with turbo.
-- **Whisper as the default:** more accurate, but a 547 MB download would stand between installing the app and the first recording. The app suggests it instead.
+- **Whisper small:** 190 MB and about 3.5 times faster on the CPU, but makes noticeably more errors (17.6% and 19.4%). Not offered on the Mac; revisit as the fallback for Windows and Linux machines whose CPUs can't keep up with turbo.
+- **Whisper as the default:** more accurate, but a 574 MB download would stand between installing the app and the first recording. The app suggests it instead.
 
 ## Consequences
 
-- whisper.cpp (MIT) becomes a native dependency, built from source per platform, with a small C interface and a binding like `needle-sys`. Its license and Whisper's (MIT) join the bundled notices.
+- whisper.cpp (MIT) becomes a native dependency, built from source per platform, with a small C interface and a binding like `needle-sys`. Its license joins the bundled notices. The Whisper weights (MIT) aren't bundled; they download from Hugging Face like the summary models.
 - whisper.cpp and llama.cpp each include ggml, and two copies can't be linked into one binary. whisper.cpp is built into its own dynamic library that exports only Earshot's C interface, bundled in the app and opened when Whisper is first used. The library adds about 6.6 MB to the app.
 - The model is downloaded, pinned, and verified like the summary models, and chosen in **Settings**.
 - Whisper has no keyword biasing, so the vocabulary's terms aren't sent to it; a prompt of terms measured slightly worse. **Heard as** corrections and summary spellings still apply.

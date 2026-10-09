@@ -10,6 +10,9 @@ import type {
 
 type Args = Record<string, unknown>;
 
+const WHISPER_ID = "whisper-large-v3-turbo-q5_0";
+const WHISPER_BYTES = 574_041_195;
+
 /**
  * An in-memory stand-in for the Rust commands, shared by the tests and the
  * screenshot preview. `handle` answers a command the way `invoke` would.
@@ -52,7 +55,13 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     recordingsSize: 0,
     shownRecordings: false,
     installed: [] as ModelRecord[],
-    transcriptionError: null as unknown,
+    transcriptionUnavailable: null as string | null,
+    transcriptionModelsError: null as unknown,
+    transcriptionModel: "whistle",
+    whisperInstalled: false,
+    whisperPartialBytes: 0,
+    whisperDownloading: false,
+    whisperSuggestionDismissed: false,
     setupComplete: true,
     micPermission: "authorized" as string,
     systemAudioPermission: "authorized" as string | null,
@@ -186,9 +195,59 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
       const failed = state.exportFailures;
       return { written: ids.slice(failed.length).map((id) => `${folder}/${id}.md`), failed };
     },
-    transcription_model: () => {
-      if (state.transcriptionError) throw state.transcriptionError;
-      return { engine: "Whistle", path: "/Applications/Earshot Notes.app/Contents/Resources/models/whistle.cact", bundled: true };
+    transcription_models: () => {
+      if (state.transcriptionModelsError) throw state.transcriptionModelsError;
+      return {
+        models: [
+          {
+            id: "whistle",
+            displayName: "Whistle",
+            description: "Fast and light, and works from the first launch.",
+            bundled: true,
+            sizeBytes: 0,
+            installed: true,
+            partialBytes: 0,
+            download: null,
+            huggingFace: null,
+          },
+          {
+            id: WHISPER_ID,
+            displayName: "Whisper large-v3-turbo",
+            description: "More accurate, especially for the other side of calls and technical terms.",
+            bundled: false,
+            sizeBytes: WHISPER_BYTES,
+            installed: state.whisperInstalled,
+            partialBytes: state.whisperPartialBytes,
+            download: state.whisperDownloading
+              ? { phase: "downloading", received: state.whisperPartialBytes, total: WHISPER_BYTES }
+              : null,
+            huggingFace: {
+              repo: "ggerganov/whisper.cpp",
+              quantization: "Q5_0",
+              revision: "5359861c739e955e79d9a303bcbc70fb988958b1",
+            },
+          },
+        ],
+        selectedId: state.transcriptionModel,
+        suggestWhisper: !state.whisperSuggestionDismissed && state.transcriptionModel === "whistle",
+        unavailable: state.transcriptionUnavailable,
+      };
+    },
+    select_transcription_model: ({ modelId }) => {
+      if (modelId === WHISPER_ID && !state.whisperInstalled) {
+        throw { kind: "invalid", message: "download Whisper large-v3-turbo before choosing it" };
+      }
+      state.transcriptionModel = String(modelId);
+    },
+    download_transcription_model: () => {
+      state.whisperDownloading = true;
+    },
+    remove_transcription_model: () => {
+      state.whisperInstalled = false;
+      state.transcriptionModel = "whistle";
+    },
+    dismiss_whisper_suggestion: () => {
+      state.whisperSuggestionDismissed = true;
     },
     input_devices: () => state.devices,
     input_device: () => state.inputDevice,

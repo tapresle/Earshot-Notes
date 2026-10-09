@@ -354,6 +354,49 @@ describe("App", () => {
     expect(items.map((item) => item.textContent)).toEqual(["Me 0:03Let's lock the copy.", "Meeting Participants 1:05Agreed, ship it."]);
   });
 
+  describe("Whisper suggestion", () => {
+    async function openTranscript(configure: (state: ReturnType<typeof fakeBackend>["state"]) => void = () => {}) {
+      const backend = fakeBackend([seedMeeting(1, "Design sync")], [segment(1, 1, "them", 3_000, "Agreed, ship it.")]);
+      configure(backend.state);
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
+      const transcript = screen.getByRole("complementary", { name: "Transcript" });
+      await within(transcript).findByText("Agreed, ship it.");
+      return { backend, user, transcript };
+    }
+
+    it("suggests Whisper under a finished transcript and opens Settings", async () => {
+      const { user, transcript } = await openTranscript();
+
+      const suggestion = await within(transcript).findByRole("complementary", { name: "Transcription suggestion" });
+      expect(suggestion).toHaveTextContent("download Whisper large-v3-turbo (574 MB)");
+      await user.click(within(suggestion).getByRole("button", { name: "Open Settings" }));
+
+      expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    });
+
+    it("stops suggesting Whisper once dismissed", async () => {
+      const { backend, user, transcript } = await openTranscript();
+
+      const suggestion = await within(transcript).findByRole("complementary", { name: "Transcription suggestion" });
+      await user.click(within(suggestion).getByRole("button", { name: "Don’t show again" }));
+
+      await waitFor(() => expect(within(transcript).queryByRole("complementary")).not.toBeInTheDocument());
+      expect(backend.state.whisperSuggestionDismissed).toBe(true);
+    });
+
+    it("doesn't suggest Whisper once it's chosen", async () => {
+      const { transcript } = await openTranscript((state) => {
+        state.whisperInstalled = true;
+        state.transcriptionModel = "whisper-large-v3-turbo-q5_0";
+      });
+
+      await act(async () => {}); // Lets the suggestion's check finish.
+      expect(within(transcript).queryByRole("complementary")).not.toBeInTheDocument();
+    });
+  });
+
   it("adds live segments for the open meeting only", async () => {
     fakeBackend([seedMeeting(1, "Open"), seedMeeting(2, "Other")]);
     const user = userEvent.setup();
@@ -1319,13 +1362,14 @@ describe("App", () => {
 
       const gemmaChoice = await screen.findByRole("radio", { name: /Gemma 4 E2B/ });
       expect(gemmaChoice).toBeChecked();
-      expect(screen.getAllByText("Selected")).toHaveLength(1);
+      const summaryModels = screen.getByRole("region", { name: "Summary model" });
+      expect(within(summaryModels).getAllByText("Selected")).toHaveLength(1);
       expect(gemmaChoice.closest("label")).toHaveTextContent("Selected");
       await user.click(screen.getByRole("radio", { name: /My fine-tune/ }));
 
       await waitFor(() => expect(backend.state.model?.id).toBe("local-abc"));
       expect(screen.getByRole("radio", { name: /My fine-tune/ })).toBeChecked();
-      expect(screen.getAllByText("Selected")).toHaveLength(1);
+      expect(within(summaryModels).getAllByText("Selected")).toHaveLength(1);
       expect(screen.getByRole("radio", { name: /My fine-tune/ }).closest("label")).toHaveTextContent("Selected");
     });
 
@@ -1406,7 +1450,9 @@ describe("App", () => {
       expect(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).toHaveTextContent("You can download it again later.");
       await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
 
-      await waitFor(() => expect(screen.queryByRole("radio")).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(within(screen.getByRole("region", { name: "Summary model" })).queryByRole("radio")).not.toBeInTheDocument(),
+      );
       expect(
         within(await screen.findByRole("group", { name: "Gemma 4 E2B" })).getByRole("button", { name: "Download (3.1 GB)" }),
       ).toBeInTheDocument();
@@ -1426,7 +1472,9 @@ describe("App", () => {
 
       await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
 
-      await waitFor(() => expect(screen.queryByRole("radio")).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(within(screen.getByRole("region", { name: "Summary model" })).queryByRole("radio")).not.toBeInTheDocument(),
+      );
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
 
@@ -1463,15 +1511,63 @@ describe("App", () => {
       expect(screen.getByRole("radio", { name: /Gemma 4 E2B/ })).toBeInTheDocument();
     });
 
-    it("shows which transcription model is running", async () => {
+    it("offers Whistle, selected, and Whisper to download", async () => {
       await openSettings();
 
-      expect(await screen.findByText("Whistle, bundled with the app. Runs on this Mac.")).toBeInTheDocument();
+      expect(await screen.findByRole("radio", { name: /Whistle/ })).toBeChecked();
+      const whisper = screen.getByRole("radio", { name: /Whisper large-v3-turbo/ });
+      expect(whisper).toBeDisabled();
+      expect(screen.getByText("Fast and light, and works from the first launch.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Download (574 MB)" })).toBeInTheDocument();
+    });
+
+    it("downloads Whisper and shows its progress", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+
+      await user.click(await screen.findByRole("button", { name: "Download (574 MB)" }));
+
+      expect(backend.state.whisperDownloading).toBe(true);
+      expect(await screen.findByRole("progressbar", { name: "Downloading Whisper large-v3-turbo" })).toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("0 MB of 574 MB (0%)");
+    });
+
+    it("chooses a downloaded Whisper for new recordings", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.whisperInstalled = true;
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+
+      await user.click(await screen.findByRole("radio", { name: /Whisper large-v3-turbo/ }));
+
+      expect(backend.state.transcriptionModel).toBe("whisper-large-v3-turbo-q5_0");
+      await waitFor(() => expect(screen.getByRole("radio", { name: /Whisper large-v3-turbo/ })).toBeChecked());
+    });
+
+    it("removes Whisper and goes back to Whistle", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.whisperInstalled = true;
+      backend.state.transcriptionModel = "whisper-large-v3-turbo-q5_0";
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+
+      await user.click(await screen.findByRole("button", { name: "Remove Whisper large-v3-turbo" }));
+      await user.click(
+        within(screen.getByRole("group", { name: "Remove Whisper large-v3-turbo" })).getByRole("button", { name: "Remove" }),
+      );
+
+      await waitFor(() => expect(screen.getByRole("radio", { name: /Whistle/ })).toBeChecked());
+      expect(backend.state.whisperInstalled).toBe(false);
+      expect(screen.getByRole("button", { name: "Download (574 MB)" })).toBeInTheDocument();
     });
 
     it("explains when transcription is unavailable", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
-      backend.state.transcriptionError = { kind: "unavailable", message: "transcription is unavailable: no Whistle model found" };
+      backend.state.transcriptionUnavailable = "no Whistle model found";
       const user = userEvent.setup();
       render(<App />);
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));

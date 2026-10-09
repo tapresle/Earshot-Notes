@@ -75,6 +75,8 @@ pub struct TranscriptionWorker {
 
 enum Message {
     Job(Job),
+    /// Load this Whisper model now, before its first job arrives.
+    Preload(Arc<PathBuf>),
     /// Skip the queued jobs, free every model, confirm, and stop.
     Shutdown(Sender<()>),
 }
@@ -128,6 +130,10 @@ impl TranscriptionWorker {
                 loop {
                     let mut job = match inbox.recv_timeout(options.whisper_idle) {
                         Ok(Message::Job(job)) => job,
+                        Ok(Message::Preload(model)) => {
+                            engines.whisper(&model);
+                            continue;
+                        }
                         Ok(Message::Shutdown(done)) => {
                             drop(engines);
                             drop(inbox);
@@ -196,6 +202,14 @@ impl TranscriptionWorker {
             .map_err(|_| WorkerStopped)
     }
 
+    /// Starts loading `engine` if it's Whisper, which takes a few seconds,
+    /// so a recording's first line isn't held up by it.
+    pub fn preload(&self, engine: &Engine) {
+        if let Engine::Whisper(model) = engine {
+            let _ = self.inbox.send(Message::Preload(model.clone()));
+        }
+    }
+
     /// Frees the models before the app exits, skipping queued jobs, and waits
     /// up to `timeout` for the worker to confirm. ggml's Metal backend aborts
     /// the process at exit if a model is still loaded.
@@ -220,7 +234,7 @@ impl Queue {
     fn job(message: Message) -> Option<Job> {
         match message {
             Message::Job(job) => Some(job),
-            Message::Shutdown(_) => None,
+            Message::Preload(_) | Message::Shutdown(_) => None,
         }
     }
 
@@ -229,6 +243,14 @@ impl Queue {
             if let Some(job) = Self::job(self.0.recv_timeout(timeout)?) {
                 return Ok(job);
             }
+        }
+    }
+
+    /// The next message, if it asks to preload a Whisper model.
+    pub fn preload(&self, timeout: Duration) -> Option<Arc<PathBuf>> {
+        match self.0.recv_timeout(timeout) {
+            Ok(Message::Preload(model)) => Some(model),
+            _ => None,
         }
     }
 
