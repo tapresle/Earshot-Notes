@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use super::WHISPER_TURBO;
 use super::download::partial_path;
-use crate::store::settings::{DISMISSED, TRANSCRIPTION_MODEL, WHISPER_SUGGESTION};
+use crate::store::settings::TRANSCRIPTION_MODEL;
 use crate::store::{Store, StoreError};
 use crate::transcribe::worker::Engine;
 
@@ -104,19 +104,6 @@ pub fn remove_whisper(store: &Store, models_dir: &Path) -> Result<(), RemoveErro
     Ok(())
 }
 
-/// Whether to suggest downloading Whisper: until it's chosen or the
-/// suggestion is dismissed.
-pub fn suggest_whisper(store: &Store, models_dir: &Path) -> Result<bool, StoreError> {
-    Ok(
-        store.setting(WHISPER_SUGGESTION)?.as_deref() != Some(DISMISSED)
-            && selected_id(store, models_dir)? == WHISTLE_ID,
-    )
-}
-
-pub fn dismiss_whisper_suggestion(store: &Store) -> Result<(), StoreError> {
-    store.set_setting(WHISPER_SUGGESTION, Some(DISMISSED))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,22 +190,5 @@ mod tests {
         assert_eq!(store.setting(TRANSCRIPTION_MODEL).unwrap(), None);
         // Removing again, with nothing there, is fine.
         remove_whisper(&store, dir.path()).unwrap();
-    }
-
-    #[test]
-    fn suggests_whisper_until_chosen_or_dismissed() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Store::open_in_memory().unwrap();
-        assert!(suggest_whisper(&store, dir.path()).unwrap());
-
-        install_whisper(dir.path());
-        select(&store, dir.path(), WHISPER_TURBO.id).unwrap();
-        assert!(!suggest_whisper(&store, dir.path()).unwrap());
-
-        select(&store, dir.path(), WHISTLE_ID).unwrap();
-        assert!(suggest_whisper(&store, dir.path()).unwrap());
-
-        dismiss_whisper_suggestion(&store).unwrap();
-        assert!(!suggest_whisper(&store, dir.path()).unwrap());
     }
 }

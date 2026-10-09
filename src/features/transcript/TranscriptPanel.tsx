@@ -11,7 +11,6 @@ const speakerLabel: Record<TranscriptSegment["source"], string> = {
 interface TranscriptPanelProps {
   meetingId: number | null;
   recording: boolean;
-  onOpenSettings: () => void;
 }
 
 type LoadState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready" };
@@ -29,33 +28,20 @@ function merge(
     .sort((a, b) => a.startMs - b.startMs || a.id - b.id);
 }
 
-export function TranscriptPanel({ meetingId, recording, onOpenSettings }: TranscriptPanelProps) {
+export function TranscriptPanel({ meetingId, recording }: TranscriptPanelProps) {
   return (
     <aside className="transcript-panel" aria-label="Transcript">
       <h2 className="pane-heading">Transcript</h2>
       {meetingId === null ? (
         <p className="empty-hint">Open a meeting to see its transcript.</p>
       ) : (
-        <MeetingTranscript
-          key={meetingId}
-          meetingId={meetingId}
-          recording={recording}
-          onOpenSettings={onOpenSettings}
-        />
+        <MeetingTranscript key={meetingId} meetingId={meetingId} recording={recording} />
       )}
     </aside>
   );
 }
 
-function MeetingTranscript({
-  meetingId,
-  recording,
-  onOpenSettings,
-}: {
-  meetingId: number;
-  recording: boolean;
-  onOpenSettings: () => void;
-}) {
+function MeetingTranscript({ meetingId, recording }: { meetingId: number; recording: boolean }) {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -151,57 +137,7 @@ function MeetingTranscript({
           Privacy &amp; Security &gt; Screen &amp; System Audio Recording.
         </p>
       )}
-      {!recording && segments.length > 0 && <WhisperSuggestion onOpenSettings={onOpenSettings} />}
       <div ref={endRef} />
     </>
-  );
-}
-
-/** After a recording, suggests the more accurate Whisper model until it's chosen or dismissed (#25). */
-function WhisperSuggestion({ onOpenSettings }: { onOpenSettings: () => void }) {
-  const [shown, setShown] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .transcriptionModels()
-      .then((models) => !cancelled && setShown(models.suggestWhisper))
-      .catch(() => {}); // A suggestion isn't worth an error message.
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function dismiss() {
-    try {
-      await api.dismissWhisperSuggestion();
-      setShown(false);
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }
-
-  if (!shown) return null;
-  return (
-    <aside className="transcript-suggestion" aria-label="Transcription suggestion">
-      <p>
-        For a more accurate transcript, especially of the other people on a call, download Whisper large-v3-turbo (574
-        MB) in Settings.
-      </p>
-      <div className="transcript-suggestion-actions">
-        <button type="button" className="button" onClick={onOpenSettings}>
-          Open Settings
-        </button>
-        <button type="button" className="button subtle" onClick={() => void dismiss()}>
-          Don&rsquo;t show again
-        </button>
-      </div>
-      {error && (
-        <p className="field-error" role="alert">
-          {error}
-        </p>
-      )}
-    </aside>
   );
 }

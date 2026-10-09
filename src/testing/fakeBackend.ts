@@ -61,7 +61,6 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     whisperInstalled: false,
     whisperPartialBytes: 0,
     whisperDownloading: false,
-    whisperSuggestionDismissed: false,
     setupComplete: true,
     micPermission: "authorized" as string,
     systemAudioPermission: "authorized" as string | null,
@@ -229,7 +228,6 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
           },
         ],
         selectedId: state.transcriptionModel,
-        suggestWhisper: !state.whisperSuggestionDismissed && state.transcriptionModel === "whistle",
         unavailable: state.transcriptionUnavailable,
       };
     },
@@ -245,9 +243,6 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     remove_transcription_model: () => {
       state.whisperInstalled = false;
       state.transcriptionModel = "whistle";
-    },
-    dismiss_whisper_suggestion: () => {
-      state.whisperSuggestionDismissed = true;
     },
     input_devices: () => state.devices,
     input_device: () => state.inputDevice,

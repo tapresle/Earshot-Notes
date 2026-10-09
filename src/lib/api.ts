@@ -213,8 +213,6 @@ export interface TranscriptionOption {
 export interface TranscriptionModels {
   models: TranscriptionOption[];
   selectedId: string;
-  /** Whether to suggest downloading Whisper after a recording. */
-  suggestWhisper: boolean;
   /** Why transcription can't run at all, when it can't. */
   unavailable: string | null;
 }
@@ -342,7 +340,6 @@ export const api = {
   selectTranscriptionModel: (modelId: string) => invoke<void>("select_transcription_model", { modelId }),
   downloadTranscriptionModel: (modelId: string) => invoke<void>("download_transcription_model", { modelId }),
   removeTranscriptionModel: (modelId: string) => invoke<void>("remove_transcription_model", { modelId }),
-  dismissWhisperSuggestion: () => invoke<void>("dismiss_whisper_suggestion"),
   onTranscriptionDownloadProgress: (handler: (event: DownloadProgress) => void): Promise<UnlistenFn> =>
     listen<DownloadProgress>("transcription:download-progress", (event) => handler(event.payload)),
   onTranscriptionDownloadDone: (handler: (event: { modelId: string }) => void): Promise<UnlistenFn> =>

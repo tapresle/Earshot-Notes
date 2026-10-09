@@ -26,7 +26,7 @@ From [`docs/benchmarks/20261009-transcription-models.md`](../benchmarks/20261009
 - **FluidAudio (Parakeet on Apple's Neural Engine):** fast and Apache 2.0, but Apple platforms only. Windows and Linux would need a second engine.
 - **sherpa-onnx (Parakeet, Whisper, and more):** cross-platform and Apache 2.0, but ships ONNX Runtime, a large dependency. Kept in reserve if Whisper had disappointed.
 - **Whisper small:** 190 MB and about 3.5 times faster on the CPU, but makes noticeably more errors (17.6% and 19.4%). Not offered on the Mac; revisit as the fallback for Windows and Linux machines whose CPUs can't keep up with turbo.
-- **Whisper as the default:** more accurate, but a 574 MB download would stand between installing the app and the first recording. The app suggests it instead.
+- **Whisper as the default:** more accurate, but a 574 MB download would stand between installing the app and the first recording. **Settings** offers it instead.
 
 ## Consequences
 
@@ -35,4 +35,4 @@ From [`docs/benchmarks/20261009-transcription-models.md`](../benchmarks/20261009
 - The model is downloaded, pinned, and verified like the summary models, and chosen in **Settings**.
 - Whisper has no keyword biasing, so the vocabulary's terms aren't sent to it; a prompt of terms measured slightly worse. **Heard as** corrections and summary spellings still apply.
 - Whisper writes sound labels such as `[BLANK_AUDIO]` on faint clips, which Earshot strips, and invents "Thank you." like Whistle, which the existing phantom filter catches.
-- The README, the website, and the app describe both models from the highlights in the benchmark write-up, and the app suggests the download for more accurate transcripts.
+- The README, the website, and the app describe both models from the highlights in the benchmark write-up.

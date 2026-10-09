@@ -354,49 +354,6 @@ describe("App", () => {
     expect(items.map((item) => item.textContent)).toEqual(["Me 0:03Let's lock the copy.", "Meeting Participants 1:05Agreed, ship it."]);
   });
 
-  describe("Whisper suggestion", () => {
-    async function openTranscript(configure: (state: ReturnType<typeof fakeBackend>["state"]) => void = () => {}) {
-      const backend = fakeBackend([seedMeeting(1, "Design sync")], [segment(1, 1, "them", 3_000, "Agreed, ship it.")]);
-      configure(backend.state);
-      const user = userEvent.setup();
-      render(<App />);
-      await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
-      const transcript = screen.getByRole("complementary", { name: "Transcript" });
-      await within(transcript).findByText("Agreed, ship it.");
-      return { backend, user, transcript };
-    }
-
-    it("suggests Whisper under a finished transcript and opens Settings", async () => {
-      const { user, transcript } = await openTranscript();
-
-      const suggestion = await within(transcript).findByRole("complementary", { name: "Transcription suggestion" });
-      expect(suggestion).toHaveTextContent("download Whisper large-v3-turbo (574 MB)");
-      await user.click(within(suggestion).getByRole("button", { name: "Open Settings" }));
-
-      expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
-    });
-
-    it("stops suggesting Whisper once dismissed", async () => {
-      const { backend, user, transcript } = await openTranscript();
-
-      const suggestion = await within(transcript).findByRole("complementary", { name: "Transcription suggestion" });
-      await user.click(within(suggestion).getByRole("button", { name: "Don’t show again" }));
-
-      await waitFor(() => expect(within(transcript).queryByRole("complementary")).not.toBeInTheDocument());
-      expect(backend.state.whisperSuggestionDismissed).toBe(true);
-    });
-
-    it("doesn't suggest Whisper once it's chosen", async () => {
-      const { transcript } = await openTranscript((state) => {
-        state.whisperInstalled = true;
-        state.transcriptionModel = "whisper-large-v3-turbo-q5_0";
-      });
-
-      await act(async () => {}); // Lets the suggestion's check finish.
-      expect(within(transcript).queryByRole("complementary")).not.toBeInTheDocument();
-    });
-  });
-
   it("adds live segments for the open meeting only", async () => {
     fakeBackend([seedMeeting(1, "Open"), seedMeeting(2, "Other")]);
     const user = userEvent.setup();

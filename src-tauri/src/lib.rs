@@ -145,7 +145,6 @@ pub fn run() {
             commands::transcription::select_transcription_model,
             commands::transcription::download_transcription_model,
             commands::transcription::remove_transcription_model,
-            commands::transcription::dismiss_whisper_suggestion,
             commands::settings::input_devices,
             commands::settings::input_device,
             commands::settings::set_input_device,

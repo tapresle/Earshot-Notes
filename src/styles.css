@@ -485,24 +485,6 @@ body {
   font-size: 12px;
 }
 
-.transcript-suggestion {
-  margin-top: 16px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 13px;
-}
-
-.transcript-suggestion p {
-  margin: 0 0 8px;
-}
-
-.transcript-suggestion-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .recording-hint {
   flex-basis: 100%;
   margin: 0;

@@ -40,8 +40,6 @@ pub struct TranscriptionOption {
 pub struct TranscriptionModels {
     models: Vec<TranscriptionOption>,
     selected_id: &'static str,
-    /// Whether to suggest downloading Whisper after a recording.
-    suggest_whisper: bool,
     /// Why transcription can't run at all, when it can't.
     unavailable: Option<String>,
 }
@@ -112,7 +110,6 @@ pub async fn transcription_models(
         Ok(TranscriptionModels {
             models: vec![whistle, whisper],
             selected_id: transcription::selected_id(&store, &dir)?,
-            suggest_whisper: transcription::suggest_whisper(&store, &dir)?,
             unavailable,
         })
     })
@@ -178,11 +175,4 @@ pub async fn remove_transcription_model(
     let dir = models_dir(&app)?;
     let store = Arc::clone(&store);
     blocking(move || Ok(transcription::remove_whisper(&store, &dir)?)).await
-}
-
-/// Stops suggesting the Whisper download.
-#[tauri::command]
-pub async fn dismiss_whisper_suggestion(store: State<'_, Arc<Store>>) -> CommandResult<()> {
-    let store = Arc::clone(&store);
-    blocking(move || Ok(transcription::dismiss_whisper_suggestion(&store)?)).await
 }

@@ -67,7 +67,6 @@ The source for how the README, the website, and the app describe the choice.
 **Wording in the app**
 - **Settings** > **Transcription**, Whistle: "Fast and light, and works from the first launch."
 - **Settings** > **Transcription**, Whisper large-v3-turbo: "More accurate, especially for the other side of calls and technical terms."
-- Under a finished transcript, until Whisper is chosen or the suggestion is dismissed: "For a more accurate transcript, especially of the other people on a call, download Whisper large-v3-turbo (574 MB) in Settings."
 
 ## Reproducing
 
