@@ -36,6 +36,8 @@ const DATABASE_FILE: &str = "earshot.db";
 const WHISTLE_FILE: &str = "models/whistle.cact";
 /// Kept audio, when the setting is on.
 const RECORDINGS_DIR: &str = "recordings";
+/// How long quitting waits for the transcription worker to free its models.
+const EXIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 /// The log file rolls over at this size, keeping only the newest file.
 const MAX_LOG_BYTES: u128 = 1_000_000;
 
@@ -184,6 +186,9 @@ pub fn run() {
                 if let Err(error) = recording::stop_recording(&store, &app.state::<Arc<Recorder>>())
                 {
                     log::error!("couldn't stop the recording on exit: {error}");
+                }
+                if let Ok((worker, _)) = &app.state::<Arc<Transcription>>().0 {
+                    worker.shutdown(EXIT_TIMEOUT);
                 }
             }
         });

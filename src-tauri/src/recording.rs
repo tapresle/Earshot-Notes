@@ -14,7 +14,7 @@ use crate::chunker::{Chunker, Sensitivity};
 use crate::recordings::{KeptAudio, Recordings};
 use crate::store::settings::{KEEP_AUDIO, ON, sensitivity_key};
 use crate::store::{Source, Store, StoreError};
-use crate::transcribe::worker::{Job, TranscriptionWorker};
+use crate::transcribe::worker::{Engine, Job, TranscriptionWorker};
 
 /// Interleaved buffers the pipeline may fall behind by before capture drops audio
 /// (about 2.5 s at typical 10 ms device buffers).
@@ -301,6 +301,7 @@ pub fn run_pipeline(
             samples: segment.samples,
             speech: segment.speech,
             keywords: keywords.clone(),
+            engine: Engine::Whistle,
         });
     };
     let mut push = |samples: &[f32]| {
@@ -347,6 +348,7 @@ pub fn run_pipeline(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transcribe::worker::Queue;
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -662,7 +664,7 @@ mod tests {
     }
 
     /// Submitted jobs land in the returned receiver instead of being transcribed.
-    fn worker() -> (TranscriptionWorker, mpsc::Receiver<Job>) {
+    fn worker() -> (TranscriptionWorker, Queue) {
         TranscriptionWorker::from_queue()
     }
 
