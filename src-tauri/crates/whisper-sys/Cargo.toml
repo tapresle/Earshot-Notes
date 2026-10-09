@@ -1,0 +1,10 @@
+[package]
+name = "whisper-sys"
+version = "0.1.0"
+description = "Loads libearshot_whisper.dylib, Earshot Notes' C interface over whisper.cpp"
+edition = "2024"
+license = "MIT"
+publish = false
+build = "build.rs"
+
+[dependencies]
