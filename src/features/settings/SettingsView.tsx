@@ -5,6 +5,7 @@ import {
   isCommandError,
   type InputDevice,
   type InstalledModels,
+  type KeepLoaded,
   type LaunchAtLogin,
   type InstalledModel as InstalledModelInfo,
   type ModelRecord,
@@ -467,9 +468,73 @@ function SummaryModelSection() {
           {error}
         </p>
       )}
+      {installed && installed.models.length > 0 && <KeepLoadedRow />}
       {/* Remounts when the installed models change, so download cards show what's installed now. */}
       <ModelSetup key={installed?.models.map((m) => m.id).join() ?? ""} onReady={load} />
     </section>
+  );
+}
+
+const KEEP_LOADED_CHOICES: { value: KeepLoaded; label: string }[] = [
+  { value: "never", label: "Never" },
+  { value: "fiveMinutes", label: "5 minutes" },
+  { value: "fifteenMinutes", label: "15 minutes" },
+  { value: "always", label: "Always" },
+];
+
+function KeepLoadedRow() {
+  const [keep, setKeep] = useState<KeepLoaded | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api
+      .keepModelLoaded()
+      .then(setKeep)
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
+
+  async function choose(value: KeepLoaded) {
+    setSaved(false);
+    setError(null);
+    try {
+      await api.setKeepModelLoaded(value);
+      setKeep(value);
+      setSaved(true);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  return (
+    <>
+      {keep !== null && (
+        <div className="settings-row">
+          <label htmlFor="keep-loaded">Keep the model loaded</label>
+          <select id="keep-loaded" value={keep} onChange={(e) => void choose(e.target.value as KeepLoaded)}>
+            {KEEP_LOADED_CHOICES.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <p className="settings-help">
+        Loading the model takes a few seconds. Keeping it loaded after a summary lets the next one start sooner, but
+        holds its memory until the time is up.
+      </p>
+      {saved && (
+        <p className="settings-saved" role="status">
+          Saved
+        </p>
+      )}
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+    </>
   );
 }
 

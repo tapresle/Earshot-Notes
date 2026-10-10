@@ -59,6 +59,7 @@ You decide which model writes your notes.
 - **Choose from the list:** in **Settings**, download Gemma 4 E2B (recommended), Phi-4 mini, Qwen3 4B Instruct, Gemma 4 E4B, Qwen3 8B, Ministral 3 8B, or Ministral 3 14B. Each download is pinned to a checksum and verified before use.
 - **Or import your own:** import any GGUF model file you already have.
 - **Built for Apple Silicon:** summaries run through [llama.cpp](https://github.com/ggml-org/llama.cpp) with Metal. Every listed model is sized to leave room for your call on a Mac with 16 GB of memory.
+- **Loaded when you need it:** the model loads on your first summary and stays loaded for five minutes after the last one, so the next summary starts sooner. In **Settings**, choose **Never**, **15 minutes**, or **Always** instead.
 
 ## How it works
 

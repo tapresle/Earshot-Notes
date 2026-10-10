@@ -36,7 +36,8 @@ const DATABASE_FILE: &str = "earshot.db";
 const WHISTLE_FILE: &str = "models/whistle.cact";
 /// Kept audio, when the setting is on.
 const RECORDINGS_DIR: &str = "recordings";
-/// How long quitting waits for the transcription worker to free its models.
+/// How long quitting waits for the transcription worker and the summarizer
+/// each to free their models.
 const EXIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 /// The log file rolls over at this size, keeping only the newest file.
 const MAX_LOG_BYTES: u128 = 1_000_000;
@@ -162,6 +163,8 @@ pub fn run() {
             commands::settings::installed_models,
             commands::settings::select_summary_model,
             commands::settings::remove_summary_model,
+            commands::settings::keep_model_loaded,
+            commands::settings::set_keep_model_loaded,
             commands::models::open_model_page,
             commands::setup::mic_permission,
             commands::setup::request_mic_permission,
@@ -192,6 +195,7 @@ pub fn run() {
                 if let Ok(worker) = &app.state::<Arc<Transcription>>().0 {
                     worker.shutdown(EXIT_TIMEOUT);
                 }
+                app.state::<Arc<Summarizer>>().shutdown(EXIT_TIMEOUT);
             }
         });
 }
