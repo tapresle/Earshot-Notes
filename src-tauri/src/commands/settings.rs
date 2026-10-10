@@ -9,8 +9,9 @@ use super::{CommandError, CommandResult, ErrorKind, blocking};
 use crate::audio::mic::{self, InputDevice};
 use crate::chunker::Sensitivity;
 use crate::models::{self, RemoveError};
-use crate::store::settings::{INPUT_DEVICE, sensitivity_key};
+use crate::store::settings::{INPUT_DEVICE, KEEP_MODEL_LOADED, sensitivity_key};
 use crate::store::{ModelRecord, Source, Store};
+use crate::summarize::resident::KeepLoaded;
 use crate::summarize::service::Summarizer;
 use macos_audio::LoginItem;
 
@@ -175,13 +176,49 @@ fn installed(store: &Store) -> CommandResult<InstalledModels> {
     })
 }
 
+/// Selects the model for summaries, and frees the one loaded before.
 #[tauri::command]
 pub async fn select_summary_model(
     store: State<'_, Arc<Store>>,
+    summarizer: State<'_, Arc<Summarizer>>,
     model_id: String,
 ) -> CommandResult<()> {
+    let (store, summarizer) = (Arc::clone(&store), Arc::clone(&summarizer));
+    blocking(move || {
+        store.select_summary_model(&model_id)?;
+        summarizer.unload();
+        Ok(())
+    })
+    .await
+}
+
+fn keep_model_loaded_in(store: &Store) -> CommandResult<KeepLoaded> {
+    Ok(KeepLoaded::from_setting(
+        store.setting(KEEP_MODEL_LOADED)?.as_deref(),
+    ))
+}
+
+/// How long the summary model stays loaded after a request.
+#[tauri::command]
+pub async fn keep_model_loaded(store: State<'_, Arc<Store>>) -> CommandResult<KeepLoaded> {
     let store = Arc::clone(&store);
-    blocking(move || Ok(store.select_summary_model(&model_id)?)).await
+    blocking(move || keep_model_loaded_in(&store)).await
+}
+
+/// Changes how long the summary model stays loaded, starting now.
+#[tauri::command]
+pub async fn set_keep_model_loaded(
+    store: State<'_, Arc<Store>>,
+    summarizer: State<'_, Arc<Summarizer>>,
+    keep: KeepLoaded,
+) -> CommandResult<()> {
+    let (store, summarizer) = (Arc::clone(&store), Arc::clone(&summarizer));
+    blocking(move || {
+        store.set_setting(KEEP_MODEL_LOADED, Some(keep.as_setting()))?;
+        summarizer.keep_loaded(keep);
+        Ok(())
+    })
+    .await
 }
 
 impl From<RemoveError> for CommandError {
@@ -209,7 +246,10 @@ pub async fn remove_summary_model(
     let dir = models_dir(&app)?;
     let (store, summarizer) = (Arc::clone(&store), Arc::clone(&summarizer));
     blocking(move || {
-        summarizer.when_idle(|| models::remove(&model_id, &dir, &store))??;
+        summarizer.when_idle(|| {
+            summarizer.unload();
+            models::remove(&model_id, &dir, &store)
+        })??;
         Ok(())
     })
     .await
@@ -320,6 +360,25 @@ mod tests {
         assert_eq!(
             serde_json::to_value(pending).unwrap(),
             serde_json::json!({ "enabled": true, "needsApproval": true, "available": true })
+        );
+    }
+
+    #[test]
+    fn keeps_the_model_loaded_five_minutes_until_you_choose_otherwise() {
+        let store = Store::open_in_memory().unwrap();
+        assert_eq!(
+            keep_model_loaded_in(&store).unwrap(),
+            KeepLoaded::FiveMinutes
+        );
+
+        store
+            .set_setting(KEEP_MODEL_LOADED, Some(KeepLoaded::Always.as_setting()))
+            .unwrap();
+
+        assert_eq!(keep_model_loaded_in(&store).unwrap(), KeepLoaded::Always);
+        assert_eq!(
+            serde_json::to_value(KeepLoaded::FifteenMinutes).unwrap(),
+            serde_json::json!("fifteenMinutes")
         );
     }
 }

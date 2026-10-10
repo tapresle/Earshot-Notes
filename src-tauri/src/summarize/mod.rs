@@ -3,6 +3,7 @@
 pub mod llama;
 pub mod note_taker;
 pub mod prompt;
+pub mod resident;
 pub mod run;
 pub mod service;
 pub mod template;

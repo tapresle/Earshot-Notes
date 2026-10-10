@@ -1,14 +1,18 @@
 //! Runs one summary at a time on a background thread and reports progress.
+//! The model stays loaded between summaries for as long as `KeepLoaded` says.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
+use std::time::Duration;
 
 use serde::Serialize;
 
+use super::resident::{KeepLoaded, ModelLoader, Resident};
 use super::run::{Generator, Progress, Request, SummaryError, summarize};
 use super::title::suggest_title;
+use crate::store::settings::KEEP_MODEL_LOADED;
 use crate::store::{
     DEFAULT_TITLE, ModelRecord, NewSummary, Store, StoreError, Summary, TranscriptSegment,
 };
@@ -61,11 +65,6 @@ pub enum SummarizeError {
     Store(#[from] StoreError),
 }
 
-/// Loads a model for one job. The model is unloaded when the job ends, so it
-/// doesn't hold memory between summaries.
-pub type ModelLoader =
-    Box<dyn FnMut(&ModelRecord) -> Result<Box<dyn Generator>, SummaryError> + Send>;
-
 struct Job {
     meeting_id: i64,
     model: ModelRecord,
@@ -80,44 +79,80 @@ struct Job {
 
 type Active = Arc<Mutex<Option<(i64, Arc<AtomicBool>)>>>;
 
+enum Message {
+    Job(Box<Job>),
+    /// How long an idle model stays loaded; `None` keeps it indefinitely.
+    IdleLimit(Option<Duration>),
+    Unload,
+    /// Frees the model and stops the thread, then confirms.
+    Shutdown(Sender<()>),
+}
+
 pub struct Summarizer {
-    jobs: Sender<Job>,
+    inbox: Sender<Message>,
     active: Active,
 }
 
 impl Summarizer {
+    /// Starts the summary thread, which keeps the model loaded as the stored
+    /// `KEEP_MODEL_LOADED` setting says.
     pub fn spawn(
         store: Arc<Store>,
-        mut load: ModelLoader,
+        load: ModelLoader,
         on_event: impl Fn(SummaryEvent) + Send + 'static,
     ) -> Self {
-        let (jobs, inbox) = mpsc::channel::<Job>();
+        let keep = store.setting(KEEP_MODEL_LOADED).unwrap_or_else(|error| {
+            log::warn!("couldn't read how long to keep the model loaded: {error}");
+            None
+        });
+        let idle_limit = KeepLoaded::from_setting(keep.as_deref()).idle_limit();
+        let (inbox, messages) = mpsc::channel();
         let active: Active = Arc::default();
         let finished = active.clone();
         thread::Builder::new()
             .name("summarizer".into())
             .spawn(move || {
-                for job in inbox {
-                    let meeting_id = job.meeting_id;
-                    let event = match run_job(&store, &mut load, job, &on_event) {
-                        Ok((summary, title)) => SummaryEvent::Done {
-                            meeting_id,
-                            summary,
-                            title,
-                        },
-                        Err(error) => SummaryEvent::Failed {
-                            meeting_id,
-                            cancelled: matches!(error, JobError::Summary(SummaryError::Cancelled)),
-                            message: error.to_string(),
-                        },
-                    };
-                    // Clear the slot before announcing, so the UI can start the next one.
-                    *lock(&finished) = None;
-                    on_event(event);
-                }
+                run_worker(
+                    &store,
+                    Resident::new(load),
+                    idle_limit,
+                    &messages,
+                    &finished,
+                    &on_event,
+                )
             })
             .expect("couldn't start the summarizer thread");
-        Self { jobs, active }
+        Self { inbox, active }
+    }
+
+    /// Changes how long the model stays loaded after each request. The idle
+    /// time starts over now, and `KeepLoaded::Never` frees it at once.
+    pub fn keep_loaded(&self, keep: KeepLoaded) {
+        self.set_idle_limit(keep.idle_limit());
+    }
+
+    fn set_idle_limit(&self, limit: Option<Duration>) {
+        let _ = self.inbox.send(Message::IdleLimit(limit));
+    }
+
+    /// Frees the model once any running summary ends. Used when the selected
+    /// model changes or is removed.
+    pub fn unload(&self) {
+        let _ = self.inbox.send(Message::Unload);
+    }
+
+    /// Cancels any running summary, frees the model, and waits up to
+    /// `timeout` for the thread to confirm. ggml's Metal backend aborts the
+    /// process at exit if a model is still loaded.
+    pub fn shutdown(&self, timeout: Duration) {
+        self.cancel();
+        let (done, confirmed) = mpsc::channel();
+        if self.inbox.send(Message::Shutdown(done)).is_err() {
+            return;
+        }
+        if confirmed.recv_timeout(timeout).is_err() {
+            log::warn!("the summarizer didn't stop within {timeout:?}");
+        }
     }
 
     /// Queues a summary of the meeting as it stands now. `is_final` marks a
@@ -155,7 +190,9 @@ impl Summarizer {
             is_final,
             cancel: cancel.clone(),
         };
-        self.jobs.send(job).map_err(|_| SummarizeError::Stopped)?;
+        self.inbox
+            .send(Message::Job(Box::new(job)))
+            .map_err(|_| SummarizeError::Stopped)?;
         *active = Some((meeting_id, cancel));
         Ok(())
     }
@@ -190,6 +227,61 @@ fn lock(active: &Active) -> MutexGuard<'_, Option<(i64, Arc<AtomicBool>)>> {
     active.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Runs jobs as they arrive, and frees the model once it has been idle for
+/// `idle_limit`.
+fn run_worker(
+    store: &Store,
+    mut resident: Resident,
+    mut idle_limit: Option<Duration>,
+    messages: &Receiver<Message>,
+    finished: &Active,
+    on_event: &dyn Fn(SummaryEvent),
+) {
+    loop {
+        let message = match idle_limit.filter(|_| resident.is_loaded()) {
+            Some(limit) => match messages.recv_timeout(limit) {
+                Ok(message) => message,
+                Err(RecvTimeoutError::Timeout) => {
+                    resident.unload();
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => return,
+            },
+            None => match messages.recv() {
+                Ok(message) => message,
+                Err(_) => return,
+            },
+        };
+        match message {
+            Message::Job(job) => {
+                let meeting_id = job.meeting_id;
+                let event = match run_job(store, &mut resident, *job, on_event) {
+                    Ok((summary, title)) => SummaryEvent::Done {
+                        meeting_id,
+                        summary,
+                        title,
+                    },
+                    Err(error) => SummaryEvent::Failed {
+                        meeting_id,
+                        cancelled: matches!(error, JobError::Summary(SummaryError::Cancelled)),
+                        message: error.to_string(),
+                    },
+                };
+                // Clear the slot before announcing, so the UI can start the next one.
+                *lock(finished) = None;
+                on_event(event);
+            }
+            Message::IdleLimit(limit) => idle_limit = limit,
+            Message::Unload => resident.unload(),
+            Message::Shutdown(done) => {
+                resident.unload();
+                let _ = done.send(());
+                return;
+            }
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 enum JobError {
     #[error(transparent)]
@@ -202,16 +294,20 @@ enum JobError {
 /// Returns the summary and the new title, if any.
 fn run_job(
     store: &Store,
-    load: &mut ModelLoader,
+    resident: &mut Resident,
     job: Job,
     on_event: &dyn Fn(SummaryEvent),
 ) -> Result<(Summary, Option<String>), JobError> {
     let meeting_id = job.meeting_id;
-    on_event(SummaryEvent::Progress {
-        meeting_id,
-        stage: Stage::Loading,
-    });
-    let mut generator = load(&job.model)?;
+    if job.cancel.load(Ordering::Relaxed) {
+        return Err(SummaryError::Cancelled.into());
+    }
+    let generator = resident.get(&job.model, || {
+        on_event(SummaryEvent::Progress {
+            meeting_id,
+            stage: Stage::Loading,
+        })
+    })?;
     if job.cancel.load(Ordering::Relaxed) {
         return Err(SummaryError::Cancelled.into());
     }
@@ -222,7 +318,7 @@ fn run_job(
         terms: &job.terms,
     };
     let body = summarize(
-        generator.as_mut(),
+        &mut *generator,
         &request,
         &job.cancel,
         &mut |progress| {
@@ -248,7 +344,7 @@ fn run_job(
     })?;
     let title = name_untitled(
         store,
-        generator.as_mut(),
+        &mut *generator,
         meeting_id,
         &summary.body_markdown,
         &job.cancel,
@@ -298,6 +394,13 @@ mod tests {
         gate: Option<mpsc::Receiver<()>>,
         generations: Arc<AtomicUsize>,
         title_reply: Result<&'static str, ()>,
+        unloads: Arc<AtomicUsize>,
+    }
+
+    impl Drop for FakeModel {
+        fn drop(&mut self) {
+            self.unloads.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     impl Generator for FakeModel {
@@ -342,6 +445,8 @@ mod tests {
         meeting_id: i64,
         /// Calls to `generate` across all jobs: the summary, then any title.
         generations: Arc<AtomicUsize>,
+        loads: Arc<AtomicUsize>,
+        unloads: Arc<AtomicUsize>,
     }
 
     struct Setup {
@@ -407,15 +512,19 @@ mod tests {
         }
         let gate = Mutex::new(gate);
         let generations = Arc::new(AtomicUsize::new(0));
-        let counter = generations.clone();
+        let loads = Arc::new(AtomicUsize::new(0));
+        let unloads = Arc::new(AtomicUsize::new(0));
+        let (counter, loaded, unloaded) = (generations.clone(), loads.clone(), unloads.clone());
         let loader: ModelLoader = Box::new(move |model| {
             if model.id == "broken" {
                 return Err(SummaryError::Model("bad file".into()));
             }
+            loaded.fetch_add(1, Ordering::Relaxed);
             Ok(Box::new(FakeModel {
                 gate: gate.lock().unwrap().take(),
                 generations: counter.clone(),
                 title_reply,
+                unloads: unloaded.clone(),
             }))
         });
         let (tx, events) = mpsc::channel();
@@ -429,6 +538,8 @@ mod tests {
             events,
             meeting_id: meeting.id,
             generations,
+            loads,
+            unloads,
         }
     }
 
@@ -708,5 +819,166 @@ mod tests {
             failed,
             SummaryEvent::Failed { cancelled: false, ref message, .. } if message.contains("bad file")
         ));
+    }
+
+    /// Waits up to five seconds for `condition`, which another thread makes true.
+    fn eventually(condition: impl Fn() -> bool) -> bool {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            if condition() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        condition()
+    }
+
+    fn count(counter: &AtomicUsize) -> usize {
+        counter.load(Ordering::Relaxed)
+    }
+
+    /// Summarizes the meeting and waits for the result.
+    fn summarize_once(h: &Harness) {
+        h.summarizer.start(&h.store, h.meeting_id, true).unwrap();
+        done(&h.events);
+    }
+
+    #[test]
+    fn keeps_the_model_loaded_for_the_next_summary() {
+        let h = harness(None, true);
+        summarize_once(&h);
+
+        h.summarizer.start(&h.store, h.meeting_id, true).unwrap();
+
+        // No loading stage when the model is already loaded.
+        assert_eq!(
+            next(&h.events),
+            SummaryEvent::Progress {
+                meeting_id: h.meeting_id,
+                stage: Stage::Writing
+            }
+        );
+        done(&h.events);
+        assert_eq!((count(&h.loads), count(&h.unloads)), (1, 0));
+    }
+
+    #[test]
+    fn frees_the_model_after_each_summary_when_set_to_never() {
+        let h = harness(None, true);
+        h.summarizer.keep_loaded(KeepLoaded::Never);
+
+        summarize_once(&h);
+        assert!(eventually(|| count(&h.unloads) == 1));
+        summarize_once(&h);
+
+        assert_eq!(count(&h.loads), 2);
+        assert!(eventually(|| count(&h.unloads) == 2));
+    }
+
+    #[test]
+    fn frees_the_model_once_idle() {
+        let h = harness(None, true);
+        h.summarizer.set_idle_limit(Some(Duration::from_millis(50)));
+
+        summarize_once(&h);
+
+        assert!(eventually(|| count(&h.unloads) == 1));
+        assert_eq!(count(&h.loads), 1);
+    }
+
+    #[test]
+    fn keeps_the_model_while_idle_when_set_to_always() {
+        let h = harness(None, true);
+        h.summarizer.set_idle_limit(Some(Duration::from_millis(10)));
+        h.summarizer.keep_loaded(KeepLoaded::Always);
+
+        summarize_once(&h);
+        thread::sleep(Duration::from_millis(100));
+
+        assert_eq!(count(&h.unloads), 0);
+    }
+
+    #[test]
+    fn frees_the_model_when_asked() {
+        let h = harness(None, true);
+        summarize_once(&h);
+
+        h.summarizer.unload();
+
+        assert!(eventually(|| count(&h.unloads) == 1));
+        summarize_once(&h);
+        assert_eq!(count(&h.loads), 2);
+    }
+
+    #[test]
+    fn loads_the_newly_selected_model() {
+        let h = harness(None, true);
+        summarize_once(&h);
+        h.store
+            .add_model(&ModelRecord {
+                id: "other-model".into(),
+                display_name: "Other".into(),
+                file_path: "/models/other.gguf".into(),
+                size_bytes: 1,
+                sha256: "def".into(),
+                source: ModelSource::Import,
+                source_url: None,
+                version: None,
+                min_runtime: None,
+                added_at: 0,
+            })
+            .unwrap();
+        h.store.select_summary_model("other-model").unwrap();
+
+        h.summarizer.start(&h.store, h.meeting_id, true).unwrap();
+
+        let (summary, _) = done(&h.events);
+        assert_eq!(summary.model_id, "other-model");
+        assert_eq!((count(&h.loads), count(&h.unloads)), (2, 1));
+    }
+
+    #[test]
+    fn frees_the_model_on_shutdown() {
+        let h = harness(None, true);
+        summarize_once(&h);
+
+        h.summarizer.shutdown(Duration::from_secs(5));
+
+        // Shutdown waits for the thread to confirm, so the model is already freed.
+        assert_eq!(count(&h.unloads), 1);
+        assert!(matches!(
+            h.summarizer.start(&h.store, h.meeting_id, true),
+            Err(SummarizeError::Stopped)
+        ));
+    }
+
+    #[test]
+    fn cancels_a_running_summary_on_shutdown() {
+        let (release, gate) = mpsc::channel();
+        let h = harness(Some(gate), true);
+        h.summarizer.start(&h.store, h.meeting_id, true).unwrap();
+        // The model is generating once the first text arrives.
+        while !matches!(next(&h.events), SummaryEvent::Text { .. }) {}
+        let cancelled = || {
+            lock(&h.summarizer.active)
+                .as_ref()
+                .is_some_and(|(_, cancel)| cancel.load(Ordering::Relaxed))
+        };
+
+        thread::scope(|scope| {
+            scope.spawn(|| h.summarizer.shutdown(Duration::from_secs(5)));
+            assert!(eventually(cancelled));
+            release.send(()).unwrap();
+        });
+
+        assert_eq!(count(&h.unloads), 1);
+        assert!(matches!(
+            next(&h.events),
+            SummaryEvent::Failed {
+                cancelled: true,
+                ..
+            }
+        ));
+        assert_eq!(h.store.latest_summary(h.meeting_id).unwrap(), None);
     }
 }

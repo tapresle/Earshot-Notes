@@ -1330,6 +1330,37 @@ describe("App", () => {
       expect(screen.getByRole("radio", { name: /My fine-tune/ }).closest("label")).toHaveTextContent("Selected");
     });
 
+    it("shows and saves how long the summary model stays loaded", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.installed = [testModel()];
+      backend.state.model = testModel();
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+      const keep = await screen.findByLabelText("Keep the model loaded");
+
+      expect(keep).toHaveValue("fiveMinutes");
+      expect(within(keep).getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "Never",
+        "5 minutes",
+        "15 minutes",
+        "Always",
+      ]);
+      await user.selectOptions(keep, "Always");
+
+      expect(await screen.findByText("Saved")).toBeInTheDocument();
+      expect(backend.state.keepModelLoaded).toBe("always");
+      expect(keep).toHaveValue("always");
+    });
+
+    it("offers to keep the model loaded only once a model is installed", async () => {
+      await openSettings();
+
+      // The download card appears once the installed models have loaded.
+      await screen.findByRole("button", { name: "Download (3.1 GB)" });
+      expect(screen.queryByLabelText("Keep the model loaded")).not.toBeInTheDocument();
+    });
+
     it("shows the Hugging Face source of installed models it knows", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       const other = { ...testModel("/models/other.gguf"), id: "local-abc", displayName: "My fine-tune" };

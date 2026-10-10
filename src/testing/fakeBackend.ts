@@ -50,6 +50,7 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     inputDevice: null as string | null,
     sensitivity: { me: "normal", them: "normal" } as Record<string, string>,
     keepAudio: false,
+    keepModelLoaded: "fiveMinutes" as string,
     launchAtLogin: { enabled: false, needsApproval: false, available: true },
     launchAtLoginError: null as unknown,
     recordingsSize: 0,
@@ -286,6 +287,10 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     },
     show_recordings: () => {
       state.shownRecordings = true;
+    },
+    keep_model_loaded: () => state.keepModelLoaded,
+    set_keep_model_loaded: ({ keep }) => {
+      state.keepModelLoaded = String(keep);
     },
     speech_sensitivity: () => ({ ...state.sensitivity }),
     set_speech_sensitivity: ({ source, level }) => {

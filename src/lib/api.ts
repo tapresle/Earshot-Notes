@@ -52,6 +52,9 @@ export interface SpeechSensitivity {
   them: Sensitivity;
 }
 
+/** How long the summary model stays loaded after a request. */
+export type KeepLoaded = "never" | "fiveMinutes" | "fifteenMinutes" | "always";
+
 export interface SourceProblem {
   source: Source;
   message: string;
@@ -363,6 +366,8 @@ export const api = {
     invoke<void>("set_speech_sensitivity", { source, level }),
   installedModels: () => invoke<InstalledModels>("installed_models"),
   selectSummaryModel: (modelId: string) => invoke<void>("select_summary_model", { modelId }),
+  keepModelLoaded: () => invoke<KeepLoaded>("keep_model_loaded"),
+  setKeepModelLoaded: (keep: KeepLoaded) => invoke<void>("set_keep_model_loaded", { keep }),
   openModelPage: (modelId: string) => invoke<void>("open_model_page", { modelId }),
   vocabulary: () => invoke<VocabularyTerm[]>("vocabulary"),
   /** Saves the vocabulary and corrects every stored transcript with it. */
