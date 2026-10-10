@@ -1472,12 +1472,12 @@ describe("App", () => {
       await openSettings();
 
       expect(await screen.findByRole("radio", { name: /Whistle/ })).toBeChecked();
-      const whisper = screen.getByRole("radio", { name: /Whisper large-v3-turbo/ });
+      const whisper = screen.getByRole("radio", { name: /Whisper/ });
       expect(whisper).toBeDisabled();
       expect(screen.getByText("Fast and light, and works from the first launch.")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Download (574 MB)" })).toBeInTheDocument();
-      // The repository holds every Whisper model, so the file is named.
-      expect(screen.getByText("ggml-large-v3-turbo-q5_0.bin")).toBeInTheDocument();
+      // The repository holds every Whisper model, so the variant is named.
+      expect(screen.getByText("large-v3-turbo-q5_0")).toBeInTheDocument();
     });
 
     it("downloads Whisper and shows its progress", async () => {
@@ -1489,7 +1489,7 @@ describe("App", () => {
       await user.click(await screen.findByRole("button", { name: "Download (574 MB)" }));
 
       expect(backend.state.whisperDownloading).toBe(true);
-      expect(await screen.findByRole("progressbar", { name: "Downloading Whisper large-v3-turbo" })).toBeInTheDocument();
+      expect(await screen.findByRole("progressbar", { name: "Downloading Whisper" })).toBeInTheDocument();
       expect(screen.getByRole("status")).toHaveTextContent("0 MB of 574 MB (0%)");
     });
 
@@ -1500,10 +1500,10 @@ describe("App", () => {
       render(<App />);
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
-      await user.click(await screen.findByRole("radio", { name: /Whisper large-v3-turbo/ }));
+      await user.click(await screen.findByRole("radio", { name: /Whisper/ }));
 
       expect(backend.state.transcriptionModel).toBe("whisper-large-v3-turbo-q5_0");
-      await waitFor(() => expect(screen.getByRole("radio", { name: /Whisper large-v3-turbo/ })).toBeChecked());
+      await waitFor(() => expect(screen.getByRole("radio", { name: /Whisper/ })).toBeChecked());
     });
 
     it("removes Whisper and goes back to Whistle", async () => {
@@ -1514,9 +1514,9 @@ describe("App", () => {
       render(<App />);
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
-      await user.click(await screen.findByRole("button", { name: "Remove Whisper large-v3-turbo" }));
+      await user.click(await screen.findByRole("button", { name: "Remove Whisper" }));
       await user.click(
-        within(screen.getByRole("group", { name: "Remove Whisper large-v3-turbo" })).getByRole("button", { name: "Remove" }),
+        within(screen.getByRole("group", { name: "Remove Whisper" })).getByRole("button", { name: "Remove" }),
       );
 
       await waitFor(() => expect(screen.getByRole("radio", { name: /Whistle/ })).toBeChecked());

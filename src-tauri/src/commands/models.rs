@@ -18,10 +18,10 @@ pub struct HuggingFaceSource {
     repo: &'static str,
     quantization: &'static str,
     revision: &'static str,
-    /// The file, for a repository that holds several models, where the
-    /// quantization alone doesn't say which one.
+    /// Which model, such as `large-v3-turbo-q5_0`, for a repository that
+    /// holds several models, where the quantization alone doesn't say.
     #[serde(skip_serializing_if = "Option::is_none")]
-    file_name: Option<&'static str>,
+    variant: Option<&'static str>,
 }
 
 impl From<&KnownModel> for HuggingFaceSource {
@@ -30,17 +30,18 @@ impl From<&KnownModel> for HuggingFaceSource {
             repo: model.repo,
             quantization: model.quantization,
             revision: model.revision,
-            file_name: None,
+            variant: None,
         }
     }
 }
 
 impl HuggingFaceSource {
     /// The source of a model in a repository that holds several models,
-    /// named by its file.
-    pub(super) fn naming_file(model: &KnownModel) -> Self {
+    /// named by its file without the `ggml-` prefix and extension.
+    pub(super) fn naming_variant(model: &KnownModel) -> Self {
+        let variant = model.file_name.trim_start_matches("ggml-");
         Self {
-            file_name: Some(model.file_name),
+            variant: Some(variant.rsplit_once('.').map_or(variant, |(name, _)| name)),
             ..model.into()
         }
     }
@@ -194,8 +195,9 @@ mod tests {
     use crate::models::WHISPER_TURBO;
 
     #[test]
-    fn names_the_file_in_a_repository_of_several_models() {
-        let source = serde_json::to_value(HuggingFaceSource::naming_file(&WHISPER_TURBO)).unwrap();
+    fn names_the_variant_in_a_repository_of_several_models() {
+        let source =
+            serde_json::to_value(HuggingFaceSource::naming_variant(&WHISPER_TURBO)).unwrap();
 
         assert_eq!(
             source,
@@ -203,7 +205,7 @@ mod tests {
                 "repo": "ggerganov/whisper.cpp",
                 "quantization": "Q5_0",
                 "revision": "98aa99a0a9db05ae2342309f5096248665f7cba3",
-                "fileName": "ggml-large-v3-turbo-q5_0.bin",
+                "variant": "large-v3-turbo-q5_0",
             })
         );
     }

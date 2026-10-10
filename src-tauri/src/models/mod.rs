@@ -165,7 +165,7 @@ pub const MINISTRAL_3_14B: KnownModel = KnownModel {
 /// and `context_limit` doesn't apply.
 pub const WHISPER_TURBO: KnownModel = KnownModel {
     id: "whisper-large-v3-turbo-q5_0",
-    display_name: "Whisper large-v3-turbo",
+    display_name: "Whisper",
     file_name: "ggml-large-v3-turbo-q5_0.bin",
     quantization: "Q5_0",
     repo: "ggerganov/whisper.cpp",

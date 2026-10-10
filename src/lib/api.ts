@@ -138,8 +138,8 @@ export interface HuggingFaceSource {
   /** The quantization of the weights, such as `Q4_K_M`. */
   quantization: string;
   revision: string;
-  /** The file, for a repository that holds several models, where the quantization alone doesn't say which one. */
-  fileName?: string | null;
+  /** Which model, such as `large-v3-turbo-q5_0`, for a repository that holds several models, where the quantization alone doesn't say. */
+  variant?: string | null;
 }
 
 export type DownloadPhase = { phase: "downloading"; received: number; total: number } | { phase: "verifying" };

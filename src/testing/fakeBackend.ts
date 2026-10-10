@@ -211,7 +211,7 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
           },
           {
             id: WHISPER_ID,
-            displayName: "Whisper large-v3-turbo",
+            displayName: "Whisper",
             description:
               "More accurate, especially for the other side of calls and technical terms. Heavier: it stays loaded while the app is open, using about 1 GB of memory.",
             bundled: false,
@@ -225,7 +225,7 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
               repo: "ggerganov/whisper.cpp",
               quantization: "Q5_0",
               revision: "98aa99a0a9db05ae2342309f5096248665f7cba3",
-              fileName: "ggml-large-v3-turbo-q5_0.bin",
+              variant: "large-v3-turbo-q5_0",
             },
           },
         ],
@@ -235,7 +235,7 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     },
     select_transcription_model: ({ modelId }) => {
       if (modelId === WHISPER_ID && !state.whisperInstalled) {
-        throw { kind: "invalid", message: "download Whisper large-v3-turbo before choosing it" };
+        throw { kind: "invalid", message: "download Whisper before choosing it" };
       }
       state.transcriptionModel = String(modelId);
     },
