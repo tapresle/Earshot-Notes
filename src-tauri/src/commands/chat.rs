@@ -3,31 +3,31 @@ use std::sync::Arc;
 use tauri::State;
 
 use super::{CommandResult, blocking};
+use crate::llm::worker::ModelWorker;
 use crate::store::{ChatMessage, Store};
-use crate::summarize::service::Summarizer;
 
 /// Asks a question about the meeting. The answer streams as `chat:text`
 /// events and arrives, saved with the question, as `chat:done`.
 #[tauri::command]
 pub async fn ask_meeting(
     store: State<'_, Arc<Store>>,
-    summarizer: State<'_, Arc<Summarizer>>,
+    worker: State<'_, Arc<ModelWorker>>,
     meeting_id: i64,
     question: String,
 ) -> CommandResult<()> {
-    let (store, summarizer) = (Arc::clone(&store), Arc::clone(&summarizer));
-    blocking(move || Ok(summarizer.ask(&store, meeting_id, &question)?)).await
+    let (store, worker) = (Arc::clone(&store), Arc::clone(&worker));
+    blocking(move || Ok(worker.ask(&store, meeting_id, &question)?)).await
 }
 
 #[tauri::command]
-pub fn cancel_chat(summarizer: State<'_, Arc<Summarizer>>) -> bool {
-    summarizer.cancel_chat()
+pub fn cancel_chat(worker: State<'_, Arc<ModelWorker>>) -> bool {
+    worker.cancel_chat()
 }
 
 /// The meeting whose question is being answered, if any.
 #[tauri::command]
-pub fn active_chat(summarizer: State<'_, Arc<Summarizer>>) -> Option<i64> {
-    summarizer.active_chat()
+pub fn active_chat(worker: State<'_, Arc<ModelWorker>>) -> Option<i64> {
+    worker.active_chat()
 }
 
 /// The meeting's saved questions and answers, oldest first.

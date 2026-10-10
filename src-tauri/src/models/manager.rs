@@ -262,7 +262,7 @@ mod tests {
         };
         assert_eq!(model.id, "test-model");
         assert_eq!(downloads.status(), None);
-        assert_eq!(store.summary_model().unwrap(), Some(model));
+        assert_eq!(store.selected_model().unwrap(), Some(model));
     }
 
     #[test]

@@ -17,7 +17,7 @@ pub const VOCABULARY: &str = "vocabulary";
 /// The transcription model for new recordings, by id; absent means Whistle.
 pub const TRANSCRIPTION_MODEL: &str = "transcription_model";
 /// How long the summary model stays loaded after a request
-/// (`summarize::resident::KeepLoaded`); absent means five minutes.
+/// (`llm::resident::KeepLoaded`); absent means five minutes.
 pub const KEEP_MODEL_LOADED: &str = "keep_model_loaded";
 
 /// The setting that holds a source's speech sensitivity.

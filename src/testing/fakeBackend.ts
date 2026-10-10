@@ -155,7 +155,7 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
       return stopped;
     },
     list_transcript: ({ meetingId }) => segments.filter((s) => s.meetingId === meetingId),
-    summary_model: () => state.model,
+    selected_model: () => state.model,
     available_models: () => [
       {
         id: "gemma-4-e2b-it-q4_k_m",
@@ -313,12 +313,12 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
       if (state.openModelPageError) throw state.openModelPageError;
       state.openedModelPage = String(modelId);
     },
-    select_summary_model: ({ modelId }) => {
+    select_model: ({ modelId }) => {
       const model = state.installed.find((m) => m.id === modelId);
       if (!model) throw { kind: "notFound", missing: "model", message: `model ${String(modelId)} doesn't exist` };
       state.model = model;
     },
-    remove_summary_model: ({ modelId }) => {
+    remove_model: ({ modelId }) => {
       if (state.removeError) throw state.removeError;
       state.installed = state.installed.filter((m) => m.id !== modelId);
       if (state.model?.id === modelId) state.model = state.installed[0] ?? null;

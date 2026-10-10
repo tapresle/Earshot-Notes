@@ -7,10 +7,11 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use earshot_lib::llm::generator::{GenerateError, Generator};
+use earshot_lib::llm::llama::{LlamaGenerator, MAX_CONTEXT, Placement};
+use earshot_lib::llm::template::Message;
 use earshot_lib::store::{Source, TranscriptSegment};
-use earshot_lib::summarize::llama::{LlamaGenerator, MAX_CONTEXT, Placement};
-use earshot_lib::summarize::run::{Generator, Progress, Request, SummaryError, summarize};
-use earshot_lib::summarize::template::Message;
+use earshot_lib::summarize::run::{Progress, Request, summarize};
 
 const MODEL: &str = "tests/models/smollm2-135m-instruct-q4_k_m.gguf";
 
@@ -96,7 +97,7 @@ fn stops_when_cancelled_mid_generation() {
         },
     );
 
-    assert!(matches!(result, Err(SummaryError::Cancelled)));
+    assert!(matches!(result, Err(GenerateError::Cancelled)));
     assert_eq!(pieces, 1);
 }
 
@@ -156,5 +157,5 @@ fn condenses_in_parts_when_the_meeting_exceeds_the_context() {
 fn reports_a_missing_model_file() {
     let result = LlamaGenerator::load(Path::new("tests/models/missing.gguf"));
 
-    assert!(matches!(result, Err(SummaryError::Model(m)) if m.contains("missing")));
+    assert!(matches!(result, Err(GenerateError::Model(m)) if m.contains("missing")));
 }

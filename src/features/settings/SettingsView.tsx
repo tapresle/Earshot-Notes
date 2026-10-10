@@ -16,9 +16,9 @@ import {
   type VocabularyTerm,
 } from "../../lib/api";
 import { ExportAllButton } from "../export/ExportBar";
-import { ModelOrigin } from "../summary/ModelOrigin";
+import { ModelOrigin } from "../models/ModelOrigin";
 import { Markdown } from "../summary/Markdown";
-import { ModelSetup } from "../summary/ModelSetup";
+import { ModelSetup } from "../models/ModelSetup";
 import { missingTerms, SOFTWARE_TERMS } from "./softwareTerms";
 import { TranscriptionSection } from "./TranscriptionSection";
 
@@ -43,7 +43,7 @@ export function SettingsView({ recording, onShowSetup }: { recording: boolean; o
       <TranscriptionSection recording={recording} />
       <VocabularySection />
       <AudioRecordingsSection recording={recording} />
-      <SummaryModelSection />
+      <LocalModelSection />
       <UpdatesSection />
       <section className="settings-section" aria-labelledby="export-heading">
         <h2 id="export-heading">Export</h2>
@@ -422,7 +422,7 @@ function gigabytes(bytes: number): string {
   return `${(bytes / 1e9).toFixed(1)} GB`;
 }
 
-function SummaryModelSection() {
+function LocalModelSection() {
   const [installed, setInstalled] = useState<InstalledModels | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -438,7 +438,7 @@ function SummaryModelSection() {
   async function select(model: ModelRecord) {
     setError(null);
     try {
-      await api.selectSummaryModel(model.id);
+      await api.selectModel(model.id);
       setInstalled((current) => current && { ...current, selectedId: model.id });
     } catch (e) {
       setError(errorMessage(e));
@@ -446,8 +446,8 @@ function SummaryModelSection() {
   }
 
   return (
-    <section className="settings-section" aria-labelledby="summary-model-heading">
-      <h2 id="summary-model-heading">Local AI model</h2>
+    <section className="settings-section" aria-labelledby="local-model-heading">
+      <h2 id="local-model-heading">Local AI model</h2>
       {installed && installed.models.length > 0 && (
         <fieldset className="model-choices">
           <legend className="settings-help">Summaries and chat use the selected model.</legend>
@@ -571,7 +571,7 @@ function InstalledModel({
     onError(null);
     setRemoving(true);
     try {
-      await api.removeSummaryModel(model.id);
+      await api.removeModel(model.id);
       onRemoved();
     } catch (e) {
       if (isCommandError(e) && e.kind === "notFound") {
@@ -587,7 +587,7 @@ function InstalledModel({
   return (
     <div className={selected ? "installed-model selected" : "installed-model"}>
       <label className="model-choice">
-        <input type="radio" name="summary-model" className="sr-only" checked={selected} onChange={onSelect} />
+        <input type="radio" name="local-model" className="sr-only" checked={selected} onChange={onSelect} />
         <span>
           <span className="model-choice-name">
             <strong>{model.displayName}</strong>

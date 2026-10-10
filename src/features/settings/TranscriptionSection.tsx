@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, type TranscriptionModels, type TranscriptionOption } from "../../lib/api";
-import { ModelOrigin } from "../summary/ModelOrigin";
+import { ModelOrigin } from "../models/ModelOrigin";
 
 function megabytes(bytes: number): string {
   return `${Math.round(bytes / 1e6)} MB`;

@@ -14,7 +14,7 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
 
-use super::run::{Generator, SummaryError};
+use super::generator::{GenerateError, Generator};
 use super::template::{self, Message, SpecialTokens};
 
 /// Cap on the context window: enough for a couple of hours of meeting in one
@@ -24,7 +24,7 @@ const BATCH: usize = 2048;
 
 static BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
 
-fn backend() -> Result<&'static LlamaBackend, SummaryError> {
+fn backend() -> Result<&'static LlamaBackend, GenerateError> {
     BACKEND
         .get_or_init(|| {
             // Silence llama.cpp's and ggml's (Metal's) diagnostic output.
@@ -32,7 +32,7 @@ fn backend() -> Result<&'static LlamaBackend, SummaryError> {
             LlamaBackend::init().map_err(|e| e.to_string())
         })
         .as_ref()
-        .map_err(|e| SummaryError::Model(e.clone()))
+        .map_err(|e| GenerateError::Model(e.clone()))
 }
 
 /// Where a model runs.
@@ -110,7 +110,7 @@ pub struct LlamaGenerator {
 
 impl LlamaGenerator {
     /// Loads a GGUF model with every layer on the GPU.
-    pub fn load(path: &Path) -> Result<Self, SummaryError> {
+    pub fn load(path: &Path) -> Result<Self, GenerateError> {
         Self::load_with_context_limit(path, MAX_CONTEXT)
     }
 
@@ -119,7 +119,7 @@ impl LlamaGenerator {
     pub fn load_with_context_limit(
         path: &Path,
         context_limit: usize,
-    ) -> Result<Self, SummaryError> {
+    ) -> Result<Self, GenerateError> {
         Self::load_on(path, context_limit, Placement::Gpu)
     }
 
@@ -128,9 +128,9 @@ impl LlamaGenerator {
         path: &Path,
         context_limit: usize,
         placement: Placement,
-    ) -> Result<Self, SummaryError> {
+    ) -> Result<Self, GenerateError> {
         if !path.exists() {
-            return Err(SummaryError::Model(format!(
+            return Err(GenerateError::Model(format!(
                 "the model file {} is missing",
                 path.display()
             )));
@@ -142,12 +142,14 @@ impl LlamaGenerator {
         };
         let params = LlamaModelParams::default().with_n_gpu_layers(gpu_layers);
         let model = LlamaModel::load_from_file(backend, path, &params)
-            .map_err(|e| SummaryError::Model(format!("couldn't load the model: {e}")))?;
+            .map_err(|e| GenerateError::Model(format!("couldn't load the model: {e}")))?;
         let template = model
             .chat_template(None)
-            .map_err(|e| SummaryError::Model(format!("the model has no chat template: {e}")))?
+            .map_err(|e| GenerateError::Model(format!("the model has no chat template: {e}")))?
             .to_string()
-            .map_err(|e| SummaryError::Model(format!("the chat template isn't valid text: {e}")))?;
+            .map_err(|e| {
+                GenerateError::Model(format!("the chat template isn't valid text: {e}"))
+            })?;
         let vocab = model.vocab();
         let piece =
             |token| String::from_utf8_lossy(&vocab.token_to_piece(token, true, None)).into_owned();
@@ -173,7 +175,7 @@ impl LlamaGenerator {
         self.sampling = sampling;
     }
 
-    fn render(&self, messages: &[Message]) -> Result<String, SummaryError> {
+    fn render(&self, messages: &[Message]) -> Result<String, GenerateError> {
         Ok(template::render(&self.template, messages, &self.tokens)?)
     }
 
@@ -190,11 +192,11 @@ impl Generator for LlamaGenerator {
         self.context_size
     }
 
-    fn prompt_tokens(&mut self, messages: &[Message]) -> Result<usize, SummaryError> {
+    fn prompt_tokens(&mut self, messages: &[Message]) -> Result<usize, GenerateError> {
         Ok(self.tokenize_prompt(&self.render(messages)?).len())
     }
 
-    fn count_tokens(&mut self, text: &str) -> Result<usize, SummaryError> {
+    fn count_tokens(&mut self, text: &str) -> Result<usize, GenerateError> {
         Ok(self
             .model
             .vocab()
@@ -208,10 +210,10 @@ impl Generator for LlamaGenerator {
         max_tokens: usize,
         cancel: &AtomicBool,
         on_text: &mut dyn FnMut(&str),
-    ) -> Result<String, SummaryError> {
+    ) -> Result<String, GenerateError> {
         let prompt = self.tokenize_prompt(&self.render(messages)?);
         if prompt.len() + max_tokens > self.context_size {
-            return Err(SummaryError::ContextTooSmall);
+            return Err(GenerateError::ContextTooSmall);
         }
         let backend = backend()?;
         let n_ctx = NonZeroU32::new((prompt.len() + max_tokens) as u32).expect("non-zero");
@@ -225,14 +227,14 @@ impl Generator for LlamaGenerator {
         let mut ctx = self
             .model
             .new_context(backend, params)
-            .map_err(|e| SummaryError::Model(format!("couldn't create a context: {e}")))?;
+            .map_err(|e| GenerateError::Model(format!("couldn't create a context: {e}")))?;
 
-        let model_error = |e: &dyn std::fmt::Display| SummaryError::Model(e.to_string());
+        let model_error = |e: &dyn std::fmt::Display| GenerateError::Model(e.to_string());
         let mut batch = LlamaBatch::new(BATCH, 1);
         let last = prompt.len() - 1;
         for (chunk_index, chunk) in prompt.chunks(BATCH).enumerate() {
             if cancel.load(Ordering::Relaxed) {
-                return Err(SummaryError::Cancelled);
+                return Err(GenerateError::Cancelled);
             }
             batch.clear();
             for (offset, &token) in chunk.iter().enumerate() {
@@ -250,7 +252,7 @@ impl Generator for LlamaGenerator {
         let mut output = String::new();
         for pos in (prompt.len()..).take(max_tokens) {
             if cancel.load(Ordering::Relaxed) {
-                return Err(SummaryError::Cancelled);
+                return Err(GenerateError::Cancelled);
             }
             let token = sampler.sample(&ctx, batch.n_tokens() - 1);
             if vocab.is_eog(token) {

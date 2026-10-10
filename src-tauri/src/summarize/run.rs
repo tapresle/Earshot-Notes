@@ -4,7 +4,8 @@ use std::sync::atomic::AtomicBool;
 
 use super::note_taker::{NoteTaker, you_for_me};
 use super::prompt::{self, combine_messages, part_messages, summary_messages, transcript_line};
-use super::template::{Message, TemplateError};
+use crate::llm::generator::{GenerateError, Generator};
+use crate::llm::template::Message;
 use crate::store::TranscriptSegment;
 
 /// Room for the finished notes: a quarter of the context, at most 4,096
@@ -27,32 +28,8 @@ const MARGIN_TOKENS: usize = 64;
 pub enum SummaryError {
     #[error("there's nothing to summarize yet: no transcript and no notes")]
     NothingToSummarize,
-    #[error("the summary was cancelled")]
-    Cancelled,
-    #[error("the model's context is too small to summarize this meeting")]
-    ContextTooSmall,
     #[error(transparent)]
-    Template(#[from] TemplateError),
-    #[error("the model failed: {0}")]
-    Model(String),
-}
-
-/// A loaded model that can format prompts and generate text.
-pub trait Generator {
-    /// Total tokens the model can attend to, prompt plus output.
-    fn context_size(&self) -> usize;
-    /// Tokens the rendered prompt for these messages takes.
-    fn prompt_tokens(&mut self, messages: &[Message]) -> Result<usize, SummaryError>;
-    fn count_tokens(&mut self, text: &str) -> Result<usize, SummaryError>;
-    /// Generates a reply, passing each piece of text to `on_text` as it arrives.
-    /// Returns `SummaryError::Cancelled` soon after `cancel` is set.
-    fn generate(
-        &mut self,
-        messages: &[Message],
-        max_tokens: usize,
-        cancel: &AtomicBool,
-        on_text: &mut dyn FnMut(&str),
-    ) -> Result<String, SummaryError>;
+    Generate(#[from] GenerateError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,7 +93,7 @@ fn write_notes(
     );
     if fits(generator, &single, summary_room, context)? {
         on_progress(Progress::Writing);
-        return generator.generate(&single, summary_room, cancel, on_text);
+        return Ok(generator.generate(&single, summary_room, cancel, on_text)?);
     }
 
     // Too long for one pass: condense in parts until the parts fit together.
@@ -130,7 +107,7 @@ fn write_notes(
     let budget = context
         .checked_sub(overhead + part_room + MARGIN_TOKENS)
         .filter(|b| *b > 0)
-        .ok_or(SummaryError::ContextTooSmall)?;
+        .ok_or(GenerateError::ContextTooSmall)?;
     let mut pieces = lines;
     loop {
         let costs = pieces
@@ -140,7 +117,7 @@ fn write_notes(
         let windows = prompt::windows(&pieces, &costs, budget);
         if windows.len() >= pieces.len() && pieces.len() > 1 {
             // Condensing can't shrink this any further.
-            return Err(SummaryError::ContextTooSmall);
+            return Err(GenerateError::ContextTooSmall.into());
         }
         let mut parts = Vec::with_capacity(windows.len());
         for (i, window) in windows.iter().enumerate() {
@@ -162,7 +139,7 @@ fn write_notes(
             combine_messages(request.title, request.notes_markdown, request.terms, &parts);
         if fits(generator, &combined, summary_room, context)? {
             on_progress(Progress::Writing);
-            return generator.generate(&combined, summary_room, cancel, on_text);
+            return Ok(generator.generate(&combined, summary_room, cancel, on_text)?);
         }
         pieces = parts;
     }
@@ -173,7 +150,7 @@ fn fits(
     messages: &[Message],
     output: usize,
     context: usize,
-) -> Result<bool, SummaryError> {
+) -> Result<bool, GenerateError> {
     Ok(generator.prompt_tokens(messages)? + output + MARGIN_TOKENS <= context)
 }
 
@@ -221,14 +198,14 @@ mod tests {
             self.context
         }
 
-        fn prompt_tokens(&mut self, messages: &[Message]) -> Result<usize, SummaryError> {
+        fn prompt_tokens(&mut self, messages: &[Message]) -> Result<usize, GenerateError> {
             Ok(messages
                 .iter()
                 .map(|m| m.content.split_whitespace().count() + 4)
                 .sum())
         }
 
-        fn count_tokens(&mut self, text: &str) -> Result<usize, SummaryError> {
+        fn count_tokens(&mut self, text: &str) -> Result<usize, GenerateError> {
             Ok(text.split_whitespace().count())
         }
 
@@ -238,9 +215,9 @@ mod tests {
             _max_tokens: usize,
             cancel: &AtomicBool,
             on_text: &mut dyn FnMut(&str),
-        ) -> Result<String, SummaryError> {
+        ) -> Result<String, GenerateError> {
             if cancel.load(Ordering::Relaxed) {
-                return Err(SummaryError::Cancelled);
+                return Err(GenerateError::Cancelled);
             }
             let user = &messages[1].content;
             let reply = if user.contains(" of the transcript:\n<transcript>") {
@@ -365,7 +342,10 @@ mod tests {
         let (result, _, _) = run(&mut model, &segments(5, 400), "");
 
         assert!(
-            matches!(result, Err(SummaryError::ContextTooSmall)),
+            matches!(
+                result,
+                Err(SummaryError::Generate(GenerateError::ContextTooSmall))
+            ),
             "{result:?}"
         );
     }
@@ -388,6 +368,9 @@ mod tests {
             &mut |_| {},
         );
 
-        assert!(matches!(result, Err(SummaryError::Cancelled)));
+        assert!(matches!(
+            result,
+            Err(SummaryError::Generate(GenerateError::Cancelled))
+        ));
     }
 }

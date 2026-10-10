@@ -1,15 +1,15 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Serialize;
 use serde_json::json;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
-use super::summaries::models_dir;
 use super::{CommandError, CommandResult, ErrorKind, blocking, open_with_system};
 use crate::models::download::{HttpFetch, Phase, download, partial_path};
 use crate::models::manager::{DownloadEvent, Downloads, EventSink, StartError};
-use crate::models::{self, GEMMA_4_E2B, KNOWN_MODELS, KnownModel};
-use crate::store::Store;
+use crate::models::{self, GEMMA_4_E2B, ImportError, KNOWN_MODELS, KnownModel};
+use crate::store::{ModelRecord, Store};
 
 /// Exactly which file a model is, on Hugging Face.
 #[derive(Debug, Serialize, PartialEq)]
@@ -187,6 +187,57 @@ pub(super) fn event_sink<T: 'static>(
 #[tauri::command]
 pub fn cancel_download(downloads: State<'_, Downloads>) -> bool {
     downloads.cancel()
+}
+
+/// Where models live: `<app data>/models`.
+pub fn models_dir(app: &AppHandle) -> Result<PathBuf, CommandError> {
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join("models"))
+        .map_err(|e| CommandError {
+            kind: ErrorKind::Internal,
+            message: e.to_string(),
+        })
+}
+
+impl From<ImportError> for CommandError {
+    fn from(error: ImportError) -> Self {
+        let message = error.to_string();
+        let kind = match error {
+            ImportError::Store(store) => return store.into(),
+            ImportError::NotAModel => ErrorKind::Invalid,
+            ImportError::Io(_) => ErrorKind::Unavailable,
+        };
+        Self { kind, message }
+    }
+}
+
+#[tauri::command]
+pub async fn selected_model(store: State<'_, Arc<Store>>) -> CommandResult<Option<ModelRecord>> {
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.selected_model()?)).await
+}
+
+/// Copies a GGUF file the user picked into the models folder. It becomes the
+/// summary model only when no other model is installed.
+/// Hashing a multi-gigabyte file takes a few seconds, so this runs off the main thread.
+#[tauri::command]
+pub async fn import_model(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    path: String,
+) -> CommandResult<ModelRecord> {
+    let store = Arc::clone(&store);
+    let models_dir = models_dir(&app)?;
+    blocking(move || {
+        Ok(models::import(
+            PathBuf::from(path).as_path(),
+            &models_dir,
+            &store,
+            KNOWN_MODELS,
+        )?)
+    })
+    .await
 }
 
 #[cfg(test)]

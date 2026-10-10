@@ -4,15 +4,15 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use super::models::HuggingFaceSource;
-use super::summaries::models_dir;
+use super::models::models_dir;
 use super::{CommandError, CommandResult, ErrorKind, blocking};
 use crate::audio::mic::{self, InputDevice};
 use crate::chunker::Sensitivity;
+use crate::llm::resident::KeepLoaded;
+use crate::llm::worker::ModelWorker;
 use crate::models::{self, RemoveError};
 use crate::store::settings::{INPUT_DEVICE, KEEP_MODEL_LOADED, sensitivity_key};
 use crate::store::{ModelRecord, Source, Store};
-use crate::summarize::resident::KeepLoaded;
-use crate::summarize::service::Summarizer;
 use macos_audio::LoginItem;
 
 /// The microphones connected now. Listing can take a moment, so it runs off the main thread.
@@ -172,21 +172,21 @@ fn installed(store: &Store) -> CommandResult<InstalledModels> {
                 model,
             })
             .collect(),
-        selected_id: store.summary_model()?.map(|m| m.id),
+        selected_id: store.selected_model()?.map(|m| m.id),
     })
 }
 
 /// Selects the model for summaries, and frees the one loaded before.
 #[tauri::command]
-pub async fn select_summary_model(
+pub async fn select_model(
     store: State<'_, Arc<Store>>,
-    summarizer: State<'_, Arc<Summarizer>>,
+    worker: State<'_, Arc<ModelWorker>>,
     model_id: String,
 ) -> CommandResult<()> {
-    let (store, summarizer) = (Arc::clone(&store), Arc::clone(&summarizer));
+    let (store, worker) = (Arc::clone(&store), Arc::clone(&worker));
     blocking(move || {
-        store.select_summary_model(&model_id)?;
-        summarizer.unload();
+        store.select_model(&model_id)?;
+        worker.unload();
         Ok(())
     })
     .await
@@ -209,13 +209,13 @@ pub async fn keep_model_loaded(store: State<'_, Arc<Store>>) -> CommandResult<Ke
 #[tauri::command]
 pub async fn set_keep_model_loaded(
     store: State<'_, Arc<Store>>,
-    summarizer: State<'_, Arc<Summarizer>>,
+    worker: State<'_, Arc<ModelWorker>>,
     keep: KeepLoaded,
 ) -> CommandResult<()> {
-    let (store, summarizer) = (Arc::clone(&store), Arc::clone(&summarizer));
+    let (store, worker) = (Arc::clone(&store), Arc::clone(&worker));
     blocking(move || {
         store.set_setting(KEEP_MODEL_LOADED, Some(keep.as_setting()))?;
-        summarizer.keep_loaded(keep);
+        worker.keep_loaded(keep);
         Ok(())
     })
     .await
@@ -237,17 +237,17 @@ impl From<RemoveError> for CommandError {
 /// summary is running. If it was the selected model, summaries switch to the
 /// newest remaining one.
 #[tauri::command]
-pub async fn remove_summary_model(
+pub async fn remove_model(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
-    summarizer: State<'_, Arc<Summarizer>>,
+    worker: State<'_, Arc<ModelWorker>>,
     model_id: String,
 ) -> CommandResult<()> {
     let dir = models_dir(&app)?;
-    let (store, summarizer) = (Arc::clone(&store), Arc::clone(&summarizer));
+    let (store, worker) = (Arc::clone(&store), Arc::clone(&worker));
     blocking(move || {
-        summarizer.when_idle(|| {
-            summarizer.unload();
+        worker.when_idle(|| {
+            worker.unload();
             models::remove(&model_id, &dir, &store)
         })??;
         Ok(())

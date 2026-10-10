@@ -1493,14 +1493,14 @@ describe("App", () => {
 
       const gemmaChoice = await screen.findByRole("radio", { name: /Gemma 4 E2B/ });
       expect(gemmaChoice).toBeChecked();
-      const summaryModels = screen.getByRole("region", { name: "Local AI model" });
-      expect(within(summaryModels).getAllByText("Selected")).toHaveLength(1);
+      const localModels = screen.getByRole("region", { name: "Local AI model" });
+      expect(within(localModels).getAllByText("Selected")).toHaveLength(1);
       expect(gemmaChoice.closest("label")).toHaveTextContent("Selected");
       await user.click(screen.getByRole("radio", { name: /My fine-tune/ }));
 
       await waitFor(() => expect(backend.state.model?.id).toBe("local-abc"));
       expect(screen.getByRole("radio", { name: /My fine-tune/ })).toBeChecked();
-      expect(within(summaryModels).getAllByText("Selected")).toHaveLength(1);
+      expect(within(localModels).getAllByText("Selected")).toHaveLength(1);
       expect(screen.getByRole("radio", { name: /My fine-tune/ }).closest("label")).toHaveTextContent("Selected");
     });
 

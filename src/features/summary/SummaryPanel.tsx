@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { SummaryStage } from "../../lib/api";
 import { formatOffset } from "../transcript/formatOffset";
 import { Markdown } from "./Markdown";
-import { ModelSetup } from "./ModelSetup";
+import { ModelSetup } from "../models/ModelSetup";
 import type { SummaryState } from "./useSummary";
 
 const stageText = (stage: SummaryStage): string => {

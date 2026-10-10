@@ -8,9 +8,9 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use earshot_lib::chunker::Speech;
-use earshot_lib::summarize::llama::{LlamaGenerator, MAX_CONTEXT, Placement};
-use earshot_lib::summarize::run::Generator;
-use earshot_lib::summarize::template::Message;
+use earshot_lib::llm::generator::Generator;
+use earshot_lib::llm::llama::{LlamaGenerator, MAX_CONTEXT, Placement};
+use earshot_lib::llm::template::Message;
 use earshot_lib::transcribe::phantom::is_phantom;
 use earshot_lib::transcribe::whisper::{Whisper, WhisperError};
 use earshot_lib::transcribe::whistle::{MAX_SAMPLES, SAMPLE_RATE};

@@ -1,6 +1,6 @@
 //! The instructions and inputs sent to the model.
 
-use super::template::Message;
+use crate::llm::template::Message;
 use crate::store::TranscriptSegment;
 
 const SYSTEM: &str = "You turn a meeting transcript and the note-taker's rough notes into detailed meeting notes that someone who missed the meeting could act on.

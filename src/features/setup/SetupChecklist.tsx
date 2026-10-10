@@ -21,7 +21,7 @@ export function SetupChecklist({ onOpenSettings, onFinish }: { onOpenSettings: (
       .then(setSystemAudio)
       .catch((e) => setError(errorMessage(e)));
     api
-      .summaryModel()
+      .selectedModel()
       .then((m) => setModel(m ?? null))
       .catch((e) => setError(errorMessage(e)));
   }, []);

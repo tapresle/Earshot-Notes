@@ -19,6 +19,7 @@ pub mod vocabulary;
 
 use serde::Serialize;
 
+use crate::llm::worker::WorkerError;
 use crate::recording::RecordingError;
 use crate::store::StoreError;
 
@@ -90,6 +91,21 @@ impl From<StoreError> for CommandError {
             kind,
             message: error.to_string(),
         }
+    }
+}
+
+impl From<WorkerError> for CommandError {
+    fn from(error: WorkerError) -> Self {
+        let message = error.to_string();
+        let kind = match error {
+            WorkerError::Store(store) => return store.into(),
+            WorkerError::Busy(_) | WorkerError::NothingToSummarize | WorkerError::NothingToAsk => {
+                ErrorKind::Conflict
+            }
+            WorkerError::EmptyQuestion | WorkerError::QuestionTooLong => ErrorKind::Invalid,
+            WorkerError::NoModel | WorkerError::Stopped => ErrorKind::Unavailable,
+        };
+        Self { kind, message }
     }
 }
 
