@@ -3,6 +3,7 @@
 
 pub mod answer;
 pub mod citations;
+pub mod job;
 pub mod passages;
 pub mod prompt;
 pub mod retrieve;

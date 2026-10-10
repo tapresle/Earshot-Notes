@@ -23,6 +23,7 @@ use std::sync::Arc;
 use tauri::{App, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
+use chat::job::ChatEvent;
 use commands::recording::Transcription;
 use recording::Recorder;
 use recordings::Recordings;
@@ -144,6 +145,10 @@ pub fn run() {
             commands::summaries::latest_summary,
             commands::summaries::summary_model,
             commands::summaries::import_model,
+            commands::chat::ask_meeting,
+            commands::chat::cancel_chat,
+            commands::chat::active_chat,
+            commands::chat::chat_messages,
             commands::models::available_models,
             commands::models::download_model,
             commands::models::cancel_download,
@@ -253,7 +258,9 @@ fn spawn_transcription(
 }
 
 /// Starts the summarizer. Progress, streamed text, and results reach the UI as
-/// `summary:progress`, `summary:text`, `summary:done`, and `summary:failed` events.
+/// `summary:progress`, `summary:text`, `summary:done`, and `summary:failed`
+/// events, and for chat as `chat:progress`, `chat:text`, `chat:done`, and
+/// `chat:failed`.
 fn spawn_summarizer(app: &App, store: Arc<Store>) -> Summarizer {
     let handle = app.handle().clone();
     let load = Box::new(|model: &store::ModelRecord| {
@@ -263,7 +270,8 @@ fn spawn_summarizer(app: &App, store: Arc<Store>) -> Summarizer {
         )
         .map(|generator| Box::new(generator) as Box<dyn Generator>)
     });
-    Summarizer::spawn(store, load, move |event| {
+    let chat_handle = handle.clone();
+    let on_summary = move |event: SummaryEvent| {
         let (name, payload) = match event {
             SummaryEvent::Progress { meeting_id, stage } => {
                 let mut payload = serde_json::to_value(stage).unwrap_or_default();
@@ -294,5 +302,38 @@ fn spawn_summarizer(app: &App, store: Arc<Store>) -> Summarizer {
         if let Err(error) = handle.emit(name, payload) {
             log::warn!("couldn't send {name} to the UI: {error}");
         }
-    })
+    };
+    let on_chat = move |event: ChatEvent| {
+        let (name, payload) = match event {
+            ChatEvent::Progress { meeting_id, stage } => {
+                let mut payload = serde_json::to_value(stage).unwrap_or_default();
+                payload["meetingId"] = json!(meeting_id);
+                ("chat:progress", payload)
+            }
+            ChatEvent::Text { meeting_id, text } => (
+                "chat:text",
+                json!({ "meetingId": meeting_id, "text": text }),
+            ),
+            ChatEvent::Done {
+                meeting_id,
+                question,
+                answer,
+            } => (
+                "chat:done",
+                json!({ "meetingId": meeting_id, "question": question, "answer": answer }),
+            ),
+            ChatEvent::Failed {
+                meeting_id,
+                message,
+                cancelled,
+            } => (
+                "chat:failed",
+                json!({ "meetingId": meeting_id, "message": message, "cancelled": cancelled }),
+            ),
+        };
+        if let Err(error) = chat_handle.emit(name, payload) {
+            log::warn!("couldn't send {name} to the UI: {error}");
+        }
+    };
+    Summarizer::spawn(store, load, on_summary, on_chat)
 }

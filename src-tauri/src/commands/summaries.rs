@@ -25,7 +25,10 @@ impl From<SummarizeError> for CommandError {
         let message = error.to_string();
         let kind = match error {
             SummarizeError::Store(store) => return store.into(),
-            SummarizeError::Busy | SummarizeError::NothingToSummarize => ErrorKind::Conflict,
+            SummarizeError::Busy(_)
+            | SummarizeError::NothingToSummarize
+            | SummarizeError::NothingToAsk => ErrorKind::Conflict,
+            SummarizeError::EmptyQuestion | SummarizeError::QuestionTooLong => ErrorKind::Invalid,
             SummarizeError::NoModel | SummarizeError::Stopped => ErrorKind::Unavailable,
         };
         Self { kind, message }
