@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+use crate::llm::llama::MAX_CONTEXT;
 use crate::store::{ModelRecord, ModelSource, Store, StoreError};
-use crate::summarize::llama::MAX_CONTEXT;
 
 /// The llama-cpp-2 version this build runs, recorded as the minimum runtime of
 /// models known to work with it. Must match the exact version Cargo.toml pins.
@@ -388,7 +388,7 @@ mod tests {
             std::fs::read(&record.file_path).unwrap(),
             std::fs::read(&source).unwrap()
         );
-        assert_eq!(store.summary_model().unwrap(), Some(record));
+        assert_eq!(store.selected_model().unwrap(), Some(record));
     }
 
     #[test]
@@ -421,7 +421,7 @@ mod tests {
 
         import(&fake_gguf(dir.path(), "b.gguf", b"b"), &models, &store, &[]).unwrap();
 
-        assert_eq!(store.summary_model().unwrap(), Some(first));
+        assert_eq!(store.selected_model().unwrap(), Some(first));
     }
 
     #[test]
@@ -432,11 +432,11 @@ mod tests {
         let a = fake_gguf(dir.path(), "a.gguf", b"a");
         import(&a, &models, &store, &[]).unwrap();
         let b = import(&fake_gguf(dir.path(), "b.gguf", b"b"), &models, &store, &[]).unwrap();
-        store.select_summary_model(&b.id).unwrap();
+        store.select_model(&b.id).unwrap();
 
         import(&a, &models, &store, &[]).unwrap();
 
-        assert_eq!(store.summary_model().unwrap(), Some(b));
+        assert_eq!(store.selected_model().unwrap(), Some(b));
     }
 
     #[test]
@@ -485,7 +485,7 @@ mod tests {
         assert!(!Path::new(&record.file_path).exists());
         assert!(source.exists(), "the original file is left alone");
         assert!(store.list_models().unwrap().is_empty());
-        assert_eq!(store.summary_model().unwrap(), None);
+        assert_eq!(store.selected_model().unwrap(), None);
     }
 
     #[test]

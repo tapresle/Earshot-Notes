@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use super::summaries::models_dir;
+use super::models::models_dir;
 use super::{CommandResult, blocking};
 use crate::audio::{Capture, mic, system};
 use crate::models::transcription;

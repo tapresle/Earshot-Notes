@@ -3,7 +3,7 @@
 use std::sync::atomic::AtomicBool;
 
 use super::prompt::title_messages;
-use super::run::{Generator, SummaryError};
+use crate::llm::generator::{GenerateError, Generator};
 
 /// Room for the reply. A title of a few words needs far fewer.
 const MAX_TITLE_TOKENS: usize = 32;
@@ -21,7 +21,7 @@ pub fn suggest_title(
     generator: &mut dyn Generator,
     summary_markdown: &str,
     cancel: &AtomicBool,
-) -> Result<Option<String>, SummaryError> {
+) -> Result<Option<String>, GenerateError> {
     let reply = generator.generate(
         &title_messages(summary_markdown),
         MAX_TITLE_TOKENS,
@@ -77,7 +77,7 @@ fn truncate(title: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::summarize::template::Message;
+    use crate::llm::template::Message;
 
     #[test]
     fn keeps_a_plain_title() {
@@ -175,10 +175,10 @@ mod tests {
         fn context_size(&self) -> usize {
             8192
         }
-        fn prompt_tokens(&mut self, _: &[Message]) -> Result<usize, SummaryError> {
+        fn prompt_tokens(&mut self, _: &[Message]) -> Result<usize, GenerateError> {
             Ok(0)
         }
-        fn count_tokens(&mut self, _: &str) -> Result<usize, SummaryError> {
+        fn count_tokens(&mut self, _: &str) -> Result<usize, GenerateError> {
             Ok(0)
         }
         fn generate(
@@ -187,7 +187,7 @@ mod tests {
             _: usize,
             _: &AtomicBool,
             _: &mut dyn FnMut(&str),
-        ) -> Result<String, SummaryError> {
+        ) -> Result<String, GenerateError> {
             self.prompts.push(messages[1].content.clone());
             Ok(self.reply.into())
         }

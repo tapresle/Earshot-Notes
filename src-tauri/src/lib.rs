@@ -6,6 +6,7 @@ pub mod chat;
 pub mod chunker;
 pub mod commands;
 pub mod export;
+pub mod llm;
 pub mod models;
 pub mod recording;
 pub mod recordings;
@@ -25,20 +26,21 @@ use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
 use chat::job::ChatEvent;
 use commands::recording::Transcription;
+use llm::generator::Generator;
+use llm::llama::LlamaGenerator;
+use llm::worker::ModelWorker;
 use recording::Recorder;
 use recordings::Recordings;
 use serde_json::json;
 use store::{NewSegment, Store};
-use summarize::llama::LlamaGenerator;
-use summarize::run::Generator;
-use summarize::service::{Summarizer, SummaryEvent};
+use summarize::job::SummaryEvent;
 use transcribe::worker::TranscriptionWorker;
 
 const DATABASE_FILE: &str = "earshot.db";
 const WHISTLE_FILE: &str = "models/whistle.cact";
 /// Kept audio, when the setting is on.
 const RECORDINGS_DIR: &str = "recordings";
-/// How long quitting waits for the transcription worker and the summarizer
+/// How long quitting waits for the transcription worker and the model worker
 /// each to free their models.
 const EXIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 /// The log file rolls over at this size, keeping only the newest file.
@@ -103,13 +105,13 @@ pub fn run() {
                     Err(error) => log::error!("couldn't read the transcription model: {error}"),
                 }
             }
-            let summarizer = spawn_summarizer(app, store.clone());
+            let model_worker = spawn_model_worker(app, store.clone());
 
             app.manage(store);
             app.manage(Arc::new(Recorder::default()));
             app.manage(Arc::new(Recordings::new(data_dir.join(RECORDINGS_DIR))));
             app.manage(Arc::new(Transcription(worker)));
-            app.manage(Arc::new(summarizer));
+            app.manage(Arc::new(model_worker));
             app.manage(models::manager::Downloads::default());
 
             tray::create(app)?;
@@ -143,8 +145,8 @@ pub fn run() {
             commands::summaries::cancel_summary,
             commands::summaries::active_summary,
             commands::summaries::latest_summary,
-            commands::summaries::summary_model,
-            commands::summaries::import_model,
+            commands::models::selected_model,
+            commands::models::import_model,
             commands::chat::ask_meeting,
             commands::chat::cancel_chat,
             commands::chat::active_chat,
@@ -167,8 +169,8 @@ pub fn run() {
             commands::settings::speech_sensitivity,
             commands::settings::set_speech_sensitivity,
             commands::settings::installed_models,
-            commands::settings::select_summary_model,
-            commands::settings::remove_summary_model,
+            commands::settings::select_model,
+            commands::settings::remove_model,
             commands::settings::keep_model_loaded,
             commands::settings::set_keep_model_loaded,
             commands::models::open_model_page,
@@ -201,7 +203,7 @@ pub fn run() {
                 if let Ok(worker) = &app.state::<Arc<Transcription>>().0 {
                     worker.shutdown(EXIT_TIMEOUT);
                 }
-                app.state::<Arc<Summarizer>>().shutdown(EXIT_TIMEOUT);
+                app.state::<Arc<ModelWorker>>().shutdown(EXIT_TIMEOUT);
             }
         });
 }
@@ -257,11 +259,11 @@ fn spawn_transcription(
     })
 }
 
-/// Starts the summarizer. Progress, streamed text, and results reach the UI as
+/// Starts the model worker. Progress, streamed text, and results reach the UI as
 /// `summary:progress`, `summary:text`, `summary:done`, and `summary:failed`
 /// events, and for chat as `chat:progress`, `chat:text`, `chat:done`, and
 /// `chat:failed`.
-fn spawn_summarizer(app: &App, store: Arc<Store>) -> Summarizer {
+fn spawn_model_worker(app: &App, store: Arc<Store>) -> ModelWorker {
     let handle = app.handle().clone();
     let load = Box::new(|model: &store::ModelRecord| {
         LlamaGenerator::load_with_context_limit(
@@ -335,5 +337,5 @@ fn spawn_summarizer(app: &App, store: Arc<Store>) -> Summarizer {
             log::warn!("couldn't send {name} to the UI: {error}");
         }
     };
-    Summarizer::spawn(store, load, on_summary, on_chat)
+    ModelWorker::spawn(store, load, on_summary, on_chat)
 }

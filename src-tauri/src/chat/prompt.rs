@@ -1,8 +1,8 @@
 //! The instructions and inputs for answering a question about a meeting.
 
+use crate::llm::template::Message;
 use crate::store::TranscriptSegment;
 use crate::summarize::prompt::transcript_line;
-use crate::summarize::template::Message;
 
 /// The answer when the meeting has nothing that matches the question.
 pub const NOT_COVERED: &str = "The meeting doesn't seem to cover that.";

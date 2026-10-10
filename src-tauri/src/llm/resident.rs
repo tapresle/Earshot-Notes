@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::run::{Generator, SummaryError};
+use super::generator::{GenerateError, Generator};
 use crate::store::ModelRecord;
 
 /// How long the model stays loaded after a request. Loading takes seconds,
@@ -56,7 +56,7 @@ impl KeepLoaded {
 
 /// Loads a model. Each call loads it again; `Resident` decides when to call it.
 pub type ModelLoader =
-    Box<dyn FnMut(&ModelRecord) -> Result<Box<dyn Generator>, SummaryError> + Send>;
+    Box<dyn FnMut(&ModelRecord) -> Result<Box<dyn Generator>, GenerateError> + Send>;
 
 /// The loaded model, if any, and which file it came from.
 pub struct Resident {
@@ -92,7 +92,7 @@ impl Resident {
         &mut self,
         model: &ModelRecord,
         on_loading: impl FnOnce(),
-    ) -> Result<&mut dyn Generator, SummaryError> {
+    ) -> Result<&mut dyn Generator, GenerateError> {
         let key = Key::of(model);
         if self.loaded.as_ref().is_some_and(|(k, _)| *k != key) {
             self.unload();
@@ -121,8 +121,8 @@ impl Resident {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm::template::Message;
     use crate::store::ModelSource;
-    use crate::summarize::template::Message;
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
 
@@ -142,10 +142,10 @@ mod tests {
         fn context_size(&self) -> usize {
             1
         }
-        fn prompt_tokens(&mut self, _: &[Message]) -> Result<usize, SummaryError> {
+        fn prompt_tokens(&mut self, _: &[Message]) -> Result<usize, GenerateError> {
             Ok(0)
         }
-        fn count_tokens(&mut self, _: &str) -> Result<usize, SummaryError> {
+        fn count_tokens(&mut self, _: &str) -> Result<usize, GenerateError> {
             Ok(0)
         }
         fn generate(
@@ -154,7 +154,7 @@ mod tests {
             _: usize,
             _: &AtomicBool,
             _: &mut dyn FnMut(&str),
-        ) -> Result<String, SummaryError> {
+        ) -> Result<String, GenerateError> {
             Ok(String::new())
         }
     }
@@ -179,7 +179,7 @@ mod tests {
         let shared = log.clone();
         let load: ModelLoader = Box::new(move |model| {
             if model.id == "broken" {
-                return Err(SummaryError::Model("bad file".into()));
+                return Err(GenerateError::Model("bad file".into()));
             }
             shared.lock().unwrap().push(format!("load {}", model.id));
             Ok(Box::new(Logged {

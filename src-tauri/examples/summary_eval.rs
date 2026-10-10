@@ -25,11 +25,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
+use earshot_lib::llm::generator::{GenerateError, Generator};
+use earshot_lib::llm::llama::{LlamaGenerator, MAX_CONTEXT, Sampling};
+use earshot_lib::llm::template::Message;
 use earshot_lib::store::{Source, TranscriptSegment};
-use earshot_lib::summarize::llama::{LlamaGenerator, MAX_CONTEXT, Sampling};
 use earshot_lib::summarize::prompt::{self, transcript_line};
-use earshot_lib::summarize::run::{Generator, Progress, Request, SummaryError, summarize};
-use earshot_lib::summarize::template::Message;
+use earshot_lib::summarize::run::{Progress, Request, summarize};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -327,11 +328,11 @@ impl Generator for Recorder<'_> {
         self.inner.context_size()
     }
 
-    fn prompt_tokens(&mut self, messages: &[Message]) -> Result<usize, SummaryError> {
+    fn prompt_tokens(&mut self, messages: &[Message]) -> Result<usize, GenerateError> {
         self.inner.prompt_tokens(messages)
     }
 
-    fn count_tokens(&mut self, text: &str) -> Result<usize, SummaryError> {
+    fn count_tokens(&mut self, text: &str) -> Result<usize, GenerateError> {
         self.inner.count_tokens(text)
     }
 
@@ -341,7 +342,7 @@ impl Generator for Recorder<'_> {
         max_tokens: usize,
         cancel: &AtomicBool,
         on_text: &mut dyn FnMut(&str),
-    ) -> Result<String, SummaryError> {
+    ) -> Result<String, GenerateError> {
         let reply = self.inner.generate(messages, max_tokens, cancel, on_text)?;
         self.outputs.push(reply.clone());
         Ok(reply)

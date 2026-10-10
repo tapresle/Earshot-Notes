@@ -6,9 +6,9 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, State};
 
+use super::models::models_dir;
 use super::models::{HuggingFaceSource, event_sink};
 use super::recording::Transcription;
-use super::summaries::models_dir;
 use super::{CommandError, CommandResult, ErrorKind, blocking};
 use crate::models::WHISPER_TURBO;
 use crate::models::download::{HttpFetch, Phase, fetch_verified};

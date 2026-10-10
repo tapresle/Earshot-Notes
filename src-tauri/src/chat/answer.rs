@@ -6,10 +6,10 @@ use super::citations::{cited_labels, rewrite};
 use super::passages::passages;
 use super::prompt::{self, NOT_COVERED, Turn, passage_source, segment_source};
 use super::retrieve::{self, Doc, Selection};
+use crate::llm::generator::{GenerateError, Generator};
+use crate::llm::template::Message;
 use crate::store::{ChatMessage, ChatRole, Citation, TranscriptSegment};
 use crate::summarize::note_taker::{NoteTaker, you_for_me};
-use crate::summarize::run::{Generator, SummaryError};
-use crate::summarize::template::Message;
 
 /// Slack for tokenizer differences between counting and generating.
 const MARGIN_TOKENS: usize = 64;
@@ -58,7 +58,7 @@ pub fn answer(
     ask: &Ask,
     cancel: &AtomicBool,
     on_text: &mut dyn FnMut(&str),
-) -> Result<Answer, SummaryError> {
+) -> Result<Answer, GenerateError> {
     let context = generator.context_size();
     let answer_room = answer_tokens(context);
     let turns = recent_turns(generator, ask.history, history_tokens(context))?;
@@ -77,7 +77,7 @@ pub fn answer(
         let budget = context
             .checked_sub(overhead + answer_room + MARGIN_TOKENS)
             .filter(|b| *b > 0)
-            .ok_or(SummaryError::ContextTooSmall)?;
+            .ok_or(GenerateError::ContextTooSmall)?;
         let texts: Vec<&str> = ask.segments.iter().map(|s| s.text.as_str()).collect();
         let mut failed = None;
         let selection = retrieve::select(ask.question, &passages, &texts, budget, &mut |doc| {
@@ -173,7 +173,7 @@ fn recent_turns<'a>(
     generator: &mut dyn Generator,
     history: &'a [ChatMessage],
     budget: usize,
-) -> Result<Vec<Turn<'a>>, SummaryError> {
+) -> Result<Vec<Turn<'a>>, GenerateError> {
     let mut turns = Vec::new();
     let mut spent = 0;
     for pair in history.rchunks_exact(2) {
@@ -231,13 +231,13 @@ mod tests {
         fn context_size(&self) -> usize {
             self.context
         }
-        fn prompt_tokens(&mut self, messages: &[Message]) -> Result<usize, SummaryError> {
+        fn prompt_tokens(&mut self, messages: &[Message]) -> Result<usize, GenerateError> {
             Ok(messages
                 .iter()
                 .map(|m| m.content.split_whitespace().count() + 4)
                 .sum())
         }
-        fn count_tokens(&mut self, text: &str) -> Result<usize, SummaryError> {
+        fn count_tokens(&mut self, text: &str) -> Result<usize, GenerateError> {
             Ok(text.split_whitespace().count())
         }
         fn generate(
@@ -246,9 +246,9 @@ mod tests {
             _: usize,
             cancel: &AtomicBool,
             on_text: &mut dyn FnMut(&str),
-        ) -> Result<String, SummaryError> {
+        ) -> Result<String, GenerateError> {
             if cancel.load(Ordering::Relaxed) {
-                return Err(SummaryError::Cancelled);
+                return Err(GenerateError::Cancelled);
             }
             self.prompts.push(messages.to_vec());
             for piece in self.reply.split_inclusive(' ') {
@@ -311,7 +311,7 @@ mod tests {
         }
     }
 
-    fn run(model: &mut FakeModel, ask: &Ask) -> (Result<Answer, SummaryError>, String) {
+    fn run(model: &mut FakeModel, ask: &Ask) -> (Result<Answer, GenerateError>, String) {
         let mut streamed = String::new();
         let result = answer(model, ask, &AtomicBool::new(false), &mut |t| {
             streamed.push_str(t)
@@ -522,7 +522,7 @@ mod tests {
             &mut |_| {},
         );
 
-        assert!(matches!(result, Err(SummaryError::Cancelled)));
+        assert!(matches!(result, Err(GenerateError::Cancelled)));
     }
 
     #[test]
@@ -533,7 +533,7 @@ mod tests {
         let (result, _) = run(&mut model, &ask("", &segments, &[], "launch?"));
 
         assert!(
-            matches!(result, Err(SummaryError::ContextTooSmall)),
+            matches!(result, Err(GenerateError::ContextTooSmall)),
             "{result:?}"
         );
     }

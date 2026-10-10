@@ -1,13 +1,13 @@
-//! Runs one question on the summary thread, which owns the shared model.
+//! Runs one question on the model worker's thread, which owns the shared model.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::answer::{Ask, answer};
+use crate::llm::generator::GenerateError;
+use crate::llm::resident::Resident;
+use crate::llm::worker::Stage;
 use crate::store::{ChatMessage, ModelRecord, NewExchange, Store, StoreError, TranscriptSegment};
-use crate::summarize::resident::Resident;
-use crate::summarize::run::SummaryError;
-use crate::summarize::service::Stage;
 
 /// Longest question accepted, in characters.
 pub const MAX_QUESTION_CHARS: usize = 2000;
@@ -52,7 +52,7 @@ pub struct ChatJob {
 #[derive(Debug, thiserror::Error)]
 enum JobError {
     #[error(transparent)]
-    Answer(#[from] SummaryError),
+    Answer(#[from] GenerateError),
     #[error("couldn't save the answer: {0}")]
     Store(#[from] StoreError),
 }
@@ -74,7 +74,7 @@ pub fn run(
         },
         Err(error) => ChatEvent::Failed {
             meeting_id,
-            cancelled: matches!(error, JobError::Answer(SummaryError::Cancelled)),
+            cancelled: matches!(error, JobError::Answer(GenerateError::Cancelled)),
             message: error.to_string(),
         },
     }
@@ -89,7 +89,7 @@ fn answer_and_save(
     let meeting_id = job.meeting_id;
     let cancelled = || job.cancel.load(Ordering::Relaxed);
     if cancelled() {
-        return Err(SummaryError::Cancelled.into());
+        return Err(GenerateError::Cancelled.into());
     }
     let generator = resident.get(&job.model, || {
         on_event(ChatEvent::Progress {
@@ -98,7 +98,7 @@ fn answer_and_save(
         })
     })?;
     if cancelled() {
-        return Err(SummaryError::Cancelled.into());
+        return Err(GenerateError::Cancelled.into());
     }
     on_event(ChatEvent::Progress {
         meeting_id,

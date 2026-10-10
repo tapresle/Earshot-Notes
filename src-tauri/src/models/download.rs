@@ -399,7 +399,7 @@ mod tests {
         assert_eq!(record.source, ModelSource::Download);
         assert_eq!(record.version.as_deref(), Some("test v1"));
         assert_eq!(record.source_url, Some(model.url()));
-        assert_eq!(store.summary_model().unwrap(), Some(record));
+        assert_eq!(store.selected_model().unwrap(), Some(record));
         assert!(!partial_path(&dir.path().join("test.gguf")).exists());
         assert_eq!(
             phases[phases.len() - 2..],
@@ -438,13 +438,13 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         installed(&store, "a");
         let selected = installed(&store, "b");
-        store.select_summary_model(&selected.id).unwrap();
+        store.select_model(&selected.id).unwrap();
 
         run(&model, dir.path(), &store, &FakeServer::new(&bytes))
             .0
             .unwrap();
 
-        assert_eq!(store.summary_model().unwrap(), Some(selected));
+        assert_eq!(store.selected_model().unwrap(), Some(selected));
     }
 
     #[test]
@@ -459,7 +459,7 @@ mod tests {
             .0
             .unwrap();
 
-        assert_eq!(store.summary_model().unwrap(), Some(existing));
+        assert_eq!(store.selected_model().unwrap(), Some(existing));
     }
 
     #[test]

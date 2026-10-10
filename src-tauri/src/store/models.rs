@@ -3,7 +3,7 @@ use serde::Serialize;
 
 use super::{Store, StoreError, now_ms};
 
-const SELECTED_SUMMARY_MODEL: &str = "summary_model_id";
+const SELECTED_MODEL: &str = "summary_model_id";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,9 +93,9 @@ impl Store {
         &self,
         model: &ModelRecord,
     ) -> Result<ModelRecord, StoreError> {
-        let in_use = self.summary_model()?;
+        let in_use = self.selected_model()?;
         let saved = self.add_model(model)?;
-        self.select_summary_model(in_use.as_ref().map_or(&saved.id, |m| &m.id))?;
+        self.select_model(in_use.as_ref().map_or(&saved.id, |m| &m.id))?;
         Ok(saved)
     }
 
@@ -131,7 +131,7 @@ impl Store {
         }
         tx.execute(
             "DELETE FROM settings WHERE key = ?1 AND value = ?2",
-            params![SELECTED_SUMMARY_MODEL, id],
+            params![SELECTED_MODEL, id],
         )?;
         tx.commit()?;
         Ok(())
@@ -147,7 +147,7 @@ impl Store {
         Ok(models)
     }
 
-    pub fn select_summary_model(&self, id: &str) -> Result<(), StoreError> {
+    pub fn select_model(&self, id: &str) -> Result<(), StoreError> {
         let conn = self.conn();
         let exists: bool = conn.query_row(
             "SELECT EXISTS (SELECT 1 FROM models WHERE id = ?1)",
@@ -160,14 +160,14 @@ impl Store {
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?1, ?2)
              ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-            params![SELECTED_SUMMARY_MODEL, id],
+            params![SELECTED_MODEL, id],
         )?;
         Ok(())
     }
 
     /// The selected model, or the newest one if none is selected or the
     /// selection no longer exists.
-    pub fn summary_model(&self) -> Result<Option<ModelRecord>, StoreError> {
+    pub fn selected_model(&self) -> Result<Option<ModelRecord>, StoreError> {
         Ok(self
             .conn()
             .query_row(
@@ -176,7 +176,7 @@ impl Store {
                      ORDER BY id = (SELECT value FROM settings WHERE key = ?1) DESC, added_at DESC
                      LIMIT 1"
                 ),
-                [SELECTED_SUMMARY_MODEL],
+                [SELECTED_MODEL],
                 from_row,
             )
             .optional()?)
@@ -222,15 +222,15 @@ mod tests {
     #[test]
     fn uses_the_newest_model_until_one_is_selected() {
         let store = Store::open_in_memory().unwrap();
-        assert_eq!(store.summary_model().unwrap(), None);
+        assert_eq!(store.selected_model().unwrap(), None);
         store.add_model(&record("first", "1")).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
         store.add_model(&record("second", "2")).unwrap();
 
-        assert_eq!(store.summary_model().unwrap().unwrap().id, "second");
+        assert_eq!(store.selected_model().unwrap().unwrap().id, "second");
 
-        store.select_summary_model("first").unwrap();
-        assert_eq!(store.summary_model().unwrap().unwrap().id, "first");
+        store.select_model("first").unwrap();
+        assert_eq!(store.selected_model().unwrap().unwrap().id, "first");
     }
 
     #[test]
@@ -239,13 +239,13 @@ mod tests {
         store.add_model(&record("first", "1")).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
         store.add_model(&record("second", "2")).unwrap();
-        store.select_summary_model("first").unwrap();
+        store.select_model("first").unwrap();
 
         store.delete_model("first").unwrap();
 
         assert_eq!(store.model_by_id("first").unwrap(), None);
-        assert_eq!(store.summary_model().unwrap().unwrap().id, "second");
-        assert_eq!(store.setting(SELECTED_SUMMARY_MODEL).unwrap(), None);
+        assert_eq!(store.selected_model().unwrap().unwrap().id, "second");
+        assert_eq!(store.setting(SELECTED_MODEL).unwrap(), None);
     }
 
     #[test]
@@ -253,11 +253,11 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         store.add_model(&record("first", "1")).unwrap();
         store.add_model(&record("second", "2")).unwrap();
-        store.select_summary_model("first").unwrap();
+        store.select_model("first").unwrap();
 
         store.delete_model("second").unwrap();
 
-        assert_eq!(store.summary_model().unwrap().unwrap().id, "first");
+        assert_eq!(store.selected_model().unwrap().unwrap().id, "first");
     }
 
     #[test]
@@ -282,7 +282,7 @@ mod tests {
             .add_model_keeping_selection(&record("second", "2"))
             .unwrap();
 
-        assert_eq!(store.summary_model().unwrap(), Some(first));
+        assert_eq!(store.selected_model().unwrap(), Some(first));
     }
 
     #[test]
@@ -290,7 +290,7 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
 
         assert!(matches!(
-            store.select_summary_model("ghost"),
+            store.select_model("ghost"),
             Err(StoreError::ModelNotFound(_))
         ));
     }
