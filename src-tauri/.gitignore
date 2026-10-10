@@ -8,6 +8,8 @@
 
 # Native binaries fetched by scripts/fetch-native.sh
 /vendor/needle/*/libneedle.a
+# whisper.cpp, built by scripts/build-whisper.sh
+/vendor/whisper/
 /resources/models/*.cact
 /tests/models/*.gguf
 /tests/models/*.bin

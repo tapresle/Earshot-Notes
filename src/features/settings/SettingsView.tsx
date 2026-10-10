@@ -11,7 +11,6 @@ import {
   type Sensitivity,
   type Source,
   type SpeechSensitivity,
-  type TranscriptionModel,
   type UpdateCheck,
   type VocabularyTerm,
 } from "../../lib/api";
@@ -20,6 +19,7 @@ import { ModelOrigin } from "../summary/ModelOrigin";
 import { Markdown } from "../summary/Markdown";
 import { ModelSetup } from "../summary/ModelSetup";
 import { missingTerms, SOFTWARE_TERMS } from "./softwareTerms";
+import { TranscriptionSection } from "./TranscriptionSection";
 
 export function SettingsView({ recording, onShowSetup }: { recording: boolean; onShowSetup: () => void }) {
   const [error, setError] = useState<string | null>(null);
@@ -39,10 +39,10 @@ export function SettingsView({ recording, onShowSetup }: { recording: boolean; o
       <StartupSection />
       <MicrophoneSection />
       <SpeechDetectionSection />
+      <TranscriptionSection recording={recording} />
       <VocabularySection />
       <AudioRecordingsSection recording={recording} />
       <SummaryModelSection />
-      <TranscriptionSection />
       <UpdatesSection />
       <section className="settings-section" aria-labelledby="export-heading">
         <h2 id="export-heading">Export</h2>
@@ -581,37 +581,6 @@ function InstalledModel({
   );
 }
 
-function TranscriptionSection() {
-  const [model, setModel] = useState<TranscriptionModel | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .transcriptionModel()
-      .then(setModel)
-      .catch((e) => setError(errorMessage(e)));
-  }, []);
-
-  return (
-    <section className="settings-section" aria-labelledby="transcription-heading">
-      <h2 id="transcription-heading">Transcription</h2>
-      {model && (
-        <>
-          <p>
-            {model.engine}, {model.bundled ? "bundled with the app" : "from your models folder"}. Runs on this Mac.
-          </p>
-          <p className="settings-help selectable">{model.path}</p>
-        </>
-      )}
-      {error && (
-        <p className="field-error" role="alert">
-          {error}
-        </p>
-      )}
-    </section>
-  );
-}
-
 function UpdatesSection() {
   const [enabled, setEnabled] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -768,8 +737,8 @@ function VocabularySection() {
     <section className="settings-section" aria-labelledby="vocabulary-heading">
       <h2 id="vocabulary-heading">Vocabulary</h2>
       <p className="settings-help">
-        Names your meetings use, such as products, customers, and colleagues. Transcription listens for them from
-        the next recording, and summaries spell them as written. Under <strong>Heard as</strong>, list what
+        Names your meetings use, such as products, customers, and colleagues. Whistle listens for them from the
+        next recording (Whisper doesn&rsquo;t), and summaries spell them as written. Under <strong>Heard as</strong>, list what
         transcription writes instead, separated by commas. Saving fixes those words in every transcript, and
         removing them restores the original. If your meetings are about software, <strong>Add software terms</strong>{" "}
         adds technical terms that transcription often mishears, such as &ldquo;async&rdquo; and &ldquo;JSON&rdquo;.

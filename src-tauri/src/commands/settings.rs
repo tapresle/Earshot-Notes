@@ -4,7 +4,6 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use super::models::HuggingFaceSource;
-use super::recording::{Transcription, TranscriptionModel};
 use super::summaries::models_dir;
 use super::{CommandError, CommandResult, ErrorKind, blocking};
 use crate::audio::mic::{self, InputDevice};
@@ -14,20 +13,6 @@ use crate::store::settings::{INPUT_DEVICE, sensitivity_key};
 use crate::store::{ModelRecord, Source, Store};
 use crate::summarize::service::Summarizer;
 use macos_audio::LoginItem;
-
-/// The transcription model in use, or why transcription is unavailable.
-#[tauri::command]
-pub fn transcription_model(
-    transcription: State<'_, Arc<Transcription>>,
-) -> CommandResult<TranscriptionModel> {
-    match &transcription.0 {
-        Ok((_, model)) => Ok(model.clone()),
-        Err(reason) => Err(CommandError {
-            kind: ErrorKind::Unavailable,
-            message: format!("transcription is unavailable: {reason}"),
-        }),
-    }
-}
 
 /// The microphones connected now. Listing can take a moment, so it runs off the main thread.
 #[tauri::command]

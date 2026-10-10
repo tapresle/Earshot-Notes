@@ -138,6 +138,8 @@ export interface HuggingFaceSource {
   /** The quantization of the weights, such as `Q4_K_M`. */
   quantization: string;
   revision: string;
+  /** Which model, such as `large-v3-turbo-q5_0`, for a repository that holds several models, where the quantization alone doesn't say. */
+  variant?: string | null;
 }
 
 export type DownloadPhase = { phase: "downloading"; received: number; total: number } | { phase: "verifying" };
@@ -193,11 +195,28 @@ export interface ExportReport {
   failed: { title: string; message: string }[];
 }
 
-export interface TranscriptionModel {
-  engine: string;
-  path: string;
-  /** False when a model in the user's models folder replaced the bundled one. */
+/** A transcription model, and where it stands on this Mac. */
+export interface TranscriptionOption {
+  id: string;
+  displayName: string;
+  description: string;
+  /** Whether it ships with the app, rather than downloading. */
   bundled: boolean;
+  /** The download's size; 0 for a bundled model. */
+  sizeBytes: number;
+  installed: boolean;
+  /** Bytes saved by an earlier, unfinished download. */
+  partialBytes: number;
+  /** Progress, while this model is downloading. */
+  download: DownloadPhase | null;
+  huggingFace: HuggingFaceSource | null;
+}
+
+export interface TranscriptionModels {
+  models: TranscriptionOption[];
+  selectedId: string;
+  /** Why transcription can't run at all, when it can't. */
+  unavailable: string | null;
 }
 
 export interface InputDevice {
@@ -319,7 +338,16 @@ export const api = {
     const path = await open({ directory: true, multiple: false });
     return typeof path === "string" ? path : null;
   },
-  transcriptionModel: () => invoke<TranscriptionModel>("transcription_model"),
+  transcriptionModels: () => invoke<TranscriptionModels>("transcription_models"),
+  selectTranscriptionModel: (modelId: string) => invoke<void>("select_transcription_model", { modelId }),
+  downloadTranscriptionModel: (modelId: string) => invoke<void>("download_transcription_model", { modelId }),
+  removeTranscriptionModel: (modelId: string) => invoke<void>("remove_transcription_model", { modelId }),
+  onTranscriptionDownloadProgress: (handler: (event: DownloadProgress) => void): Promise<UnlistenFn> =>
+    listen<DownloadProgress>("transcription:download-progress", (event) => handler(event.payload)),
+  onTranscriptionDownloadDone: (handler: (event: { modelId: string }) => void): Promise<UnlistenFn> =>
+    listen<{ modelId: string }>("transcription:download-done", (event) => handler(event.payload)),
+  onTranscriptionDownloadFailed: (handler: (event: DownloadFailed) => void): Promise<UnlistenFn> =>
+    listen<DownloadFailed>("transcription:download-failed", (event) => handler(event.payload)),
   inputDevices: () => invoke<InputDevice[]>("input_devices"),
   inputDevice: () => invoke<string | null>("input_device"),
   setInputDevice: (deviceId: string | null) => invoke<void>("set_input_device", { deviceId }),

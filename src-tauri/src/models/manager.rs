@@ -1,23 +1,21 @@
 //! Runs one model download at a time in the background and tracks its progress.
 
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
 use super::KnownModel;
-use super::download::{DownloadError, Fetch, Phase, download};
-use crate::store::{ModelRecord, Store};
+use super::download::{DownloadError, Phase};
 
+/// What a download reports. `T` is what a finished download produces, such as
+/// the recorded summary model.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DownloadEvent {
+pub enum DownloadEvent<T> {
     Progress {
         model_id: String,
         phase: Phase,
     },
-    Done {
-        model: ModelRecord,
-    },
+    Done(T),
     Failed {
         model_id: String,
         message: String,
@@ -33,7 +31,12 @@ pub enum StartError {
     Thread(#[from] std::io::Error),
 }
 
-pub type EventSink = Arc<dyn Fn(DownloadEvent) + Send + Sync>;
+pub type EventSink<T> = Arc<dyn Fn(DownloadEvent<T>) + Send + Sync>;
+
+/// The work of one download: fetches the model, checking the cancel flag and
+/// reporting progress, and returns what it produced.
+pub type Job<T> =
+    Box<dyn FnOnce(&AtomicBool, &mut dyn FnMut(Phase)) -> Result<T, DownloadError> + Send>;
 
 struct Active {
     model_id: String,
@@ -47,13 +50,13 @@ pub struct Downloads {
 }
 
 impl Downloads {
-    pub fn start(
+    /// Runs `job` for `model` in the background, unless another download is
+    /// running. Only one runs at a time, of any kind of model.
+    pub fn start<T: Send + 'static>(
         &self,
         model: &'static KnownModel,
-        models_dir: PathBuf,
-        store: Arc<Store>,
-        fetch: Arc<dyn Fetch>,
-        on_event: EventSink,
+        job: Job<T>,
+        on_event: EventSink<T>,
     ) -> Result<(), StartError> {
         let mut active = lock(&self.active);
         if let Some(current) = active.as_ref() {
@@ -66,25 +69,18 @@ impl Downloads {
             .name("model-download".into())
             .spawn(move || {
                 let model_id = model.id.to_owned();
-                let result = download(
-                    model,
-                    &models_dir,
-                    &store,
-                    fetch.as_ref(),
-                    &stop,
-                    &mut |phase| {
-                        if let Some(active) = lock(&slot).as_mut() {
-                            active.phase = phase;
-                        }
-                        on_event(DownloadEvent::Progress {
-                            model_id: model_id.clone(),
-                            phase,
-                        });
-                    },
-                );
+                let result = job(&stop, &mut |phase| {
+                    if let Some(active) = lock(&slot).as_mut() {
+                        active.phase = phase;
+                    }
+                    on_event(DownloadEvent::Progress {
+                        model_id: model_id.clone(),
+                        phase,
+                    });
+                });
                 *lock(&slot) = None;
                 on_event(match result {
-                    Ok(model) => DownloadEvent::Done { model },
+                    Ok(done) => DownloadEvent::Done(done),
                     Err(error) => DownloadEvent::Failed {
                         model_id,
                         cancelled: matches!(error, DownloadError::Cancelled),
@@ -129,9 +125,11 @@ fn lock(active: &Mutex<Option<Active>>) -> MutexGuard<'_, Option<Active>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::download::Fetched;
+    use crate::models::download::{Fetch, Fetched, download};
     use crate::models::sha256_file;
+    use crate::store::{ModelRecord, Store};
     use std::io::{self, Read};
+    use std::path::PathBuf;
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -187,13 +185,30 @@ mod tests {
         }))
     }
 
-    fn collect() -> (EventSink, mpsc::Receiver<DownloadEvent>) {
+    /// A job that downloads `model` as a summary model.
+    fn summary_job(
+        model: &'static KnownModel,
+        dir: PathBuf,
+        store: Arc<Store>,
+        server: Arc<GatedServer>,
+    ) -> Job<ModelRecord> {
+        Box::new(move |cancel, progress| {
+            download(model, &dir, &store, server.as_ref(), cancel, progress)
+        })
+    }
+
+    fn collect() -> (
+        EventSink<ModelRecord>,
+        mpsc::Receiver<DownloadEvent<ModelRecord>>,
+    ) {
         let (tx, rx) = mpsc::channel();
         let tx = Mutex::new(tx);
         (Arc::new(move |e| tx.lock().unwrap().send(e).unwrap()), rx)
     }
 
-    fn until_finished(events: &mpsc::Receiver<DownloadEvent>) -> DownloadEvent {
+    fn until_finished(
+        events: &mpsc::Receiver<DownloadEvent<ModelRecord>>,
+    ) -> DownloadEvent<ModelRecord> {
         loop {
             match events.recv_timeout(Duration::from_secs(5)).unwrap() {
                 DownloadEvent::Progress { .. } => continue,
@@ -216,15 +231,15 @@ mod tests {
         let (sink, events) = collect();
         let model = known(&data);
 
-        downloads
-            .start(
+        let job = || {
+            summary_job(
                 model,
                 dir.path().to_path_buf(),
                 store.clone(),
                 server.clone(),
-                sink.clone(),
             )
-            .unwrap();
+        };
+        downloads.start(model, job(), sink.clone()).unwrap();
 
         assert_eq!(
             downloads.status(),
@@ -237,12 +252,12 @@ mod tests {
             ))
         );
         assert!(matches!(
-            downloads.start(model, dir.path().to_path_buf(), store.clone(), server, sink),
+            downloads.start(model, job(), sink),
             Err(StartError::Busy(id)) if id == "test-model"
         ));
 
         release.send(()).unwrap();
-        let DownloadEvent::Done { model } = until_finished(&events) else {
+        let DownloadEvent::Done(model) = until_finished(&events) else {
             panic!("expected Done");
         };
         assert_eq!(model.id, "test-model");
@@ -261,12 +276,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let downloads = Downloads::default();
         let (sink, events) = collect();
+        let model = known(&data);
+        let store = Arc::new(Store::open_in_memory().unwrap());
         downloads
             .start(
-                known(&data),
-                dir.path().to_path_buf(),
-                Arc::new(Store::open_in_memory().unwrap()),
-                server,
+                model,
+                summary_job(model, dir.path().to_path_buf(), store, server),
                 sink,
             )
             .unwrap();

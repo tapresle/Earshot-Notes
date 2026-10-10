@@ -84,13 +84,15 @@ function history(): MeetingDetail[] {
   ];
 }
 
-/** A backend with the sample history, a summary model, and the design sync's summary. */
+/** A backend with the sample history, a summary model, Whisper chosen for transcripts, and the design sync's summary. */
 function withHistory(extra: MeetingDetail[] = [], segments: TranscriptSegment[] = []): FakeBackend {
   const backend = createFakeBackend([...extra, ...history()], [...transcript(1, DESIGN_TRANSCRIPT, 1), ...segments]);
   const model = testModel("/Users/you/Library/Application Support/com.tedpresley.earshot/models/gemma-4-E2B-it-Q4_K_M.gguf");
   backend.state.installed = [{ ...model, source: "download" }];
   backend.state.model = backend.state.installed[0];
   backend.state.summaries.set(1, { ...savedSummary(1, DESIGN_SUMMARY), uptoMs: 42 * MINUTE });
+  backend.state.whisperInstalled = true;
+  backend.state.transcriptionModel = "whisper-large-v3-turbo-q5_0";
   return backend;
 }
 
@@ -123,7 +125,7 @@ export const scenes: Record<string, () => FakeBackend> = {
     return backend;
   },
 
-  /** Settings, with a summary model installed and a vocabulary term. */
+  /** Settings, with Whisper and a summary model installed, and a vocabulary term. */
   settings: () => {
     const backend = withHistory();
     backend.state.vocabulary = [{ term: "Bluefin Ledger", heardAs: ["blue fin ledger", "bluefinn ledger"] }];

@@ -69,10 +69,8 @@ const CANCEL_POLL: Duration = Duration::from_millis(200);
 /// cut off large models on slow connections), so stalls are detected here.
 const STALL_LIMIT: Duration = Duration::from_secs(60);
 
-/// Downloads `model` into `models_dir` and records it. It becomes the summary
-/// model only when no other model is installed. A partial download from an earlier attempt is resumed. The
-/// partial file is kept on cancellation or network failure so the next attempt
-/// resumes, and deleted if the finished file fails verification.
+/// Downloads a summary model into `models_dir` with [`fetch_verified`] and
+/// records it. It becomes the summary model only when no other model is installed.
 pub fn download(
     model: &KnownModel,
     models_dir: &Path,
@@ -84,6 +82,34 @@ pub fn download(
     if let Some(existing) = store.model_by_sha256(model.sha256)? {
         return Ok(existing);
     }
+    let dest = fetch_verified(model, models_dir, fetch, cancel, on_progress)?;
+
+    Ok(store.add_model_keeping_selection(&ModelRecord {
+        id: model.id.to_owned(),
+        display_name: model.display_name.to_owned(),
+        file_path: dest.to_string_lossy().into_owned(),
+        size_bytes: model.size_bytes as i64,
+        sha256: model.sha256.to_owned(),
+        source: ModelSource::Download,
+        source_url: Some(model.url()),
+        version: Some(model.version.to_owned()),
+        min_runtime: Some(model.min_runtime.to_owned()),
+        added_at: 0,
+    })?)
+}
+
+/// Downloads `model` to `models_dir/<file name>` and verifies its size and
+/// checksum, returning the file's path. A partial download from an earlier
+/// attempt is resumed. The partial file is kept on cancellation or network
+/// failure so the next attempt resumes, and deleted if the finished file fails
+/// verification.
+pub fn fetch_verified(
+    model: &KnownModel,
+    models_dir: &Path,
+    fetch: &dyn Fetch,
+    cancel: &AtomicBool,
+    on_progress: &mut dyn FnMut(Phase),
+) -> Result<PathBuf, DownloadError> {
     std::fs::create_dir_all(models_dir)?;
     let dest = models_dir.join(model.file_name);
     let part = partial_path(&dest);
@@ -108,19 +134,7 @@ pub fn download(
         return Err(DownloadError::Corrupt);
     }
     std::fs::rename(&part, &dest)?;
-
-    Ok(store.add_model_keeping_selection(&ModelRecord {
-        id: model.id.to_owned(),
-        display_name: model.display_name.to_owned(),
-        file_path: dest.to_string_lossy().into_owned(),
-        size_bytes: model.size_bytes as i64,
-        sha256: model.sha256.to_owned(),
-        source: ModelSource::Download,
-        source_url: Some(model.url()),
-        version: Some(model.version.to_owned()),
-        min_runtime: Some(model.min_runtime.to_owned()),
-        added_at: 0,
-    })?)
+    Ok(dest)
 }
 
 /// Where an in-progress download is written.

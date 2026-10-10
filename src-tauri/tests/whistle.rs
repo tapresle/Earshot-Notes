@@ -221,8 +221,11 @@ mod worker {
     use super::*;
     use earshot_lib::chunker::Speech;
     use earshot_lib::store::Source;
-    use earshot_lib::transcribe::worker::{Job, TranscriptionWorker, load_first};
+    use earshot_lib::transcribe::worker::{
+        Engine, Job, TranscriptionWorker, WorkerOptions, load_first,
+    };
     use std::path::PathBuf;
+    use std::sync::Arc;
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -272,6 +275,7 @@ mod worker {
                 margin: 10.0,
             },
             keywords: None,
+            engine: Engine::Whistle,
         };
 
         worker.submit(job(0, vec![0.0; 16_000])).unwrap();
@@ -282,6 +286,128 @@ mod worker {
         assert_eq!(start_ms, 5000);
         assert!(normalize(&text).contains("quarterly planning meeting"));
         assert!(results.recv_timeout(Duration::from_secs(2)).is_err());
+    }
+
+    const WHISPER_MODEL: &str = "tests/models/ggml-tiny.en-q5_1.bin";
+
+    /// Runs one speech job on `engine` and returns the engine that transcribed
+    /// it, with its text.
+    fn transcribe_on(engine: Engine) -> (Engine, String) {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let (results_tx, results) = mpsc::channel();
+        let options = WorkerOptions {
+            use_gpu: std::env::var("EARSHOT_TEST_CPU").as_deref() != Ok("1"),
+        };
+        let (worker, _) =
+            TranscriptionWorker::spawn_with(vec![PathBuf::from(MODEL)], options, move |job, t| {
+                results_tx.send((job.engine, t.text)).unwrap();
+            })
+            .unwrap();
+        // As a recording does when it starts.
+        worker.preload(&engine);
+        worker
+            .submit(Job {
+                meeting_id: 1,
+                source: Source::Them,
+                start_ms: 0,
+                end_ms: 5000,
+                samples: speech_fixture(),
+                speech: Speech {
+                    ms: 5000,
+                    margin: 10.0,
+                },
+                keywords: None,
+                engine,
+            })
+            .unwrap();
+        let result = results.recv_timeout(Duration::from_secs(30)).unwrap();
+        // Frees Whisper before the test process exits.
+        worker.shutdown(Duration::from_secs(10));
+        result
+    }
+
+    #[test]
+    fn transcribes_a_whisper_job_with_whisper() {
+        let model = Engine::Whisper(Arc::new(PathBuf::from(WHISPER_MODEL)));
+
+        let (engine, text) = transcribe_on(model.clone());
+
+        assert_eq!(engine, model);
+        assert!(normalize(&text).contains("budget report"), "{text}");
+    }
+
+    #[test]
+    fn stops_taking_jobs_after_shutting_down() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let (worker, _) =
+            TranscriptionWorker::spawn(vec![PathBuf::from(MODEL)], |_, _| {}).unwrap();
+
+        worker.shutdown(Duration::from_secs(10));
+
+        let job = Job {
+            meeting_id: 1,
+            source: Source::Me,
+            start_ms: 0,
+            end_ms: 1000,
+            samples: vec![0.0; 16_000],
+            speech: Speech {
+                ms: 1000,
+                margin: 10.0,
+            },
+            keywords: None,
+            engine: Engine::Whistle,
+        };
+        assert!(worker.submit(job).is_err());
+    }
+
+    #[test]
+    fn reloads_whisper_after_switching_back_from_whistle() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let (results_tx, results) = mpsc::channel();
+        let options = WorkerOptions {
+            use_gpu: std::env::var("EARSHOT_TEST_CPU").as_deref() != Ok("1"),
+        };
+        let (worker, _) =
+            TranscriptionWorker::spawn_with(vec![PathBuf::from(MODEL)], options, move |job, t| {
+                results_tx.send((job.engine, t.text)).unwrap();
+            })
+            .unwrap();
+        let whisper = Engine::Whisper(Arc::new(PathBuf::from(WHISPER_MODEL)));
+
+        // Chosen at startup, then Whistle chosen (freeing it), then Whisper again.
+        worker.preload(&whisper);
+        worker.preload(&Engine::Whistle);
+        worker.preload(&whisper);
+        worker
+            .submit(Job {
+                meeting_id: 1,
+                source: Source::Them,
+                start_ms: 0,
+                end_ms: 5000,
+                samples: speech_fixture(),
+                speech: Speech {
+                    ms: 5000,
+                    margin: 10.0,
+                },
+                keywords: None,
+                engine: whisper.clone(),
+            })
+            .unwrap();
+
+        let (engine, text) = results.recv_timeout(Duration::from_secs(30)).unwrap();
+        worker.shutdown(Duration::from_secs(10));
+        assert_eq!(engine, whisper);
+        assert!(normalize(&text).contains("budget report"), "{text}");
+    }
+
+    #[test]
+    fn falls_back_to_whistle_when_the_whisper_model_wont_load() {
+        let missing = Engine::Whisper(Arc::new(PathBuf::from("nowhere/ggml-model.bin")));
+
+        let (engine, text) = transcribe_on(missing);
+
+        assert_eq!(engine, Engine::Whistle);
+        assert!(normalize(&text).contains("budget report"), "{text}");
     }
 }
 

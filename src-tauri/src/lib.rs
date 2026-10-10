@@ -22,7 +22,7 @@ use std::sync::Arc;
 use tauri::{App, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
-use commands::recording::{Transcription, TranscriptionModel};
+use commands::recording::Transcription;
 use recording::Recorder;
 use recordings::Recordings;
 use serde_json::json;
@@ -36,6 +36,8 @@ const DATABASE_FILE: &str = "earshot.db";
 const WHISTLE_FILE: &str = "models/whistle.cact";
 /// Kept audio, when the setting is on.
 const RECORDINGS_DIR: &str = "recordings";
+/// How long quitting waits for the transcription worker to free its models.
+const EXIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 /// The log file rolls over at this size, keeping only the newest file.
 const MAX_LOG_BYTES: u128 = 1_000_000;
 
@@ -89,16 +91,15 @@ pub fn run() {
 
             // A model in the user's data folder (from a future update) wins over the bundled one.
             let bundled_whistle = app.path().resource_dir()?.join(WHISTLE_FILE);
-            let candidates = vec![data_dir.join(WHISTLE_FILE), bundled_whistle.clone()];
-            let worker =
-                spawn_transcription(app, store.clone(), candidates).map(|(worker, path)| {
-                    let model = TranscriptionModel {
-                        engine: "Whistle",
-                        bundled: path == bundled_whistle,
-                        path: path.to_string_lossy().into_owned(),
-                    };
-                    (worker, model)
-                });
+            let candidates = vec![data_dir.join(WHISTLE_FILE), bundled_whistle];
+            let worker = spawn_transcription(app, store.clone(), candidates);
+            // A chosen Whisper loads now and stays loaded, like Whistle.
+            if let Ok(worker) = &worker {
+                match models::transcription::selected_engine(&store, &data_dir.join("models")) {
+                    Ok(engine) => worker.preload(&engine),
+                    Err(error) => log::error!("couldn't read the transcription model: {error}"),
+                }
+            }
             let summarizer = spawn_summarizer(app, store.clone());
 
             app.manage(store);
@@ -147,7 +148,10 @@ pub fn run() {
             commands::export::export_file_name,
             commands::export::export_meeting,
             commands::export::export_meetings,
-            commands::settings::transcription_model,
+            commands::transcription::transcription_models,
+            commands::transcription::select_transcription_model,
+            commands::transcription::download_transcription_model,
+            commands::transcription::remove_transcription_model,
             commands::settings::input_devices,
             commands::settings::input_device,
             commands::settings::set_input_device,
@@ -185,6 +189,9 @@ pub fn run() {
                 {
                     log::error!("couldn't stop the recording on exit: {error}");
                 }
+                if let Ok(worker) = &app.state::<Arc<Transcription>>().0 {
+                    worker.shutdown(EXIT_TIMEOUT);
+                }
             }
         });
 }
@@ -196,7 +203,7 @@ fn spawn_transcription(
     app: &App,
     store: Arc<Store>,
     candidates: Vec<PathBuf>,
-) -> Result<(TranscriptionWorker, PathBuf), String> {
+) -> Result<TranscriptionWorker, String> {
     let handle = app.handle().clone();
     TranscriptionWorker::spawn(candidates, move |job, transcription| {
         // Corrected with the vocabulary, and without echo, as it's saved.
@@ -232,7 +239,7 @@ fn spawn_transcription(
     })
     .map(|(worker, loaded)| {
         log::info!("loaded Whistle from {}", loaded.path.display());
-        (worker, loaded.path)
+        worker
     })
     .map_err(|error| {
         log::error!("transcription is unavailable: {error}");

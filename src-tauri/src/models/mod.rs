@@ -2,6 +2,7 @@
 
 pub mod download;
 pub mod manager;
+pub mod transcription;
 
 use std::fs::File;
 use std::io::{self, Read};
@@ -158,6 +159,26 @@ pub const MINISTRAL_3_14B: KnownModel = KnownModel {
     context_limit: 8_192,
 };
 
+/// Whisper large-v3-turbo, the optional transcription model (#25). It isn't a
+/// summary model, so it's not in `KNOWN_MODELS`; `models::transcription`
+/// manages it. `min_runtime` is the whisper.cpp release it was measured with,
+/// and `context_limit` doesn't apply.
+pub const WHISPER_TURBO: KnownModel = KnownModel {
+    id: "whisper-large-v3-turbo-q5_0",
+    display_name: "Whisper",
+    file_name: "ggml-large-v3-turbo-q5_0.bin",
+    quantization: "Q5_0",
+    repo: "ggerganov/whisper.cpp",
+    // The commit that added this file, which its Hugging Face page shows.
+    revision: "98aa99a0a9db05ae2342309f5096248665f7cba3",
+    sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+    size_bytes: 574_041_195,
+    version: "ggml-large-v3-turbo-q5_0 (ggerganov/whisper.cpp 98aa99a)",
+    min_runtime: "whisper.cpp 1.9.5",
+    description: "More accurate, especially for the other side of calls and technical terms. Heavier: it stays loaded while the app is open, using about 1 GB of memory.",
+    context_limit: 0,
+};
+
 /// Every downloadable model, in the order the app lists them (see `display_order`).
 pub const KNOWN_MODELS: &[KnownModel] = &[
     GEMMA_4_E2B,
@@ -180,8 +201,12 @@ pub fn sort_for_display(models: &mut [ModelRecord]) {
     models.sort_by_key(|m| display_order(&m.id, m.size_bytes.max(0) as u64));
 }
 
+/// A known summary or transcription model.
 pub fn known_by_id(id: &str) -> Option<&'static KnownModel> {
-    KNOWN_MODELS.iter().find(|k| k.id == id)
+    KNOWN_MODELS
+        .iter()
+        .chain(std::iter::once(&WHISPER_TURBO))
+        .find(|k| k.id == id)
 }
 
 /// The context limit for an installed model: its registry limit when it's a

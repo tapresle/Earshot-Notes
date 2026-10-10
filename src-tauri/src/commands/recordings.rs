@@ -88,7 +88,7 @@ mod tests {
     use super::*;
     use crate::recording::{CaptureStarter, IssueSink, start_recording, stop_recording};
     use crate::store::Source;
-    use crate::transcribe::worker::TranscriptionWorker;
+    use crate::transcribe::worker::{Engine, TranscriptionWorker};
 
     fn keep_one(recordings: &Recordings) {
         let mut kept = recordings.keep(1, 0, Source::Me).unwrap();
@@ -130,7 +130,7 @@ mod tests {
         start_recording(
             &store,
             &recorder,
-            Ok(&worker),
+            Ok((&worker, Engine::Whistle)),
             meeting.id,
             vec![(Source::Me, starter)],
             issues,

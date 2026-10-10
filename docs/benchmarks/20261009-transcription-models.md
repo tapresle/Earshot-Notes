@@ -9,8 +9,8 @@ Measured October 8 and 9, 2026, for [#25](https://github.com/tapresle/Earshot-No
 | Engine | Model | File | How it runs |
 |---|---|---|---|
 | needle | Whistle (bundled today) | 17 MB | Metal |
-| whisper.cpp | Whisper small, `ggml-small-q5_1.bin` | 181 MB | Metal, or CPU only |
-| whisper.cpp | Whisper large-v3-turbo, `ggml-large-v3-turbo-q5_0.bin` | 547 MB | Metal, or CPU only |
+| whisper.cpp | Whisper small, `ggml-small-q5_1.bin` | 190 MB | Metal, or CPU only |
+| whisper.cpp | Whisper large-v3-turbo, `ggml-large-v3-turbo-q5_0.bin` | 574 MB | Metal, or CPU only |
 
 CPU-only runs stand in for Windows and Linux machines without a usable GPU.
 
@@ -57,17 +57,16 @@ The source for how the README, the website, and the app describe the choice.
 - Listens for your **Vocabulary** terms as it transcribes.
 - Best with clear audio, such as your own microphone or a call with good audio.
 
-**Whisper large-v3-turbo, an optional 547 MB download**
+**Whisper large-v3-turbo, an optional 574 MB download**
 - About half the transcription errors of Whistle, on clean and call audio alike.
 - Recognizes far more technical terms, such as API names and infrastructure words: 18 of 26 at phone quality, against Whistle's 7.
 - Much better on the other side of a call, where call apps reduce the audio to phone quality.
-- Still fast on Apple Silicon (about 40 times real time) and uses under 1 GB of memory.
+- Still fast on Apple Silicon (about 40 times real time). Heavier: it stays loaded while the app is open, like Whistle, using about 1 GB of memory (0.82 GB peak measured).
 - Your **Vocabulary**'s **Heard as** corrections and summary spellings still apply, but it doesn't listen for terms the way Whistle does.
 
-**Suggested wording in the app**
-- Whistle: "Included. Fast and light, and works from the first launch."
-- Whisper large-v3-turbo: "More accurate, especially for the other side of calls and technical terms. 547 MB download."
-- A suggestion, for example after a first recording or in **Settings** > **Transcription**: "For a more accurate transcript, especially of the other people on a call, download Whisper large-v3-turbo (547 MB)."
+**Wording in the app**
+- **Settings** > **Transcription**, Whistle: "Fast and light, and works from the first launch."
+- **Settings** > **Transcription**, Whisper large-v3-turbo: "More accurate, especially for the other side of calls and technical terms. Heavier: it stays loaded while the app is open, using about 1 GB of memory."
 
 ## Reproducing
 

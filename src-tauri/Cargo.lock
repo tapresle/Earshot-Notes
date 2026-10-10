@@ -937,6 +937,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "ureq",
+ "whisper-sys",
 ]
 
 [[package]]
@@ -4899,6 +4900,10 @@ dependencies = [
  "windows",
  "windows-core",
 ]
+
+[[package]]
+name = "whisper-sys"
+version = "0.1.0"
 
 [[package]]
 name = "winapi"
