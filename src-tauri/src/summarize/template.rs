@@ -23,6 +23,13 @@ impl Message {
             content: content.into(),
         }
     }
+
+    pub fn assistant(content: impl Into<String>) -> Self {
+        Self {
+            role: "assistant",
+            content: content.into(),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
