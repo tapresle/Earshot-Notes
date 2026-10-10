@@ -3,6 +3,8 @@ use serde::Serialize;
 
 use super::{Store, StoreError, now_ms};
 
+/// The setting that holds the selected model's id. The key keeps its name
+/// from before chat used the model too, so existing installs keep their choice.
 const SELECTED_MODEL: &str = "summary_model_id";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

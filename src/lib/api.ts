@@ -349,7 +349,7 @@ export const api = {
   cancelSummary: () => invoke<boolean>("cancel_summary"),
   activeSummary: () => invoke<number | null>("active_summary"),
   latestSummary: (meetingId: number) => invoke<Summary | null>("latest_summary", { meetingId }),
-  summaryModel: () => invoke<ModelRecord | null>("summary_model"),
+  selectedModel: () => invoke<ModelRecord | null>("selected_model"),
   /** Asks a question about the meeting; the answer arrives as chat events. */
   askMeeting: (meetingId: number, question: string) => invoke<void>("ask_meeting", { meetingId, question }),
   cancelChat: () => invoke<boolean>("cancel_chat"),
@@ -407,7 +407,7 @@ export const api = {
   setSpeechSensitivity: (source: Source, level: Sensitivity) =>
     invoke<void>("set_speech_sensitivity", { source, level }),
   installedModels: () => invoke<InstalledModels>("installed_models"),
-  selectSummaryModel: (modelId: string) => invoke<void>("select_summary_model", { modelId }),
+  selectModel: (modelId: string) => invoke<void>("select_model", { modelId }),
   keepModelLoaded: () => invoke<KeepLoaded>("keep_model_loaded"),
   setKeepModelLoaded: (keep: KeepLoaded) => invoke<void>("set_keep_model_loaded", { keep }),
   openModelPage: (modelId: string) => invoke<void>("open_model_page", { modelId }),
@@ -418,7 +418,7 @@ export const api = {
   /** Contacts GitHub. Call only when the user asks. */
   checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
   openReleasePage: (version: string) => invoke<void>("open_release_page", { version }),
-  removeSummaryModel: (modelId: string) => invoke<void>("remove_summary_model", { modelId }),
+  removeModel: (modelId: string) => invoke<void>("remove_model", { modelId }),
   micPermission: () => invoke<Permission>("mic_permission"),
   requestMicPermission: () => invoke<Permission>("request_mic_permission"),
   /** Null when macOS doesn't let the app check. */

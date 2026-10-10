@@ -30,7 +30,7 @@ export function useSummary(meetingId: number): SummaryState {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.latestSummary(meetingId), api.summaryModel(), api.activeSummary()])
+    Promise.all([api.latestSummary(meetingId), api.selectedModel(), api.activeSummary()])
       .then(([latest, selected, active]) => {
         if (cancelled) return;
         setSummary(latest ?? null);

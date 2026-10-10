@@ -1,7 +1,7 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { ChatMessage, ChatStage, Citation, ModelRecord } from "../../lib/api";
 import { Markdown, type RenderCitation } from "../summary/Markdown";
-import { ModelSetup } from "../summary/ModelSetup";
+import { ModelSetup } from "../models/ModelSetup";
 import { formatOffset } from "../transcript/formatOffset";
 import { showSegment } from "../transcript/showSegment";
 import type { ChatState } from "./useChat";
