@@ -61,12 +61,12 @@ The source for how the README, the website, and the app describe the choice.
 - About half the transcription errors of Whistle, on clean and call audio alike.
 - Recognizes far more technical terms, such as API names and infrastructure words: 18 of 26 at phone quality, against Whistle's 7.
 - Much better on the other side of a call, where call apps reduce the audio to phone quality.
-- Still fast on Apple Silicon (about 40 times real time) and uses under 1 GB of memory.
+- Still fast on Apple Silicon (about 40 times real time). Heavier: it stays loaded while the app is open, like Whistle, using about 1 GB of memory (0.82 GB peak measured).
 - Your **Vocabulary**'s **Heard as** corrections and summary spellings still apply, but it doesn't listen for terms the way Whistle does.
 
 **Wording in the app**
 - **Settings** > **Transcription**, Whistle: "Fast and light, and works from the first launch."
-- **Settings** > **Transcription**, Whisper large-v3-turbo: "More accurate, especially for the other side of calls and technical terms."
+- **Settings** > **Transcription**, Whisper large-v3-turbo: "More accurate, especially for the other side of calls and technical terms. Heavier: it stays loaded while the app is open, using about 1 GB of memory."
 
 ## Reproducing
 

@@ -297,7 +297,6 @@ mod worker {
         let (results_tx, results) = mpsc::channel();
         let options = WorkerOptions {
             use_gpu: std::env::var("EARSHOT_TEST_CPU").as_deref() != Ok("1"),
-            ..WorkerOptions::default()
         };
         let (worker, _) =
             TranscriptionWorker::spawn_with(vec![PathBuf::from(MODEL)], options, move |job, t| {
@@ -359,6 +358,46 @@ mod worker {
             engine: Engine::Whistle,
         };
         assert!(worker.submit(job).is_err());
+    }
+
+    #[test]
+    fn reloads_whisper_after_switching_back_from_whistle() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let (results_tx, results) = mpsc::channel();
+        let options = WorkerOptions {
+            use_gpu: std::env::var("EARSHOT_TEST_CPU").as_deref() != Ok("1"),
+        };
+        let (worker, _) =
+            TranscriptionWorker::spawn_with(vec![PathBuf::from(MODEL)], options, move |job, t| {
+                results_tx.send((job.engine, t.text)).unwrap();
+            })
+            .unwrap();
+        let whisper = Engine::Whisper(Arc::new(PathBuf::from(WHISPER_MODEL)));
+
+        // Chosen at startup, then Whistle chosen (freeing it), then Whisper again.
+        worker.preload(&whisper);
+        worker.preload(&Engine::Whistle);
+        worker.preload(&whisper);
+        worker
+            .submit(Job {
+                meeting_id: 1,
+                source: Source::Them,
+                start_ms: 0,
+                end_ms: 5000,
+                samples: speech_fixture(),
+                speech: Speech {
+                    ms: 5000,
+                    margin: 10.0,
+                },
+                keywords: None,
+                engine: whisper.clone(),
+            })
+            .unwrap();
+
+        let (engine, text) = results.recv_timeout(Duration::from_secs(30)).unwrap();
+        worker.shutdown(Duration::from_secs(10));
+        assert_eq!(engine, whisper);
+        assert!(normalize(&text).contains("budget report"), "{text}");
     }
 
     #[test]

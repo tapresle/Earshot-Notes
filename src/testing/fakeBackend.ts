@@ -212,7 +212,8 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
           {
             id: WHISPER_ID,
             displayName: "Whisper large-v3-turbo",
-            description: "More accurate, especially for the other side of calls and technical terms.",
+            description:
+              "More accurate, especially for the other side of calls and technical terms. Heavier: it stays loaded while the app is open, using about 1 GB of memory.",
             bundled: false,
             sizeBytes: WHISPER_BYTES,
             installed: state.whisperInstalled,

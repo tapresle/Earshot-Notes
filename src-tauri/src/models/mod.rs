@@ -175,7 +175,7 @@ pub const WHISPER_TURBO: KnownModel = KnownModel {
     size_bytes: 574_041_195,
     version: "ggml-large-v3-turbo-q5_0 (ggerganov/whisper.cpp 98aa99a)",
     min_runtime: "whisper.cpp 1.9.5",
-    description: "More accurate, especially for the other side of calls and technical terms.",
+    description: "More accurate, especially for the other side of calls and technical terms. Heavier: it stays loaded while the app is open, using about 1 GB of memory.",
     context_limit: 0,
 };
 

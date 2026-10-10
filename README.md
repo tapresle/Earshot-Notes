@@ -47,7 +47,7 @@ Two models transcribe on your Mac. Choose one in **Settings** > **Transcription*
 | **Get it** | Included, and works from the first launch | A 574 MB download from **Settings** |
 | **Accuracy** | Good with clear audio, such as your own microphone | About half the errors, and far more technical terms right |
 | **The other side of a call** | Struggles when the call app reduces audio to phone quality | Much better |
-| **Speed and memory** | Very fast, a fraction of a second per phrase, and very little memory | About 40 times faster than real time on Apple Silicon, under 1 GB of memory |
+| **Speed and memory** | Very fast, a fraction of a second per phrase, and very little memory | About 40 times faster than real time on Apple Silicon. Heavier: stays loaded while the app is open, using about 1 GB of memory |
 | **Your vocabulary** | Listens for your terms as it transcribes | Doesn't listen for terms; **Heard as** corrections and summary spellings still apply |
 
 Whistle is the default. The measurements are in [the transcription model comparison](docs/benchmarks/20261009-transcription-models.md).

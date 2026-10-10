@@ -93,6 +93,13 @@ pub fn run() {
             let bundled_whistle = app.path().resource_dir()?.join(WHISTLE_FILE);
             let candidates = vec![data_dir.join(WHISTLE_FILE), bundled_whistle];
             let worker = spawn_transcription(app, store.clone(), candidates);
+            // A chosen Whisper loads now and stays loaded, like Whistle.
+            if let Ok(worker) = &worker {
+                match models::transcription::selected_engine(&store, &data_dir.join("models")) {
+                    Ok(engine) => worker.preload(&engine),
+                    Err(error) => log::error!("couldn't read the transcription model: {error}"),
+                }
+            }
             let summarizer = spawn_summarizer(app, store.clone());
 
             app.manage(store);

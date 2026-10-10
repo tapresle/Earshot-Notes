@@ -5,7 +5,9 @@ use std::ffi::CString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, RecvTimeoutError, Sender};
+#[cfg(test)]
+use std::sync::mpsc::RecvTimeoutError;
+use std::sync::mpsc::{self, Sender};
 use std::thread;
 use std::time::Duration;
 
@@ -47,17 +49,11 @@ pub enum Engine {
 pub struct WorkerOptions {
     /// Whether Whisper runs on the GPU. Tests on CI turn it off.
     pub use_gpu: bool,
-    /// How long Whisper stays loaded with no jobs. It takes most of a
-    /// gigabyte, and the app stays open in the menu bar between meetings.
-    pub whisper_idle: Duration,
 }
 
 impl Default for WorkerOptions {
     fn default() -> Self {
-        Self {
-            use_gpu: true,
-            whisper_idle: Duration::from_secs(5 * 60),
-        }
+        Self { use_gpu: true }
     }
 }
 
@@ -75,8 +71,11 @@ pub struct TranscriptionWorker {
 
 enum Message {
     Job(Job),
-    /// Load this Whisper model now, before its first job arrives.
+    /// Load this Whisper model now, before its first job arrives, retrying
+    /// one that failed to load before.
     Preload(Arc<PathBuf>),
+    /// Free Whisper's memory: it's no longer the chosen model.
+    UnloadWhisper,
     /// Skip the queued jobs, free every model, confirm, and stop.
     Shutdown(Sender<()>),
 }
@@ -128,10 +127,15 @@ impl TranscriptionWorker {
                 };
                 let mut engines = Engines::new(whistle, options);
                 loop {
-                    let mut job = match inbox.recv_timeout(options.whisper_idle) {
+                    let mut job = match inbox.recv() {
                         Ok(Message::Job(job)) => job,
                         Ok(Message::Preload(model)) => {
+                            engines.failed = None;
                             engines.whisper(&model);
+                            continue;
+                        }
+                        Ok(Message::UnloadWhisper) => {
+                            engines.unload_whisper();
                             continue;
                         }
                         Ok(Message::Shutdown(done)) => {
@@ -140,11 +144,7 @@ impl TranscriptionWorker {
                             let _ = done.send(());
                             return;
                         }
-                        Err(RecvTimeoutError::Timeout) => {
-                            engines.unload_whisper();
-                            continue;
-                        }
-                        Err(RecvTimeoutError::Disconnected) => return,
+                        Err(_) => return,
                     };
                     // Once a shutdown is queued, the jobs before it are skipped,
                     // as they would be if the app exited with them waiting.
@@ -202,12 +202,15 @@ impl TranscriptionWorker {
             .map_err(|_| WorkerStopped)
     }
 
-    /// Starts loading `engine` if it's Whisper, which takes a few seconds,
-    /// so a recording's first line isn't held up by it.
+    /// Loads `engine` now if it's Whisper, which takes a few seconds, so no
+    /// recording waits for it; it then stays loaded, like Whistle. For
+    /// Whistle, frees Whisper's memory instead.
     pub fn preload(&self, engine: &Engine) {
-        if let Engine::Whisper(model) = engine {
-            let _ = self.inbox.send(Message::Preload(model.clone()));
-        }
+        let message = match engine {
+            Engine::Whisper(model) => Message::Preload(model.clone()),
+            Engine::Whistle => Message::UnloadWhisper,
+        };
+        let _ = self.inbox.send(message);
     }
 
     /// Frees the models before the app exits, skipping queued jobs, and waits
@@ -234,7 +237,7 @@ impl Queue {
     fn job(message: Message) -> Option<Job> {
         match message {
             Message::Job(job) => Some(job),
-            Message::Preload(_) | Message::Shutdown(_) => None,
+            Message::Preload(_) | Message::UnloadWhisper | Message::Shutdown(_) => None,
         }
     }
 
@@ -264,8 +267,8 @@ impl Queue {
 struct Engines {
     whistle: Whistle,
     whisper: Option<(Arc<PathBuf>, Whisper)>,
-    /// A Whisper model that failed to load, so later jobs in the same meeting
-    /// don't retry it.
+    /// A Whisper model that failed to load, so later jobs don't retry it
+    /// until the next preload.
     failed: Option<Arc<PathBuf>>,
     options: WorkerOptions,
 }
@@ -332,15 +335,10 @@ impl Engines {
         }
     }
 
-    /// Frees Whisper between meetings, and forgets a model that failed to
-    /// load, so the next meeting tries it again (it may have been downloaded again).
     fn unload_whisper(&mut self) {
         self.failed = None;
         if self.whisper.take().is_some() {
-            log::info!(
-                "unloaded Whisper after {:?} without jobs",
-                self.options.whisper_idle
-            );
+            log::info!("unloaded Whisper");
         }
     }
 }

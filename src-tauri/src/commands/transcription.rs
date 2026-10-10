@@ -15,6 +15,7 @@ use crate::models::download::{HttpFetch, Phase, fetch_verified};
 use crate::models::manager::Downloads;
 use crate::models::transcription::{self, RemoveError, SelectError, WHISTLE_ID};
 use crate::store::Store;
+use crate::transcribe::worker::Engine;
 
 /// One transcription model, and where it stands on this Mac.
 #[derive(Debug, Serialize, PartialEq)]
@@ -117,16 +118,26 @@ pub async fn transcription_models(
     .await
 }
 
-/// Chooses the model for recordings started from now on.
+/// Chooses the model for recordings started from now on, and loads it now:
+/// choosing Whisper loads it, and choosing Whistle frees Whisper's memory.
 #[tauri::command]
 pub async fn select_transcription_model(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
+    worker: State<'_, Arc<Transcription>>,
     model_id: String,
 ) -> CommandResult<()> {
     let dir = models_dir(&app)?;
     let store = Arc::clone(&store);
-    blocking(move || Ok(transcription::select(&store, &dir, &model_id)?)).await
+    let worker = Arc::clone(&worker);
+    blocking(move || {
+        transcription::select(&store, &dir, &model_id)?;
+        if let Ok(worker) = &worker.0 {
+            worker.preload(&transcription::selected_engine(&store, &dir)?);
+        }
+        Ok(())
+    })
+    .await
 }
 
 /// Downloads Whisper from the pinned registry entry. Progress and the result
@@ -165,6 +176,7 @@ pub fn download_transcription_model(
 pub async fn remove_transcription_model(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
+    worker: State<'_, Arc<Transcription>>,
     model_id: String,
 ) -> CommandResult<()> {
     if model_id != WHISPER_TURBO.id {
@@ -175,5 +187,12 @@ pub async fn remove_transcription_model(
     }
     let dir = models_dir(&app)?;
     let store = Arc::clone(&store);
-    blocking(move || Ok(transcription::remove_whisper(&store, &dir)?)).await
+    let worker = Arc::clone(&worker);
+    blocking(move || {
+        if let Ok(worker) = &worker.0 {
+            worker.preload(&Engine::Whistle);
+        }
+        Ok(transcription::remove_whisper(&store, &dir)?)
+    })
+    .await
 }

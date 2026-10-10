@@ -34,5 +34,6 @@ From [`docs/benchmarks/20261009-transcription-models.md`](../benchmarks/20261009
 - whisper.cpp and llama.cpp each include ggml, and two copies can't be linked into one binary. whisper.cpp is built into its own dynamic library that exports only Earshot's C interface, bundled in the app and opened when Whisper is first used. The library adds about 6.6 MB to the app.
 - The model is downloaded, pinned, and verified like the summary models, and chosen in **Settings**.
 - Whisper has no keyword biasing, so the vocabulary's terms aren't sent to it; a prompt of terms measured slightly worse. **Heard as** corrections and summary spellings still apply.
+- When chosen, Whisper loads when the app starts and stays loaded, like Whistle, so no recording waits for it (loading takes about 3 seconds). That keeps about 1 GB of memory in use while the app is open, which **Settings** says.
 - Whisper writes sound labels such as `[BLANK_AUDIO]` on faint clips, which Earshot strips, and invents "Thank you." like Whistle, which the existing phantom filter catches.
 - The README, the website, and the app describe both models from the highlights in the benchmark write-up.
