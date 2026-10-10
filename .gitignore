@@ -27,7 +27,7 @@ dist-ssr
 /test-results/
 /playwright-report/
 
-# Local tools: Claude Code settings, and a one-off audio probe for analyzing
-# private recordings, which must never be committed.
-.claude/
+# Personal Claude Code settings. Shared ones in .claude/ are committed.
+.claude/settings.local.json
+# A one-off audio probe for analyzing private recordings; never commit it.
 src-tauri/examples/local_audio_probe.rs
