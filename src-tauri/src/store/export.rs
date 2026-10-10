@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use rusqlite::params;
 
+use super::chat::{CHAT_COLUMNS, chat_from_row};
 use super::meetings::{MEETING_COLUMNS, meeting_from_row};
-use super::{Meeting, Source, Store, StoreError, Summary, TranscriptSegment};
+use super::{ChatMessage, Meeting, Source, Store, StoreError, Summary, TranscriptSegment};
 
 /// Everything export needs about one meeting.
 #[derive(Debug, Clone, PartialEq)]
@@ -13,6 +14,8 @@ pub struct ExportMeeting {
     pub segments: Vec<TranscriptSegment>,
     /// The latest summary, final or partial.
     pub summary: Option<Summary>,
+    /// The saved conversation, oldest first.
+    pub chat: Vec<ChatMessage>,
 }
 
 impl Store {
@@ -35,6 +38,7 @@ impl Store {
                     notes_markdown: row.get(5)?,
                     segments: Vec::new(),
                     summary: None,
+                    chat: Vec::new(),
                 })
             })?
             .collect::<Result<_, _>>()?;
@@ -99,6 +103,18 @@ impl Store {
                 meetings[i].summary = Some(summary);
             }
         }
+
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {CHAT_COLUMNS} FROM chat_messages
+             WHERE ?1 IS NULL OR meeting_id IN (SELECT value FROM json_each(?1))
+             ORDER BY meeting_id, id"
+        ))?;
+        for message in stmt.query_map(params![filter], chat_from_row)? {
+            let message = message?;
+            if let Some(&i) = index.get(&message.meeting_id) {
+                meetings[i].chat.push(message);
+            }
+        }
         Ok(meetings)
     }
 }
@@ -106,7 +122,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{NewSegment, NewSummary};
+    use crate::store::{NewExchange, NewSegment, NewSummary};
 
     fn seeded() -> (Store, i64, i64) {
         let store = Store::open_in_memory().unwrap();
@@ -138,6 +154,15 @@ mod tests {
                 })
                 .unwrap();
         }
+        store
+            .insert_chat_exchange(NewExchange {
+                meeting_id: a,
+                question: "When?".into(),
+                answer_markdown: "Friday.".into(),
+                sources: Vec::new(),
+                model_id: "m".into(),
+            })
+            .unwrap();
         (store, a, b)
     }
 
@@ -156,6 +181,13 @@ mod tests {
         assert_eq!(alpha.summary.as_ref().unwrap().body_markdown, "newest");
         assert_eq!(meetings[1].meeting.id, b);
         assert_eq!(meetings[1].summary, None);
+        let chat: Vec<&str> = alpha
+            .chat
+            .iter()
+            .map(|m| m.body_markdown.as_str())
+            .collect();
+        assert_eq!(chat, vec!["When?", "Friday."]);
+        assert!(meetings[1].chat.is_empty());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! Renders meetings as Markdown files: summary first, then notes, then transcript.
+//! Renders meetings as Markdown files: summary first, then notes, chat, and transcript.
 
 use std::fs::OpenOptions;
 use std::io::{self, Write};
@@ -8,7 +8,8 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use serde::Serialize;
 
-use crate::store::ExportMeeting;
+use crate::chat::citations;
+use crate::store::{ChatMessage, ChatRole, Citation, ExportMeeting};
 
 const MAX_SLUG_CHARS: usize = 60;
 
@@ -53,6 +54,15 @@ pub fn render_meeting(meeting: &ExportMeeting, tz: &TimeZone) -> String {
         }
     }
 
+    out.push_str("## Chat\n\n");
+    if meeting.chat.is_empty() {
+        out.push_str("_No chat._\n\n");
+    }
+    for message in &meeting.chat {
+        out.push_str(&chat_message(message));
+        out.push_str("\n\n");
+    }
+
     out.push_str("## Transcript\n\n");
     if meeting.segments.is_empty() {
         out.push_str("_No transcript._\n");
@@ -66,6 +76,34 @@ pub fn render_meeting(meeting: &ExportMeeting, tz: &TimeZone) -> String {
         ));
     }
     out
+}
+
+/// A question on one line after **You:**, or an answer with its citations
+/// written as transcript times and "My notes".
+fn chat_message(message: &ChatMessage) -> String {
+    match message.role {
+        ChatRole::User => format!(
+            "**You:** {}",
+            message
+                .body_markdown
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        ),
+        ChatRole::Assistant => {
+            let answer = citations::rewrite(message.body_markdown.trim(), |label| {
+                message
+                    .sources
+                    .iter()
+                    .find(|c| c.label() == label)
+                    .map(|c| match c {
+                        Citation::Transcript { start_ms, .. } => clock(*start_ms),
+                        Citation::Notes { .. } => "My notes".to_owned(),
+                    })
+            });
+            demote_headings(&answer)
+        }
+    }
 }
 
 /// `YYYY-MM-DD-title-slug.md`, dated in local time.
@@ -253,6 +291,36 @@ mod tests {
                 ),
             ],
             summary: Some(summary("## Decisions\n- Ship dark mode first", true)),
+            chat: vec![
+                chat(ChatRole::User, "Who sends\n the strings?", vec![]),
+                chat(
+                    ChatRole::Assistant,
+                    "The participant sends them tonight [S1, N1, S9].",
+                    vec![
+                        Citation::Transcript {
+                            label: "S1".into(),
+                            segment_id: 1_382_000,
+                            start_ms: 1_382_000,
+                        },
+                        Citation::Notes {
+                            label: "N1".into(),
+                            text: "- dark mode first".into(),
+                        },
+                    ],
+                ),
+            ],
+        }
+    }
+
+    fn chat(role: ChatRole, body: &str, sources: Vec<Citation>) -> ChatMessage {
+        ChatMessage {
+            id: 1,
+            meeting_id: 1,
+            role,
+            body_markdown: body.into(),
+            sources,
+            model_id: None,
+            created_at: START,
         }
     }
 
@@ -281,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_summary_then_notes_then_transcript() {
+    fn renders_summary_then_notes_then_chat_then_transcript() {
         assert_eq!(
             render_meeting(&meeting(), &new_york()),
             "---
@@ -300,6 +368,12 @@ duration: 42m
 ## My notes
 
 - dark mode first
+
+## Chat
+
+**You:** Who sends the strings?
+
+The participant sends them tonight [00:23:02, My notes].
 
 ## Transcript
 
@@ -327,12 +401,13 @@ duration: 42m
         m.summary = None;
         m.notes_markdown = "  \n".into();
         m.segments.clear();
+        m.chat.clear();
         m.meeting.started_at = None;
         m.meeting.ended_at = None;
 
         let out = render_meeting(&m, &new_york());
 
-        assert!(out.contains("## Summary\n\n_No summary yet._\n\n## My notes\n\n_No notes._\n\n## Transcript\n\n_No transcript._\n"));
+        assert!(out.contains("## Summary\n\n_No summary yet._\n\n## My notes\n\n_No notes._\n\n## Chat\n\n_No chat._\n\n## Transcript\n\n_No transcript._\n"));
         assert!(!out.contains("duration:"));
         // Unrecorded meetings are dated by when they were created.
         assert!(out.contains("date: 2026-10-03T13:59:00-04:00"));

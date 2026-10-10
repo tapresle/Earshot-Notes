@@ -2,6 +2,7 @@
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
 pub mod audio;
+pub mod chat;
 pub mod chunker;
 pub mod commands;
 pub mod export;
