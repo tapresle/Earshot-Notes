@@ -17,7 +17,7 @@ Your meetings stay on your Mac.
 
 - **On-device:** transcription, summaries, and chat run on your Mac. Audio, transcripts, notes, summaries, and chats are stored on it and nowhere else.
 - **Nothing to sign up for:** no account, no cloud service, no subscription, and no analytics. The app's logs stay on your Mac too.
-- **Works offline:** once a summary model is downloaded, Earshot Notes makes no network requests. The only ones it ever makes are the model downloads you start.
+- **Works offline:** once a local AI model is downloaded, Earshot Notes makes no network requests. The only ones it ever makes are the model downloads you start.
 - **No recordings by default:** audio is transcribed and discarded. It's kept only if you turn on **Keep audio recordings** in **Settings**.
 
 ## How it's different
@@ -53,7 +53,7 @@ Two models transcribe on your Mac. Choose one in **Settings** > **Transcription*
 
 Whistle is the default. The measurements are in [the transcription model comparison](docs/benchmarks/20261009-transcription-models.md).
 
-## Bring your own summary model
+## Bring your own local AI model
 
 You decide which model writes your notes.
 
@@ -77,7 +77,7 @@ You decide which model writes your notes.
 3. Open Earshot Notes. A checklist asks for two permissions:
    - **Microphone:** for your side of the conversation.
    - **Screen & System Audio Recording:** for the other side of your calls. Earshot Notes records only audio, never your screen. If you decline, recording continues with only your microphone.
-4. Download a summary model from the checklist or from **Settings**. Gemma 4 E2B, the recommended model, is 3.1 GB.
+4. Download a local AI model from the checklist or from **Settings**. Gemma 4 E2B, the recommended model, is 3.1 GB.
 
 What's new in each version is on the [releases page](https://github.com/tapresle/Earshot-Notes/releases).
 

@@ -447,7 +447,7 @@ function SummaryModelSection() {
 
   return (
     <section className="settings-section" aria-labelledby="summary-model-heading">
-      <h2 id="summary-model-heading">Summary model</h2>
+      <h2 id="summary-model-heading">Local AI model</h2>
       {installed && installed.models.length > 0 && (
         <fieldset className="model-choices">
           <legend className="settings-help">Summaries and chat use the selected model.</legend>

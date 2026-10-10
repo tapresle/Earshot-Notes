@@ -73,7 +73,7 @@ pub enum SummarizeError {
     QuestionTooLong,
     #[error("there's nothing to ask about yet. Record the meeting or write some notes first")]
     NothingToAsk,
-    #[error("add a summary model first")]
+    #[error("add a local AI model first")]
     NoModel,
     #[error("there's nothing to summarize yet. Record the meeting or write some notes first")]
     NothingToSummarize,

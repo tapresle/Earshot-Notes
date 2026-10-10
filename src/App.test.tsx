@@ -578,7 +578,7 @@ describe("App", () => {
       const user = await openMeeting("Sync");
 
       await user.click(screen.getByRole("tab", { name: "Summary" }));
-      expect(await screen.findByRole("heading", { name: "Add a summary model" })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "Add a local AI model" })).toBeInTheDocument();
       await user.click(await screen.findByRole("button", { name: "Import model file" }));
 
       expect(await screen.findByText(/No summary yet/)).toBeInTheDocument();
@@ -593,7 +593,7 @@ describe("App", () => {
 
       await user.click(await screen.findByRole("button", { name: "Import model file" }));
 
-      expect(screen.getByRole("heading", { name: "Add a summary model" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Add a local AI model" })).toBeInTheDocument();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
 
@@ -991,12 +991,12 @@ describe("App", () => {
     it("offers the model setup in the Chat tab, one copy at a time", async () => {
       const { user } = await openChat(undefined, false);
 
-      expect(await screen.findByRole("heading", { name: "Add a summary model" })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "Add a local AI model" })).toBeInTheDocument();
       expect(screen.queryByLabelText("Ask about this meeting")).not.toBeInTheDocument();
       // Hidden tabs don't render the setup, so only one copy listens for downloads.
       expect(document.querySelectorAll(".model-setup")).toHaveLength(1);
       await user.click(screen.getByRole("tab", { name: "Summary" }));
-      expect(await screen.findByRole("heading", { name: "Add a summary model" })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "Add a local AI model" })).toBeInTheDocument();
       expect(document.querySelectorAll(".model-setup")).toHaveLength(1);
 
       vi.mocked(open).mockResolvedValue("/Users/me/Downloads/gemma-4-E2B-it-Q4_K_M.gguf");
@@ -1481,7 +1481,7 @@ describe("App", () => {
       expect(screen.getByText(/That microphone isn't connected/)).toBeInTheDocument();
     });
 
-    it("switches the summary model", async () => {
+    it("switches the local AI model", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       const gemma = testModel();
       const other = { ...testModel("/models/other.gguf"), id: "local-abc", displayName: "My fine-tune", source: "import" as const };
@@ -1493,7 +1493,7 @@ describe("App", () => {
 
       const gemmaChoice = await screen.findByRole("radio", { name: /Gemma 4 E2B/ });
       expect(gemmaChoice).toBeChecked();
-      const summaryModels = screen.getByRole("region", { name: "Summary model" });
+      const summaryModels = screen.getByRole("region", { name: "Local AI model" });
       expect(within(summaryModels).getAllByText("Selected")).toHaveLength(1);
       expect(gemmaChoice.closest("label")).toHaveTextContent("Selected");
       await user.click(screen.getByRole("radio", { name: /My fine-tune/ }));
@@ -1504,7 +1504,7 @@ describe("App", () => {
       expect(screen.getByRole("radio", { name: /My fine-tune/ }).closest("label")).toHaveTextContent("Selected");
     });
 
-    it("shows and saves how long the summary model stays loaded", async () => {
+    it("shows and saves how long the local AI model stays loaded", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       backend.state.installed = [testModel()];
       backend.state.model = testModel();
@@ -1613,7 +1613,7 @@ describe("App", () => {
       await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
 
       await waitFor(() =>
-        expect(within(screen.getByRole("region", { name: "Summary model" })).queryByRole("radio")).not.toBeInTheDocument(),
+        expect(within(screen.getByRole("region", { name: "Local AI model" })).queryByRole("radio")).not.toBeInTheDocument(),
       );
       expect(
         within(await screen.findByRole("group", { name: "Gemma 4 E2B" })).getByRole("button", { name: "Download (3.1 GB)" }),
@@ -1635,7 +1635,7 @@ describe("App", () => {
       await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
 
       await waitFor(() =>
-        expect(within(screen.getByRole("region", { name: "Summary model" })).queryByRole("radio")).not.toBeInTheDocument(),
+        expect(within(screen.getByRole("region", { name: "Local AI model" })).queryByRole("radio")).not.toBeInTheDocument(),
       );
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
@@ -1653,7 +1653,7 @@ describe("App", () => {
 
       await user.click(radio);
 
-      expect(await screen.findByRole("alert")).toHaveTextContent("That summary model is no longer installed.");
+      expect(await screen.findByRole("alert")).toHaveTextContent("That local AI model is no longer installed.");
       expect(screen.getByRole("alert")).not.toHaveTextContent("meeting");
     });
 
@@ -1826,15 +1826,15 @@ describe("App", () => {
       expect(screen.queryByRole("button", { name: "Allow system audio" })).not.toBeInTheDocument();
     });
 
-    it("sends you to settings to add a summary model", async () => {
+    it("sends you to settings to add a local AI model", async () => {
       const { user } = firstRun();
 
-      await user.click(await screen.findByRole("button", { name: "Set up summaries" }));
+      await user.click(await screen.findByRole("button", { name: "Add a local AI model" }));
 
       expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
     });
 
-    it("shows the summary model when one is installed", async () => {
+    it("shows the local AI model when one is installed", async () => {
       firstRun((state) => {
         state.model = testModel();
       });

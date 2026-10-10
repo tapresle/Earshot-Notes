@@ -52,7 +52,7 @@ export interface SpeechSensitivity {
   them: Sensitivity;
 }
 
-/** How long the summary model stays loaded after a request. */
+/** How long the local AI model stays loaded after a request. */
 export type KeepLoaded = "never" | "fiveMinutes" | "fifteenMinutes" | "always";
 
 export interface SourceProblem {
@@ -299,7 +299,7 @@ export function errorMessage(error: unknown): string {
         case "meeting":
           return "That meeting no longer exists.";
         case "model":
-          return "That summary model is no longer installed.";
+          return "That local AI model is no longer installed.";
         default:
           return sentence(error.message);
       }

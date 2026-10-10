@@ -6,7 +6,7 @@ function gigabytes(bytes: number): string {
   return `${(bytes / 1e9).toFixed(1)} GB`;
 }
 
-/** Shown until a summary model is installed: download a known model or import a file. */
+/** Shown until a local AI model is installed: download a known model or import a file. */
 export function ModelSetup({ onReady }: { onReady: (model: ModelRecord) => void }) {
   const [models, setModels] = useState<AvailableModel[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -74,9 +74,9 @@ export function ModelSetup({ onReady }: { onReady: (model: ModelRecord) => void 
 
   return (
     <div className="model-setup">
-      <h2>Add a summary model</h2>
+      <h2>Add a local AI model</h2>
       <p>
-        Summaries run on this Mac with a local language model, so nothing leaves your computer. The model downloads
+        Summaries and chat run on this Mac with a local AI model, so nothing leaves your computer. The model downloads
         once from Hugging Face and is checked against its published fingerprint before it's used.
       </p>
       {loadError && (
