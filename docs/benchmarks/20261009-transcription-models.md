@@ -4,6 +4,8 @@ Measured October 8 and 9, 2026, for [#25](https://github.com/tapresle/Earshot-No
 
 **Result:** Whisper large-v3-turbo makes about half of Whistle's word errors, recognizes far more technical terms (18 of 26 against 7 at phone quality), and runs comfortably on Apple Silicon. Earshot offers it as an optional download, and Whistle stays the bundled default. See [`docs/decisions/20261009-whisper-turbo-option.md`](../decisions/20261009-whisper-turbo-option.md).
 
+**Q5_0 or Q8_0 (October 10, 2026, [#112](https://github.com/tapresle/Earshot-Notes/issues/112)):** the larger Q8_0 file is no more accurate, so Earshot keeps Q5_0. See [Q5_0 against Q8_0](#q5_0-against-q8_0).
+
 ## What was compared
 
 | Engine | Model | File | How it runs |
@@ -46,6 +48,31 @@ A 2 hour 20 minute release call, recorded in two parts with **Keep audio recordi
 | Whisper large-v3-turbo | 96 s, about 39 times real time | 186 s, about 4 times real time | 0.82 GB | 0.89 GB |
 
 Times include loading the model once per 100 clips. Speed comes from an M5 Max and is faster than on a base chip; on a slower CPU, turbo may not keep up with a live call, which matters for Windows and Linux.
+
+## Q5_0 against Q8_0
+
+Measured October 10, 2026, for [#112](https://github.com/tapresle/Earshot-Notes/issues/112), on the same Mac with whisper.cpp `v1.9.5`. Turbo comes in two quantized files: `ggml-large-v3-turbo-q5_0.bin` (574 MB), which Earshot downloads, and `ggml-large-v3-turbo-q8_0.bin` (874 MB, commit `0b364b5`, SHA-256 `317eb69c…59a1`), which stays closer to the full-precision model. Both transcribed the 30 synthetic sentences, clean and at phone quality, on Metal and on the CPU only, three times each. The Q5_0 rerun matched the results above exactly.
+
+| File | Word errors, clean | Word errors, phone quality | Technical terms right, clean | Technical terms right, phone quality |
+|---|---|---|---|---|
+| **Q5_0, 574 MB** | **10.9%** | **12.8%** | **20 of 26** | **18 of 26** |
+| Q8_0, 874 MB | 10.4% | 13.0% | 19 of 26 | 17 of 26 |
+| Q8_0, CPU only | 11.2% | 15.4% | 19 of 26 | 17 of 26 |
+
+Metal and the CPU transcribe a few garbled sentences differently. For Q5_0 the scores come out the same, and for Q8_0 they don't, so its CPU-only results get a row of their own.
+
+- On Metal, the two files differ by one or two errors in 376 words, which is noise. Every difference falls on the one synthetic voice that every engine garbled. For the other three voices, the transcripts match apart from capitalization and how numbers are written.
+- Q8_0 did worse on that voice in one way that matters: at phone quality, it reduced a whole technical sentence to "this is the", where Q5_0 kept most of its words.
+- Neither file fixes the terms turbo misses, such as "PATCH", "async", "OAuth", and "TypeScript".
+
+| File | Metal: 30 sentences, 125 s of speech | CPU only, 8 threads | Peak memory, Metal | Peak memory, CPU |
+|---|---|---|---|---|
+| Q5_0 | 4.4 s clean, 4.6 s phone | 56 s clean, 59 s phone | 0.92 GB | 0.88 GB |
+| Q8_0 | 4.7 s clean, 4.0 s phone | 59 s clean, 61 s phone | 1.21 GB | 1.13 GB |
+
+Times are the median of three runs and include loading the model. Memory is the process's peak memory footprint. It is higher than in the earlier table because these files are longer than the call clips.
+
+**Recommendation:** keep Q5_0. Q8_0 costs 300 MB more to download and about 0.3 GB more memory while the app is open, for no gain in accuracy or speed.
 
 ## What each model offers
 
