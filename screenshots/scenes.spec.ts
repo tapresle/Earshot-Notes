@@ -47,6 +47,14 @@ test("summary", async ({ page }) => {
   await expect(page).toHaveScreenshot("summary.png");
 });
 
+test("chat", async ({ page }) => {
+  await open(page, "chat");
+  await openMeeting(page, "Design sync");
+  await page.getByRole("tab", { name: "Chat" }).click();
+  await expect(page.getByRole("button", { name: "Show 0:37 in the transcript" })).toBeVisible();
+  await expect(page).toHaveScreenshot("chat.png");
+});
+
 test("recording", async ({ page }) => {
   await open(page, "recording");
   await openMeeting(page, "Customer call");

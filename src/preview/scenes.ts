@@ -2,7 +2,14 @@
 // made up. Times are relative to the page's clock, which the screenshot run
 // fixes, so day labels and durations never change between runs.
 import type { MeetingDetail, TranscriptSegment } from "../lib/api";
-import { createFakeBackend, savedSummary, segment, testModel, type FakeBackend } from "../testing/fakeBackend";
+import {
+  chatExchange,
+  createFakeBackend,
+  savedSummary,
+  segment,
+  testModel,
+  type FakeBackend,
+} from "../testing/fakeBackend";
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
@@ -84,7 +91,7 @@ function history(): MeetingDetail[] {
   ];
 }
 
-/** A backend with the sample history, a summary model, Whisper chosen for transcripts, and the design sync's summary. */
+/** A backend with the sample history, a local AI model, Whisper chosen for transcripts, and the design sync's summary. */
 function withHistory(extra: MeetingDetail[] = [], segments: TranscriptSegment[] = []): FakeBackend {
   const backend = createFakeBackend([...extra, ...history()], [...transcript(1, DESIGN_TRANSCRIPT, 1), ...segments]);
   const model = testModel("/Users/you/Library/Application Support/com.tedpresley.earshot/models/gemma-4-E2B-it-Q4_K_M.gguf");
@@ -117,6 +124,28 @@ export const scenes: Record<string, () => FakeBackend> = {
   /** The design sync's summary. */
   summary: () => withHistory(),
 
+  /** Questions about the design sync, answered with links to the transcript and notes. */
+  chat: () => {
+    const backend = withHistory();
+    backend.state.chats.set(1, [
+      ...chatExchange(
+        1,
+        1,
+        "Which settings layout did we pick, and why?",
+        "The grouped layout, because it tested better: people found the model sizes faster [S1]. It ships in 0.2 [S2, N1].",
+        [
+          { kind: "transcript", label: "S1", segmentId: 6, startMs: 37_500 },
+          { kind: "transcript", label: "S2", segmentId: 7, startMs: 46_000 },
+          { kind: "notes", label: "N1", text: "- **Decision:** ship the new settings layout in 0.2" },
+        ],
+      ),
+      ...chatExchange(1, 3, "Who is sending the onboarding strings?", "Megan sends them on Thursday, after one more pass on the second screen [S1].", [
+        { kind: "transcript", label: "S1", segmentId: 4, startMs: 20_500 },
+      ]),
+    ]);
+    return backend;
+  },
+
   /** A call in progress, transcribing both sides. */
   recording: () => {
     const call = meeting(6, "Customer call", 4, null, "- Import from Markdown transcripts\n- ");
@@ -125,7 +154,7 @@ export const scenes: Record<string, () => FakeBackend> = {
     return backend;
   },
 
-  /** Settings, with Whisper and a summary model installed, and a vocabulary term. */
+  /** Settings, with Whisper and a local AI model installed, and a vocabulary term. */
   settings: () => {
     const backend = withHistory();
     backend.state.vocabulary = [{ term: "Bluefin Ledger", heardAs: ["blue fin ledger", "bluefinn ledger"] }];

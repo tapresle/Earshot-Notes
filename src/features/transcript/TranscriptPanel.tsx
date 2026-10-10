@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, errorMessage, type TranscriptSegment } from "../../lib/api";
 import { formatOffset } from "./formatOffset";
+import { segmentElementId } from "./showSegment";
 
 /** Speaker labels, matching the labels in exports and summary prompts. */
 const speakerLabel: Record<TranscriptSegment["source"], string> = {
@@ -122,7 +123,14 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
       )}
       <ol className="transcript" aria-live="polite">
         {segments.map((segment) => (
-          <li key={segment.id} className="transcript-segment">
+          // Chat citations find, scroll to, and focus segments by these attributes.
+          <li
+            key={segment.id}
+            id={segmentElementId(segment.id)}
+            data-start-ms={segment.startMs}
+            tabIndex={-1}
+            className="transcript-segment"
+          >
             <span className={`speaker speaker-${segment.source}`}>
               {speakerLabel[segment.source]}{" "}
               <time className="segment-time">{formatOffset(segment.startMs)}</time>

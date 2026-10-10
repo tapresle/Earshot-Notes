@@ -1,5 +1,6 @@
 //! SQLite persistence for meetings and notes, and search over them.
 
+mod chat;
 mod export;
 mod meetings;
 mod migrations;
@@ -17,6 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
+pub use chat::{ChatMessage, ChatRole, Citation, NewExchange};
 pub use export::ExportMeeting;
 pub use meetings::{
     DEFAULT_TITLE, MAX_PAGE_SIZE, Meeting, MeetingCursor, MeetingDetail, MeetingPage,

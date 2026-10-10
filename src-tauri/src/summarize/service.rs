@@ -1,5 +1,6 @@
-//! Runs one summary at a time on a background thread and reports progress.
-//! The model stays loaded between summaries for as long as `KeepLoaded` says.
+//! Runs one summary or chat question at a time on a background thread, which
+//! owns the model they share, and reports progress. The model stays loaded
+//! between requests for as long as `KeepLoaded` says.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -12,6 +13,7 @@ use serde::Serialize;
 use super::resident::{KeepLoaded, ModelLoader, Resident};
 use super::run::{Generator, Progress, Request, SummaryError, summarize};
 use super::title::suggest_title;
+use crate::chat::job::{self as chat_job, ChatEvent, ChatJob, MAX_QUESTION_CHARS};
 use crate::store::settings::KEEP_MODEL_LOADED;
 use crate::store::{
     DEFAULT_TITLE, ModelRecord, NewSummary, Store, StoreError, Summary, TranscriptSegment,
@@ -51,11 +53,27 @@ pub enum SummaryEvent {
     },
 }
 
+/// The kind of request the model is working on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Work {
+    Summary,
+    Chat,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SummarizeError {
-    #[error("a summary is already being written; wait for it or cancel it")]
-    Busy,
-    #[error("add a summary model first")]
+    #[error("{}", match .0 {
+        Work::Summary => "a summary is being written; wait for it to finish or cancel it",
+        Work::Chat => "an answer is being written; wait for it to finish or cancel it",
+    })]
+    Busy(Work),
+    #[error("type a question first")]
+    EmptyQuestion,
+    #[error("questions can be at most {MAX_QUESTION_CHARS} characters")]
+    QuestionTooLong,
+    #[error("there's nothing to ask about yet. Record the meeting or write some notes first")]
+    NothingToAsk,
+    #[error("add a local AI model first")]
     NoModel,
     #[error("there's nothing to summarize yet. Record the meeting or write some notes first")]
     NothingToSummarize,
@@ -77,10 +95,18 @@ struct Job {
     cancel: Arc<AtomicBool>,
 }
 
-type Active = Arc<Mutex<Option<(i64, Arc<AtomicBool>)>>>;
+/// The request in progress, if any.
+struct Running {
+    meeting_id: i64,
+    work: Work,
+    cancel: Arc<AtomicBool>,
+}
+
+type Active = Arc<Mutex<Option<Running>>>;
 
 enum Message {
     Job(Box<Job>),
+    Chat(Box<ChatJob>),
     /// How long an idle model stays loaded; `None` keeps it indefinitely.
     IdleLimit(Option<Duration>),
     Unload,
@@ -95,11 +121,13 @@ pub struct Summarizer {
 
 impl Summarizer {
     /// Starts the summary thread, which keeps the model loaded as the stored
-    /// `KEEP_MODEL_LOADED` setting says.
+    /// `KEEP_MODEL_LOADED` setting says. Summaries report through `on_event`,
+    /// and chat questions through `on_chat`.
     pub fn spawn(
         store: Arc<Store>,
         load: ModelLoader,
         on_event: impl Fn(SummaryEvent) + Send + 'static,
+        on_chat: impl Fn(ChatEvent) + Send + 'static,
     ) -> Self {
         let keep = store.setting(KEEP_MODEL_LOADED).unwrap_or_else(|error| {
             log::warn!("couldn't read how long to keep the model loaded: {error}");
@@ -119,6 +147,7 @@ impl Summarizer {
                     &messages,
                     &finished,
                     &on_event,
+                    &on_chat,
                 )
             })
             .expect("couldn't start the summarizer thread");
@@ -141,11 +170,13 @@ impl Summarizer {
         let _ = self.inbox.send(Message::Unload);
     }
 
-    /// Cancels any running summary, frees the model, and waits up to
-    /// `timeout` for the thread to confirm. ggml's Metal backend aborts the
+    /// Cancels any running summary or answer, frees the model, and waits up
+    /// to `timeout` for the thread to confirm. ggml's Metal backend aborts the
     /// process at exit if a model is still loaded.
     pub fn shutdown(&self, timeout: Duration) {
-        self.cancel();
+        if let Some(running) = lock(&self.active).as_ref() {
+            running.cancel.store(true, Ordering::Relaxed);
+        }
         let (done, confirmed) = mpsc::channel();
         if self.inbox.send(Message::Shutdown(done)).is_err() {
             return;
@@ -164,9 +195,7 @@ impl Summarizer {
         is_final: bool,
     ) -> Result<(), SummarizeError> {
         let mut active = lock(&self.active);
-        if active.is_some() {
-            return Err(SummarizeError::Busy);
-        }
+        refuse_if_busy(&active)?;
         let model = store.summary_model()?.ok_or(SummarizeError::NoModel)?;
         let detail = store.get_meeting(meeting_id)?;
         let segments = store.list_segments(meeting_id)?;
@@ -181,50 +210,132 @@ impl Summarizer {
             notes_markdown: detail.notes_markdown,
             upto_ms: segments.iter().map(|s| s.end_ms).max().unwrap_or(0),
             segments,
-            terms: store
-                .vocabulary()?
-                .terms()
-                .iter()
-                .map(|t| t.term.clone())
-                .collect(),
+            terms: terms(store)?,
             is_final,
             cancel: cancel.clone(),
         };
         self.inbox
             .send(Message::Job(Box::new(job)))
             .map_err(|_| SummarizeError::Stopped)?;
-        *active = Some((meeting_id, cancel));
+        *active = Some(Running {
+            meeting_id,
+            work: Work::Summary,
+            cancel,
+        });
+        Ok(())
+    }
+
+    /// Queues a question about the meeting as it stands now. The answer sees
+    /// the earlier questions and answers.
+    pub fn ask(
+        &self,
+        store: &Store,
+        meeting_id: i64,
+        question: &str,
+    ) -> Result<(), SummarizeError> {
+        let question = question.trim();
+        if question.is_empty() {
+            return Err(SummarizeError::EmptyQuestion);
+        }
+        if question.chars().count() > MAX_QUESTION_CHARS {
+            return Err(SummarizeError::QuestionTooLong);
+        }
+        let mut active = lock(&self.active);
+        refuse_if_busy(&active)?;
+        let model = store.summary_model()?.ok_or(SummarizeError::NoModel)?;
+        let detail = store.get_meeting(meeting_id)?;
+        let segments = store.list_segments(meeting_id)?;
+        if segments.is_empty() && detail.notes_markdown.trim().is_empty() {
+            return Err(SummarizeError::NothingToAsk);
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        let job = ChatJob {
+            meeting_id,
+            model,
+            title: detail.meeting.title,
+            notes_markdown: detail.notes_markdown,
+            segments,
+            terms: terms(store)?,
+            history: store.chat_messages(meeting_id)?,
+            question: question.to_owned(),
+            cancel: cancel.clone(),
+        };
+        self.inbox
+            .send(Message::Chat(Box::new(job)))
+            .map_err(|_| SummarizeError::Stopped)?;
+        *active = Some(Running {
+            meeting_id,
+            work: Work::Chat,
+            cancel,
+        });
         Ok(())
     }
 
     /// Asks the running summary to stop. Returns whether one was running.
     pub fn cancel(&self) -> bool {
+        self.cancel_work(Work::Summary)
+    }
+
+    /// Asks the answer being written to stop. Returns whether one was.
+    pub fn cancel_chat(&self) -> bool {
+        self.cancel_work(Work::Chat)
+    }
+
+    fn cancel_work(&self, work: Work) -> bool {
         match lock(&self.active).as_ref() {
-            Some((_, cancel)) => {
-                cancel.store(true, Ordering::Relaxed);
+            Some(running) if running.work == work => {
+                running.cancel.store(true, Ordering::Relaxed);
                 true
             }
-            None => false,
+            _ => false,
         }
     }
 
-    /// Runs `f` only while no summary is running, and keeps one from starting
-    /// until it returns. Used to change models safely.
+    /// Runs `f` only while no summary or answer is being written, and keeps
+    /// one from starting until it returns. Used to change models safely.
     pub fn when_idle<T>(&self, f: impl FnOnce() -> T) -> Result<T, SummarizeError> {
         let active = lock(&self.active);
-        if active.is_some() {
-            return Err(SummarizeError::Busy);
-        }
+        refuse_if_busy(&active)?;
         Ok(f())
     }
 
+    /// The meeting being summarized, if any.
     pub fn active_meeting(&self) -> Option<i64> {
-        lock(&self.active).as_ref().map(|(id, _)| *id)
+        self.active_for(Work::Summary)
+    }
+
+    /// The meeting whose question is being answered, if any.
+    pub fn active_chat(&self) -> Option<i64> {
+        self.active_for(Work::Chat)
+    }
+
+    fn active_for(&self, work: Work) -> Option<i64> {
+        lock(&self.active)
+            .as_ref()
+            .filter(|running| running.work == work)
+            .map(|running| running.meeting_id)
     }
 }
 
-fn lock(active: &Active) -> MutexGuard<'_, Option<(i64, Arc<AtomicBool>)>> {
+fn lock(active: &Active) -> MutexGuard<'_, Option<Running>> {
     active.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn refuse_if_busy(active: &Option<Running>) -> Result<(), SummarizeError> {
+    match active {
+        Some(running) => Err(SummarizeError::Busy(running.work)),
+        None => Ok(()),
+    }
+}
+
+/// The vocabulary's terms, for the model to spell.
+fn terms(store: &Store) -> Result<Vec<String>, SummarizeError> {
+    Ok(store
+        .vocabulary()?
+        .terms()
+        .iter()
+        .map(|t| t.term.clone())
+        .collect())
 }
 
 /// Runs jobs as they arrive, and frees the model once it has been idle for
@@ -236,6 +347,7 @@ fn run_worker(
     messages: &Receiver<Message>,
     finished: &Active,
     on_event: &dyn Fn(SummaryEvent),
+    on_chat: &dyn Fn(ChatEvent),
 ) {
     loop {
         let message = match idle_limit.filter(|_| resident.is_loaded()) {
@@ -270,6 +382,11 @@ fn run_worker(
                 // Clear the slot before announcing, so the UI can start the next one.
                 *lock(finished) = None;
                 on_event(event);
+            }
+            Message::Chat(job) => {
+                let event = chat_job::run(store, &mut resident, *job, on_chat);
+                *lock(finished) = None;
+                on_chat(event);
             }
             Message::IdleLimit(limit) => idle_limit = limit,
             Message::Unload => resident.unload(),
@@ -383,7 +500,7 @@ fn name_untitled(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{ModelSource, NewSegment, Source};
+    use crate::store::{ChatMessage, ModelSource, NewSegment, Source};
     use crate::summarize::template::Message;
     use std::sync::atomic::AtomicUsize;
     use std::time::Duration;
@@ -442,6 +559,7 @@ mod tests {
         store: Arc<Store>,
         summarizer: Summarizer,
         events: mpsc::Receiver<SummaryEvent>,
+        chat: mpsc::Receiver<ChatEvent>,
         meeting_id: i64,
         /// Calls to `generate` across all jobs: the summary, then any title.
         generations: Arc<AtomicUsize>,
@@ -529,13 +647,19 @@ mod tests {
         });
         let (tx, events) = mpsc::channel();
         let tx = Mutex::new(tx);
-        let summarizer = Summarizer::spawn(store.clone(), loader, move |event| {
-            tx.lock().unwrap().send(event).unwrap();
-        });
+        let (chat_tx, chat) = mpsc::channel();
+        let chat_tx = Mutex::new(chat_tx);
+        let summarizer = Summarizer::spawn(
+            store.clone(),
+            loader,
+            move |event| tx.lock().unwrap().send(event).unwrap(),
+            move |event| chat_tx.lock().unwrap().send(event).unwrap(),
+        );
         Harness {
             store,
             summarizer,
             events,
+            chat,
             meeting_id: meeting.id,
             generations,
             loads,
@@ -718,7 +842,7 @@ mod tests {
 
         assert!(matches!(
             h.summarizer.start(&h.store, h.meeting_id, false),
-            Err(SummarizeError::Busy)
+            Err(SummarizeError::Busy(Work::Summary))
         ));
         assert_eq!(h.summarizer.active_meeting(), Some(h.meeting_id));
 
@@ -736,7 +860,7 @@ mod tests {
 
         assert!(matches!(
             h.summarizer.when_idle(|| unreachable!()),
-            Err(SummarizeError::Busy)
+            Err(SummarizeError::Busy(Work::Summary))
         ));
 
         release.send(()).unwrap();
@@ -962,7 +1086,7 @@ mod tests {
         let cancelled = || {
             lock(&h.summarizer.active)
                 .as_ref()
-                .is_some_and(|(_, cancel)| cancel.load(Ordering::Relaxed))
+                .is_some_and(|running| running.cancel.load(Ordering::Relaxed))
         };
 
         thread::scope(|scope| {
@@ -980,5 +1104,145 @@ mod tests {
             }
         ));
         assert_eq!(h.store.latest_summary(h.meeting_id).unwrap(), None);
+    }
+
+    /// Waits for the answer, and returns the saved question and answer.
+    fn answered(h: &Harness) -> (ChatMessage, ChatMessage) {
+        loop {
+            match h.chat.recv_timeout(Duration::from_secs(5)).unwrap() {
+                ChatEvent::Done {
+                    question, answer, ..
+                } => return (question, answer),
+                ChatEvent::Failed { message, .. } => panic!("the answer failed: {message}"),
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn answers_a_question_and_saves_it_with_the_answer() {
+        let h = harness(None, true);
+
+        h.summarizer
+            .ask(&h.store, h.meeting_id, "  When do we ship?  ")
+            .unwrap();
+
+        let id = h.meeting_id;
+        let first = h.chat.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(
+            first,
+            ChatEvent::Progress {
+                meeting_id: id,
+                stage: Stage::Loading
+            }
+        );
+        let (question, answer) = answered(&h);
+        assert_eq!(question.body_markdown, "When do we ship?");
+        assert_eq!(answer.body_markdown, "## Notes\n- done");
+        assert_eq!(answer.model_id.as_deref(), Some("test-model"));
+        assert_eq!(h.store.chat_messages(id).unwrap(), [question, answer]);
+        assert_eq!(h.summarizer.active_chat(), None);
+    }
+
+    #[test]
+    fn shares_the_loaded_model_between_summaries_and_chat() {
+        let h = harness(None, true);
+        summarize_once(&h);
+
+        h.summarizer.ask(&h.store, h.meeting_id, "Ship?").unwrap();
+        answered(&h);
+
+        assert_eq!(count(&h.loads), 1);
+    }
+
+    #[test]
+    fn refuses_a_question_while_a_summary_runs() {
+        let (release, gate) = mpsc::channel();
+        let h = harness(Some(gate), true);
+        h.summarizer.start(&h.store, h.meeting_id, true).unwrap();
+
+        let refused = h.summarizer.ask(&h.store, h.meeting_id, "Ship?");
+
+        assert!(matches!(refused, Err(SummarizeError::Busy(Work::Summary))));
+        assert_eq!(
+            refused.unwrap_err().to_string(),
+            "a summary is being written; wait for it to finish or cancel it"
+        );
+        assert!(!h.summarizer.cancel_chat(), "nothing to cancel in chat");
+        release.send(()).unwrap();
+        done(&h.events);
+    }
+
+    #[test]
+    fn refuses_a_summary_while_answering() {
+        let (release, gate) = mpsc::channel();
+        let h = harness(Some(gate), true);
+        h.summarizer.ask(&h.store, h.meeting_id, "Ship?").unwrap();
+
+        let refused = h.summarizer.start(&h.store, h.meeting_id, true);
+
+        assert!(matches!(refused, Err(SummarizeError::Busy(Work::Chat))));
+        assert_eq!(h.summarizer.active_chat(), Some(h.meeting_id));
+        assert_eq!(h.summarizer.active_meeting(), None);
+        assert!(
+            !h.summarizer.cancel(),
+            "a summary's cancel leaves chat alone"
+        );
+        release.send(()).unwrap();
+        answered(&h);
+    }
+
+    #[test]
+    fn cancels_an_answer_without_saving() {
+        let (release, gate) = mpsc::channel();
+        let h = harness(Some(gate), true);
+        h.summarizer.ask(&h.store, h.meeting_id, "Ship?").unwrap();
+
+        assert!(h.summarizer.cancel_chat());
+        release.send(()).unwrap();
+
+        let failed = loop {
+            if let event @ ChatEvent::Failed { .. } =
+                h.chat.recv_timeout(Duration::from_secs(5)).unwrap()
+            {
+                break event;
+            }
+        };
+        assert!(matches!(
+            failed,
+            ChatEvent::Failed {
+                cancelled: true,
+                ..
+            }
+        ));
+        assert!(h.store.chat_messages(h.meeting_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn checks_the_question_and_the_meeting_before_asking() {
+        let h = harness(None, true);
+        let long = "x".repeat(MAX_QUESTION_CHARS + 1);
+        let empty = h.store.create_meeting("Empty").unwrap();
+
+        assert!(matches!(
+            h.summarizer.ask(&h.store, h.meeting_id, " \n "),
+            Err(SummarizeError::EmptyQuestion)
+        ));
+        assert!(matches!(
+            h.summarizer.ask(&h.store, h.meeting_id, &long),
+            Err(SummarizeError::QuestionTooLong)
+        ));
+        assert!(matches!(
+            h.summarizer.ask(&h.store, empty.id, "Ship?"),
+            Err(SummarizeError::NothingToAsk)
+        ));
+        assert_eq!(h.summarizer.active_chat(), None);
+        let no_model = harness(None, false);
+        assert!(matches!(
+            no_model
+                .summarizer
+                .ask(&no_model.store, no_model.meeting_id, "Ship?"),
+            Err(SummarizeError::NoModel)
+        ));
     }
 }

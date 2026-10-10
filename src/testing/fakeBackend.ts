@@ -1,5 +1,6 @@
 // Synthetic data only: these fixtures also render the committed screenshots.
 import type {
+  ChatMessage,
   MeetingDetail,
   ModelRecord,
   Summary,
@@ -31,6 +32,11 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     summaries: new Map<number, Summary>(),
     summarizing: null as number | null,
     summarizeError: null as unknown,
+    chats: new Map<number, ChatMessage[]>(),
+    asking: null as number | null,
+    asked: [] as { meetingId: number; question: string }[],
+    askError: null as unknown,
+    chatCancelled: false,
     importError: null as unknown,
     cancelled: false,
     partialBytes: 0,
@@ -353,6 +359,17 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
       state.cancelled = true;
       return true;
     },
+    chat_messages: ({ meetingId }) => state.chats.get(meetingId as number) ?? [],
+    active_chat: () => state.asking,
+    ask_meeting: ({ meetingId, question }) => {
+      if (state.askError) throw state.askError;
+      state.asking = meetingId as number;
+      state.asked.push({ meetingId: meetingId as number, question: String(question) });
+    },
+    cancel_chat: () => {
+      state.chatCancelled = true;
+      return true;
+    },
   };
 
   async function handle(command: string, args?: unknown): Promise<unknown> {
@@ -398,4 +415,19 @@ export function segment(id: number, meetingId: number, source: "me" | "them", st
 export function seedMeeting(id: number, title: string, notesMarkdown = ""): MeetingDetail {
   const createdAt = Date.now() - id * 1000;
   return { id, title, createdAt, startedAt: null, endedAt: null, notesMarkdown, notesUpdatedAt: createdAt };
+}
+
+/** A saved question and its answer, with ids `id` and `id + 1`. */
+export function chatExchange(
+  meetingId: number,
+  id: number,
+  question: string,
+  answer: string,
+  sources: ChatMessage["sources"] = [],
+): ChatMessage[] {
+  const base = { meetingId, createdAt: 0 };
+  return [
+    { ...base, id, role: "user", bodyMarkdown: question, sources: [], modelId: null },
+    { ...base, id: id + 1, role: "assistant", bodyMarkdown: answer, sources, modelId: "gemma-4-e2b-it-q4_k_m" },
+  ];
 }

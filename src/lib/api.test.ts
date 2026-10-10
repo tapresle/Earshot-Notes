@@ -12,9 +12,9 @@ describe("errorMessage", () => {
     );
   });
 
-  it("names a missing summary model", () => {
+  it("names a missing local AI model", () => {
     expect(errorMessage({ kind: "notFound", missing: "model", message: "model local-abc doesn't exist" })).toBe(
-      "That summary model is no longer installed.",
+      "That local AI model is no longer installed.",
     );
   });
 

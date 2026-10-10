@@ -16,7 +16,12 @@ const stageText = (stage: SummaryStage): string => {
   }
 };
 
-export function SummaryPanel({ state }: { state: SummaryState }) {
+/**
+ * `active` is whether the Summary tab is showing. The model setup renders only
+ * then, because the Chat tab shows the same setup and only one copy may
+ * listen for downloads at a time.
+ */
+export function SummaryPanel({ state, active }: { state: SummaryState; active: boolean }) {
   const { loading, loadError, summary, model, run } = state;
 
   if (loading) return <p className="empty-hint">Loading summary…</p>;
@@ -53,7 +58,7 @@ export function SummaryPanel({ state }: { state: SummaryState }) {
         </p>
       )}
       {!model ? (
-        <ModelSetup onReady={state.setModel} />
+        active && <ModelSetup onReady={state.setModel} />
       ) : summary ? (
         <>
           <p className="summary-meta">

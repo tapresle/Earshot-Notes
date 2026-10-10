@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, errorMessage, type ModelRecord, type Permission, type PrivacyPane } from "../../lib/api";
 import { CONSENT_NOTICE } from "../recording/consent";
 
-/** Shown on first launch: permissions, a summary model, a headphones tip, and a consent reminder. */
+/** Shown on first launch: permissions, a local AI model, a headphones tip, and a consent reminder. */
 export function SetupChecklist({ onOpenSettings, onFinish }: { onOpenSettings: () => void; onFinish: () => void }) {
   const [mic, setMic] = useState<Permission | null>(null);
   // undefined while loading; null when macOS doesn't let the app check.
@@ -112,14 +112,14 @@ export function SetupChecklist({ onOpenSettings, onFinish }: { onOpenSettings: (
           )}
         </li>
         <li>
-          <h2>Summaries</h2>
+          <h2>Summaries and chat</h2>
           {model === undefined ? null : model ? (
             <p className="check-done">Ready, using {model.displayName}</p>
           ) : (
             <>
-              <p>Summaries need a local model, a one-time download of about 3 GB. Transcription works without it.</p>
+              <p>Summaries and chat need a local AI model, a one-time download of about 3 GB. Transcription works without it.</p>
               <button type="button" className="button" onClick={onOpenSettings}>
-                Set up summaries
+                Add a local AI model
               </button>
             </>
           )}

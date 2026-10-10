@@ -4,6 +4,7 @@
 //! database, the disk, or another thread is `async` and does that work through
 //! [`blocking`].
 
+pub mod chat;
 pub mod export;
 pub mod meetings;
 pub mod models;
