@@ -52,4 +52,23 @@ describe("Markdown", () => {
     expect(output).not.toContain("<script");
     expect(output).toContain("&lt;img");
   });
+
+  it("leaves citation labels as text without a citation renderer", () => {
+    expect(html("Friday [S2].")).toBe("<p>Friday [S2].</p>");
+  });
+
+  it("renders citation groups with the citation renderer", () => {
+    const cite = (labels: string[], key: number) => <sup key={key}>{labels.join("+")}</sup>;
+    const out = render(<Markdown source={"- Friday [S2, N1] and **May [S3]** [x] \\[S4]"} citation={cite} />);
+
+    expect(out.container.firstElementChild!.innerHTML).toBe(
+      "<ul><li>Friday <sup>S2+N1</sup> and <strong>May <sup>S3</sup></strong> [x] [S4]</li></ul>",
+    );
+  });
+
+  it("drops a citation group the renderer returns nothing for, with the space before it", () => {
+    const out = render(<Markdown source="Friday [S9]. Done [S1]." citation={() => null} />);
+
+    expect(out.container.firstElementChild!.innerHTML).toBe("<p>Friday. Done.</p>");
+  });
 });

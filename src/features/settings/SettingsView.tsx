@@ -450,7 +450,7 @@ function SummaryModelSection() {
       <h2 id="summary-model-heading">Summary model</h2>
       {installed && installed.models.length > 0 && (
         <fieldset className="model-choices">
-          <legend className="settings-help">Summaries use the selected model.</legend>
+          <legend className="settings-help">Summaries and chat use the selected model.</legend>
           {installed.models.map((model) => (
             <InstalledModel
               key={model.id}
@@ -521,8 +521,8 @@ function KeepLoadedRow() {
         </div>
       )}
       <p className="settings-help">
-        Loading the model takes a few seconds. Keeping it loaded after a summary lets the next one start sooner, but
-        holds its memory until the time is up.
+        Loading the model takes a few seconds. Keeping it loaded after a summary or answer lets the next one start
+        sooner, but holds its memory until the time is up.
       </p>
       {saved && (
         <p className="settings-saved" role="status">

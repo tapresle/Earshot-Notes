@@ -15,7 +15,7 @@ Earshot Notes transcribes your calls, gives you a notepad while you talk, and tu
 
 Your meetings stay on your Mac.
 
-- **On-device:** transcription and summaries run on your Mac. Audio, transcripts, notes, and summaries are stored on it and nowhere else.
+- **On-device:** transcription, summaries, and chat run on your Mac. Audio, transcripts, notes, summaries, and chats are stored on it and nowhere else.
 - **Nothing to sign up for:** no account, no cloud service, no subscription, and no analytics. The app's logs stay on your Mac too.
 - **Works offline:** once a summary model is downloaded, Earshot Notes makes no network requests. The only ones it ever makes are the model downloads you start.
 - **No recordings by default:** audio is transcribed and discarded. It's kept only if you turn on **Keep audio recordings** in **Settings**.
@@ -34,6 +34,7 @@ Your meetings stay on your Mac.
 - **Both sides of the call:** a live transcript of your microphone and the other participants, labeled **Me** and **Meeting Participants**.
 - **A notepad during the meeting:** type rough notes as you go. They become the outline of the summary.
 - **Summaries on request:** during or after the meeting, notes grouped by topic, with the specifics kept and next steps with their owners.
+- **Ask about a meeting:** in the **Chat** tab, ask a question such as "What did we decide about the launch date?" The local model answers from the meeting's transcript and your notes, and each answer links to the lines it came from.
 - **Your vocabulary:** list the names your meetings use, and what transcription mishears them as, so transcripts and summaries spell them right.
 - **Find and export:** search titles, notes, and transcripts, and export any meeting to Markdown. Untitled meetings are named from their summaries.
 - **Out of the way:** Earshot Notes lives in the menu bar, keeps recording with its window closed, and can open at login.
@@ -59,7 +60,8 @@ You decide which model writes your notes.
 - **Choose from the list:** in **Settings**, download Gemma 4 E2B (recommended), Phi-4 mini, Qwen3 4B Instruct, Gemma 4 E4B, Qwen3 8B, Ministral 3 8B, or Ministral 3 14B. Each download is pinned to a checksum and verified before use.
 - **Or import your own:** import any GGUF model file you already have.
 - **Built for Apple Silicon:** summaries run through [llama.cpp](https://github.com/ggml-org/llama.cpp) with Metal. Every listed model is sized to leave room for your call on a Mac with 16 GB of memory.
-- **Loaded when you need it:** the model loads on your first summary and stays loaded for five minutes after the last one, so the next summary starts sooner. In **Settings**, choose **Never**, **15 minutes**, or **Always** instead.
+- **One model for summaries and chat:** the selected model writes summaries and answers questions.
+- **Loaded when you need it:** the model loads on your first summary or question and stays loaded for five minutes after the last one, so the next one starts sooner. In **Settings**, choose **Never**, **15 minutes**, or **Always** instead.
 
 ## How it works
 

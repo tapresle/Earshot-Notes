@@ -7,7 +7,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { CONSENT_NOTICE } from "./features/recording/consent";
 import type { MeetingDetail, TranscriptSegment } from "./lib/api";
-import { createFakeBackend, savedSummary, seedMeeting, segment, testModel } from "./testing/fakeBackend";
+import {
+  chatExchange,
+  createFakeBackend,
+  savedSummary,
+  seedMeeting,
+  segment,
+  testModel,
+} from "./testing/fakeBackend";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -830,6 +837,165 @@ describe("App", () => {
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
       expect(await screen.findByText(/0.3 GB of 3.1 GB \(10%\)/)).toBeInTheDocument();
+    });
+  });
+
+  describe("chat", () => {
+    const LAUNCH_SOURCES = [
+      { kind: "transcript" as const, label: "S1", segmentId: 7, startMs: 65_000 },
+      { kind: "notes" as const, label: "N1", text: "- Launch: May 4" },
+    ];
+
+    /** Opens the meeting's Chat tab, with a model installed unless `withModel` is false. */
+    async function openChat(notes = "- Launch: May 4\n- Hiring: two roles", withModel = true) {
+      const backend = fakeBackend(
+        [seedMeeting(1, "Sync", notes)],
+        [segment(7, 1, "them", 65_000, "The launch moves to May 4.")],
+      );
+      if (withModel) backend.state.model = testModel();
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Sync/ }));
+      await user.click(await screen.findByRole("tab", { name: "Chat" }));
+      return { backend, user };
+    }
+
+    it("asks a question, streams the answer, and shows it with its sources", async () => {
+      const { backend, user } = await openChat();
+      expect(await screen.findByText(/Ask a question about this meeting/)).toBeInTheDocument();
+
+      await user.type(screen.getByLabelText("Ask about this meeting"), "When is the launch?{Enter}");
+
+      expect(backend.state.asked).toEqual([{ meetingId: 1, question: "When is the launch?" }]);
+      expect(screen.getByLabelText("Ask about this meeting")).toHaveValue("");
+      expect(screen.getByText("Loading the model…")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Ask" })).toBeDisabled();
+      emit("chat:progress", { meetingId: 1, stage: "writing" });
+      emit("chat:text", { meetingId: 1, text: "It moves to May 4 [S1" });
+      emit("chat:text", { meetingId: 1, text: "]." });
+      expect(screen.getByText("Writing an answer…")).toBeInTheDocument();
+      expect(screen.getByText("It moves to May 4.")).toBeInTheDocument();
+
+      const [question, answer] = chatExchange(1, 1, "When is the launch?", "It moves to May 4 [S1, N1].", LAUNCH_SOURCES);
+      emit("chat:done", { meetingId: 1, question, answer });
+
+      expect(await screen.findByRole("button", { name: "Show 1:05 in the transcript" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Show this in My notes" })).toBeInTheDocument();
+      expect(screen.getByText("When is the launch?")).toBeInTheDocument();
+      expect(screen.queryByText("Writing an answer…")).not.toBeInTheDocument();
+    });
+
+    it("shows a saved conversation and leaves out labels it has no source for", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.model = testModel();
+      backend.state.chats.set(1, chatExchange(1, 1, "Who owns QA?", "Dana [S1] and maybe Sam [S4].", LAUNCH_SOURCES));
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Sync/ }));
+      await user.click(await screen.findByRole("tab", { name: "Chat" }));
+
+      const answer = (await screen.findByText(/Dana/)).closest(".chat-message") as HTMLElement;
+      expect(answer).toHaveTextContent("Dana 1:05 and maybe Sam.");
+      expect(within(answer).getAllByRole("button")).toHaveLength(1);
+    });
+
+    it("shows the cited line in the transcript", async () => {
+      const { user } = await openChat();
+      await user.type(screen.getByLabelText("Ask about this meeting"), "When?{Enter}");
+      const [question, answer] = chatExchange(1, 1, "When?", "May 4 [S1].", LAUNCH_SOURCES);
+      emit("chat:done", { meetingId: 1, question, answer });
+
+      await user.click(await screen.findByRole("button", { name: "Show 1:05 in the transcript" }));
+
+      const line = screen.getByText("The launch moves to May 4.").closest("li")!;
+      expect(line).toHaveFocus();
+      expect(line).toHaveClass("is-cited");
+    });
+
+    it("opens My notes at the cited passage", async () => {
+      const { user } = await openChat("- Hiring: two roles\n- Launch: May 4\n");
+      await user.type(screen.getByLabelText("Ask about this meeting"), "When?{Enter}");
+      const [question, answer] = chatExchange(1, 1, "When?", "May 4 [N1].", LAUNCH_SOURCES);
+      emit("chat:done", { meetingId: 1, question, answer });
+
+      await user.click(await screen.findByRole("button", { name: "Show this in My notes" }));
+
+      expect(screen.getByRole("tab", { name: "My notes" })).toHaveAttribute("aria-selected", "true");
+      const notes = screen.getByLabelText("Meeting notes") as HTMLTextAreaElement;
+      await waitFor(() => expect(notes).toHaveFocus());
+      expect(notes.value.slice(notes.selectionStart, notes.selectionEnd)).toBe("- Launch: May 4");
+    });
+
+    it("cancels an answer and gives the question back", async () => {
+      const { backend, user } = await openChat();
+      await user.type(screen.getByLabelText("Ask about this meeting"), "Who owns hiring?{Enter}");
+
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      emit("chat:failed", { meetingId: 1, message: "the summary was cancelled", cancelled: true });
+
+      expect(backend.state.chatCancelled).toBe(true);
+      expect(await screen.findByText("Answer cancelled.")).toBeInTheDocument();
+      expect(screen.getByLabelText("Ask about this meeting")).toHaveValue("Who owns hiring?");
+      expect(screen.getByRole("button", { name: "Ask" })).toBeEnabled();
+    });
+
+    it("explains a failed answer", async () => {
+      const { user } = await openChat();
+      await user.type(screen.getByLabelText("Ask about this meeting"), "When?{Enter}");
+
+      emit("chat:failed", { meetingId: 1, message: "the model failed: out of memory", cancelled: false });
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't answer: the model failed: out of memory.");
+      expect(screen.getByLabelText("Ask about this meeting")).toHaveValue("When?");
+    });
+
+    it("explains why a question can't be asked and keeps it", async () => {
+      const { backend, user } = await openChat();
+      backend.state.askError = {
+        kind: "conflict",
+        message: "a summary is being written; wait for it to finish or cancel it",
+      };
+
+      await user.type(screen.getByLabelText("Ask about this meeting"), "When?");
+      await user.click(screen.getByRole("button", { name: "Ask" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "A summary is being written; wait for it to finish or cancel it.",
+      );
+      expect(screen.getByLabelText("Ask about this meeting")).toHaveValue("When?");
+      expect(screen.getByLabelText("Ask about this meeting")).toHaveAttribute("aria-invalid", "true");
+    });
+
+    it("adds a line with Shift-Return instead of asking", async () => {
+      const { backend, user } = await openChat();
+
+      await user.type(screen.getByLabelText("Ask about this meeting"), "First{Shift>}{Enter}{/Shift}second");
+
+      expect(screen.getByLabelText("Ask about this meeting")).toHaveValue("First\nsecond");
+      expect(backend.state.asked).toEqual([]);
+    });
+
+    it("shows an answer already being written when the meeting opens", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.model = testModel();
+      backend.state.asking = 1;
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Sync/ }));
+      await user.click(await screen.findByRole("tab", { name: "Chat" }));
+
+      expect(await screen.findByText("Loading the model…")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    });
+
+    it("points to where to add a model before chatting", async () => {
+      const { user } = await openChat(undefined, false);
+      expect(screen.queryByLabelText("Ask about this meeting")).not.toBeInTheDocument();
+
+      await user.click(await screen.findByRole("button", { name: "Add a model" }));
+
+      expect(screen.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
+      expect(await screen.findByRole("heading", { name: "Add a summary model" })).toBeInTheDocument();
     });
   });
 

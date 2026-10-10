@@ -558,6 +558,135 @@ body {
   color: var(--text-secondary);
 }
 
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-message p {
+  margin: 0;
+}
+
+/* Your questions sit to the right, in the accent tint; answers read like notes. */
+.chat-user {
+  align-self: flex-end;
+  max-width: 80%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--selected);
+  white-space: pre-wrap;
+}
+
+.chat-assistant .markdown p {
+  margin: 0 0 6px;
+}
+
+.chat-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.citations {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 4px;
+  vertical-align: baseline;
+}
+
+.citation {
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--selected);
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.citation:hover {
+  text-decoration: underline;
+}
+
+.citation:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chat-composer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 4px;
+  /* Matches .workspace, so messages scroll under it cleanly. */
+  background: var(--surface-2);
+}
+
+.chat-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  resize: vertical;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 15px;
+}
+
+.chat-input::placeholder {
+  color: var(--text-muted);
+}
+
+.chat-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chat-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-actions .settings-help {
+  margin: 0;
+}
+
+/* A segment a chat citation just showed. */
+.transcript-segment.is-cited {
+  border-radius: 4px;
+  background: var(--selected);
+  transition: background-color 0.3s;
+}
+
+.transcript-segment:focus {
+  outline: none;
+}
+
+.transcript-segment:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .summary-meta {
   margin: 0 0 8px;
   font-size: 12px;

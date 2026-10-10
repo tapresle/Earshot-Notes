@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, errorMessage, type MeetingDetail } from "../../lib/api";
-import { Notepad } from "../notepad/Notepad";
+import { ChatPanel } from "../chat/ChatPanel";
+import { useChat } from "../chat/useChat";
+import { Notepad, type NotepadHandle } from "../notepad/Notepad";
 import { ExportMeetingButton } from "../export/ExportBar";
 import { RecordingControls } from "../recording/RecordingControls";
 import { SummarizeButton, SummaryPanel } from "../summary/SummaryPanel";
@@ -69,7 +71,7 @@ export function MeetingView({
   );
 }
 
-type Tab = "notes" | "summary";
+type Tab = "notes" | "summary" | "chat";
 
 function LoadedMeeting({
   meeting,
@@ -80,6 +82,14 @@ function LoadedMeeting({
 }: Omit<MeetingViewProps, "meetingId"> & { meeting: MeetingDetail }) {
   const [tab, setTab] = useState<Tab>("notes");
   const summary = useSummary(meeting.id);
+  const chat = useChat(meeting.id);
+  const notepad = useRef<NotepadHandle>(null);
+
+  function showNotes(passage: string) {
+    setTab("notes");
+    // The notes panel is hidden until the tab change renders.
+    requestAnimationFrame(() => notepad.current?.select(passage));
+  }
 
   const tabButton = (id: Tab, label: string) => (
     <button
@@ -105,10 +115,11 @@ function LoadedMeeting({
       <div role="tablist" aria-label="Meeting views" className="tabs">
         {tabButton("notes", "My notes")}
         {tabButton("summary", "Summary")}
+        {tabButton("chat", "Chat")}
       </div>
-      {/* Both panels stay mounted so unsaved notes survive switching tabs. */}
+      {/* The panels stay mounted so unsaved notes and a typed question survive switching tabs. */}
       <div role="tabpanel" id="panel-notes" aria-labelledby="tab-notes" className="tab-panel" hidden={tab !== "notes"}>
-        <Notepad meetingId={meeting.id} initialMarkdown={meeting.notesMarkdown} />
+        <Notepad ref={notepad} meetingId={meeting.id} initialMarkdown={meeting.notesMarkdown} />
       </div>
       <div
         role="tabpanel"
@@ -118,6 +129,9 @@ function LoadedMeeting({
         hidden={tab !== "summary"}
       >
         <SummaryPanel state={summary} />
+      </div>
+      <div role="tabpanel" id="panel-chat" aria-labelledby="tab-chat" className="tab-panel" hidden={tab !== "chat"}>
+        <ChatPanel state={chat} model={summary.model} onAddModel={() => setTab("summary")} onShowNotes={showNotes} />
       </div>
       <footer className="meeting-footer">
         <RecordingControls

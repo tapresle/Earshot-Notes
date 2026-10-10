@@ -193,6 +193,43 @@ export interface SummaryFailed {
   cancelled: boolean;
 }
 
+/** A source an answer cites, under the label the answer uses, such as `S3`. */
+export type Citation =
+  | { kind: "transcript"; label: string; segmentId: number; startMs: number }
+  | { kind: "notes"; label: string; text: string };
+
+export interface ChatMessage {
+  id: number;
+  meetingId: number;
+  role: "user" | "assistant";
+  /** Answers keep their citation labels, such as `[S3]`; `sources` says what each is. */
+  bodyMarkdown: string;
+  sources: Citation[];
+  modelId: string | null;
+  createdAt: number;
+}
+
+export type ChatStage = { stage: "loading" } | { stage: "writing" };
+
+export type ChatProgress = ChatStage & { meetingId: number };
+
+export interface ChatText {
+  meetingId: number;
+  text: string;
+}
+
+export interface ChatDone {
+  meetingId: number;
+  question: ChatMessage;
+  answer: ChatMessage;
+}
+
+export interface ChatFailed {
+  meetingId: number;
+  message: string;
+  cancelled: boolean;
+}
+
 export interface ExportReport {
   written: string[];
   failed: { title: string; message: string }[];
@@ -313,6 +350,11 @@ export const api = {
   activeSummary: () => invoke<number | null>("active_summary"),
   latestSummary: (meetingId: number) => invoke<Summary | null>("latest_summary", { meetingId }),
   summaryModel: () => invoke<ModelRecord | null>("summary_model"),
+  /** Asks a question about the meeting; the answer arrives as chat events. */
+  askMeeting: (meetingId: number, question: string) => invoke<void>("ask_meeting", { meetingId, question }),
+  cancelChat: () => invoke<boolean>("cancel_chat"),
+  activeChat: () => invoke<number | null>("active_chat"),
+  chatMessages: (meetingId: number) => invoke<ChatMessage[]>("chat_messages", { meetingId }),
   availableModels: () => invoke<AvailableModel[]>("available_models"),
   downloadModel: (modelId: string) => invoke<void>("download_model", { modelId }),
   cancelDownload: () => invoke<boolean>("cancel_download"),
@@ -394,4 +436,12 @@ export const api = {
     listen<SummaryDone>("summary:done", (event) => handler(event.payload)),
   onSummaryFailed: (handler: (event: SummaryFailed) => void): Promise<UnlistenFn> =>
     listen<SummaryFailed>("summary:failed", (event) => handler(event.payload)),
+  onChatProgress: (handler: (event: ChatProgress) => void): Promise<UnlistenFn> =>
+    listen<ChatProgress>("chat:progress", (event) => handler(event.payload)),
+  onChatText: (handler: (event: ChatText) => void): Promise<UnlistenFn> =>
+    listen<ChatText>("chat:text", (event) => handler(event.payload)),
+  onChatDone: (handler: (event: ChatDone) => void): Promise<UnlistenFn> =>
+    listen<ChatDone>("chat:done", (event) => handler(event.payload)),
+  onChatFailed: (handler: (event: ChatFailed) => void): Promise<UnlistenFn> =>
+    listen<ChatFailed>("chat:failed", (event) => handler(event.payload)),
 };
