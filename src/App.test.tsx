@@ -988,14 +988,22 @@ describe("App", () => {
       expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     });
 
-    it("points to where to add a model before chatting", async () => {
+    it("offers the model setup in the Chat tab, one copy at a time", async () => {
       const { user } = await openChat(undefined, false);
-      expect(screen.queryByLabelText("Ask about this meeting")).not.toBeInTheDocument();
 
-      await user.click(await screen.findByRole("button", { name: "Add a model" }));
-
-      expect(screen.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
       expect(await screen.findByRole("heading", { name: "Add a summary model" })).toBeInTheDocument();
+      expect(screen.queryByLabelText("Ask about this meeting")).not.toBeInTheDocument();
+      // Hidden tabs don't render the setup, so only one copy listens for downloads.
+      expect(document.querySelectorAll(".model-setup")).toHaveLength(1);
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+      expect(await screen.findByRole("heading", { name: "Add a summary model" })).toBeInTheDocument();
+      expect(document.querySelectorAll(".model-setup")).toHaveLength(1);
+
+      vi.mocked(open).mockResolvedValue("/Users/me/Downloads/gemma-4-E2B-it-Q4_K_M.gguf");
+      await user.click(await screen.findByRole("button", { name: "Import model file" }));
+      expect(await screen.findByText(/No summary yet/)).toBeInTheDocument();
+      await user.click(screen.getByRole("tab", { name: "Chat" }));
+      expect(await screen.findByLabelText("Ask about this meeting")).toBeInTheDocument();
     });
   });
 

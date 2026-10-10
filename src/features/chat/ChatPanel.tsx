@@ -1,6 +1,7 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { ChatMessage, ChatStage, Citation, ModelRecord } from "../../lib/api";
 import { Markdown, type RenderCitation } from "../summary/Markdown";
+import { ModelSetup } from "../summary/ModelSetup";
 import { formatOffset } from "../transcript/formatOffset";
 import { showSegment } from "../transcript/showSegment";
 import type { ChatState } from "./useChat";
@@ -16,13 +17,14 @@ const stageText: Record<ChatStage["stage"], string> = {
 interface ChatPanelProps {
   state: ChatState;
   model: ModelRecord | null;
-  /** Shows where to download or import a model. */
-  onAddModel: () => void;
+  onModelReady: (model: ModelRecord) => void;
+  /** Whether the Chat tab is showing; the model setup renders only then (see `SummaryPanel`). */
+  active: boolean;
   /** Opens **My notes** at a cited passage. */
   onShowNotes: (passage: string) => void;
 }
 
-export function ChatPanel({ state, model, onAddModel, onShowNotes }: ChatPanelProps) {
+export function ChatPanel({ state, model, onModelReady, active, onShowNotes }: ChatPanelProps) {
   const { loading, loadError, messages, run } = state;
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -41,16 +43,7 @@ export function ChatPanel({ state, model, onAddModel, onShowNotes }: ChatPanelPr
       </div>
     );
   }
-  if (!model) {
-    return (
-      <div className="empty-hint">
-        <p>Chat answers with the same local model as summaries. Add one to ask questions about this meeting.</p>
-        <button type="button" className="button" onClick={onAddModel}>
-          Add a model
-        </button>
-      </div>
-    );
-  }
+  if (!model) return active ? <ModelSetup onReady={onModelReady} /> : null;
 
   // While an answer streams, its sources aren't known yet, so labels are hidden.
   const hideCitations: RenderCitation = () => null;

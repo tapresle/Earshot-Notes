@@ -128,10 +128,16 @@ function LoadedMeeting({
         className="tab-panel"
         hidden={tab !== "summary"}
       >
-        <SummaryPanel state={summary} />
+        <SummaryPanel state={summary} active={tab === "summary"} />
       </div>
       <div role="tabpanel" id="panel-chat" aria-labelledby="tab-chat" className="tab-panel" hidden={tab !== "chat"}>
-        <ChatPanel state={chat} model={summary.model} onAddModel={() => setTab("summary")} onShowNotes={showNotes} />
+        <ChatPanel
+          state={chat}
+          model={summary.model}
+          onModelReady={summary.setModel}
+          active={tab === "chat"}
+          onShowNotes={showNotes}
+        />
       </div>
       <footer className="meeting-footer">
         <RecordingControls
