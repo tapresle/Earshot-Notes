@@ -105,7 +105,8 @@ pub async fn transcription_models(
                 .as_ref()
                 .filter(|(id, _)| id == WHISPER_TURBO.id)
                 .map(|(_, phase)| *phase),
-            hugging_face: Some((&WHISPER_TURBO).into()),
+            // ggerganov/whisper.cpp holds every Whisper model, so name the file.
+            hugging_face: Some(HuggingFaceSource::naming_file(&WHISPER_TURBO)),
         };
         Ok(TranscriptionModels {
             models: vec![whistle, whisper],

@@ -223,7 +223,8 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
             huggingFace: {
               repo: "ggerganov/whisper.cpp",
               quantization: "Q5_0",
-              revision: "5359861c739e955e79d9a303bcbc70fb988958b1",
+              revision: "98aa99a0a9db05ae2342309f5096248665f7cba3",
+              fileName: "ggml-large-v3-turbo-q5_0.bin",
             },
           },
         ],

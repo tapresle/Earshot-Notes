@@ -1476,6 +1476,8 @@ describe("App", () => {
       expect(whisper).toBeDisabled();
       expect(screen.getByText("Fast and light, and works from the first launch.")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Download (574 MB)" })).toBeInTheDocument();
+      // The repository holds every Whisper model, so the file is named.
+      expect(screen.getByText("ggml-large-v3-turbo-q5_0.bin")).toBeInTheDocument();
     });
 
     it("downloads Whisper and shows its progress", async () => {

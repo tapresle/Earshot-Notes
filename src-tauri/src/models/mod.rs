@@ -169,10 +169,11 @@ pub const WHISPER_TURBO: KnownModel = KnownModel {
     file_name: "ggml-large-v3-turbo-q5_0.bin",
     quantization: "Q5_0",
     repo: "ggerganov/whisper.cpp",
-    revision: "5359861c739e955e79d9a303bcbc70fb988958b1",
+    // The commit that added this file, which its Hugging Face page shows.
+    revision: "98aa99a0a9db05ae2342309f5096248665f7cba3",
     sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
     size_bytes: 574_041_195,
-    version: "ggml-large-v3-turbo-q5_0 (ggerganov/whisper.cpp 5359861)",
+    version: "ggml-large-v3-turbo-q5_0 (ggerganov/whisper.cpp 98aa99a)",
     min_runtime: "whisper.cpp 1.9.5",
     description: "More accurate, especially for the other side of calls and technical terms.",
     context_limit: 0,

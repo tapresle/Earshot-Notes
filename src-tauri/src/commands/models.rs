@@ -18,6 +18,10 @@ pub struct HuggingFaceSource {
     repo: &'static str,
     quantization: &'static str,
     revision: &'static str,
+    /// The file, for a repository that holds several models, where the
+    /// quantization alone doesn't say which one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file_name: Option<&'static str>,
 }
 
 impl From<&KnownModel> for HuggingFaceSource {
@@ -26,6 +30,18 @@ impl From<&KnownModel> for HuggingFaceSource {
             repo: model.repo,
             quantization: model.quantization,
             revision: model.revision,
+            file_name: None,
+        }
+    }
+}
+
+impl HuggingFaceSource {
+    /// The source of a model in a repository that holds several models,
+    /// named by its file.
+    pub(super) fn naming_file(model: &KnownModel) -> Self {
+        Self {
+            file_name: Some(model.file_name),
+            ..model.into()
         }
     }
 }
@@ -170,4 +186,25 @@ pub(super) fn event_sink<T: 'static>(
 #[tauri::command]
 pub fn cancel_download(downloads: State<'_, Downloads>) -> bool {
     downloads.cancel()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::WHISPER_TURBO;
+
+    #[test]
+    fn names_the_file_in_a_repository_of_several_models() {
+        let source = serde_json::to_value(HuggingFaceSource::naming_file(&WHISPER_TURBO)).unwrap();
+
+        assert_eq!(
+            source,
+            json!({
+                "repo": "ggerganov/whisper.cpp",
+                "quantization": "Q5_0",
+                "revision": "98aa99a0a9db05ae2342309f5096248665f7cba3",
+                "fileName": "ggml-large-v3-turbo-q5_0.bin",
+            })
+        );
+    }
 }
