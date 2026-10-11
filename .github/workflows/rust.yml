@@ -76,22 +76,7 @@ jobs:
             cargo-macos-26-${{ github.event.repository.name }}-${{ steps.toolchain.outputs.rustc }}-
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      # DIAGNOSTIC (#137): runner CPU details and summary test timing by thread count.
-      - name: Diagnose the summary tests
-        env:
-          EARSHOT_TEST_CPU: "1"
-        run: |
-          sysctl -n machdep.cpu.brand_string hw.ncpu hw.physicalcpu hw.logicalcpu hw.memsize
-          sysctl hw.optional | grep -E "arm.FEAT_(DotProd|I8MM|BF16|FP16)" || true
-          cargo test --test summarize --no-run
-          for n in default 3 2 1; do
-            if [ "$n" = default ]; then unset EARSHOT_TEST_THREADS; else export EARSHOT_TEST_THREADS=$n; fi
-            start=$(date +%s)
-            cargo test --test summarize -- --nocapture --test-threads=1 generates_and_streams 2>&1 | grep -E "DIAGNOSTIC|offloaded|graph splits|compute buffer size|CPU_REPACK|test result" || true
-            echo "threads=$n took $(( $(date +%s) - start ))s"
-          done
       # The hosted runner's virtual GPU runs the tiny test model in minutes; the CPU takes seconds.
       - run: cargo test --workspace
-        if: false
         env:
           EARSHOT_TEST_CPU: "1"
