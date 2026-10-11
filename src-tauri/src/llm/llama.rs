@@ -28,7 +28,8 @@ fn backend() -> Result<&'static LlamaBackend, GenerateError> {
     BACKEND
         .get_or_init(|| {
             // Silence llama.cpp's and ggml's (Metal's) diagnostic output.
-            llama_cpp_2::send_logs_to_tracing(LogOptions::default().with_logs_enabled(false));
+            // DIAGNOSTIC (#137): llama.cpp logs on.
+            let _ = LogOptions::default();
             LlamaBackend::init().map_err(|e| e.to_string())
         })
         .as_ref()
@@ -218,12 +219,21 @@ impl Generator for LlamaGenerator {
         let backend = backend()?;
         let n_ctx = NonZeroU32::new((prompt.len() + max_tokens) as u32).expect("non-zero");
         let on_gpu = self.placement == Placement::Gpu;
+        // DIAGNOSTIC (#137): thread override.
+        let threads: Option<i32> = std::env::var("EARSHOT_TEST_THREADS")
+            .ok()
+            .and_then(|t| t.parse().ok());
         let params = LlamaContextParams::default()
             .with_n_ctx(Some(n_ctx))
             .with_n_batch(BATCH as u32)
             // Without these, llama.cpp still moves the cache and large operations to the GPU.
             .with_offload_kqv(on_gpu)
             .with_op_offload(on_gpu);
+        let params = match threads {
+            Some(n) => params.with_n_threads(n).with_n_threads_batch(n),
+            None => params,
+        };
+        eprintln!("DIAGNOSTIC threads={:?}", threads);
         let mut ctx = self
             .model
             .new_context(backend, params)
