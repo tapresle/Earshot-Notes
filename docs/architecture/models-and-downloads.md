@@ -12,7 +12,7 @@ flowchart TB
         known["KNOWN_MODELS: KnownModel entries<br/>id, file name, quantization,<br/>repo, revision, sha256, size,<br/>min_runtime, description, context_limit"]
         order["display_order: the recommended model first,<br/>then by size"]
         turbo["WHISPER_TURBO<br/>pinned the same way,<br/>kept out of KNOWN_MODELS"]
-        limit["context_limit(sha256)<br/>registry limit, or 32K for imports"]
+        limit["context_limit(sha256)<br/>registry limit, or 32K for<br/>any model not in the registry"]
     end
     url["KnownModel::url()<br/>huggingface.co/{repo}/resolve/{revision}/{file}"]
     known --> url

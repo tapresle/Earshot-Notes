@@ -113,7 +113,7 @@ impl Resident {
     /// Frees the model's memory.
     pub fn unload(&mut self) {
         if let Some((key, _)) = self.loaded.take() {
-            log::info!("unloaded the summary model {}", key.id);
+            log::info!("unloaded the local AI model {}", key.id);
         }
     }
 }

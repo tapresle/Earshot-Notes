@@ -79,7 +79,7 @@ stateDiagram-v2
 
 ## Context and memory
 
-`LlamaGenerator` caps the model's context at the smallest of its training length, `llm::llama::MAX_CONTEXT` (32,768 tokens), and its registry `context_limit`, which a model with a fast-growing key-value cache sets lower (imports have no registry entry, so they get 32K). Each `generate` call creates a fresh llama.cpp context sized to that prompt plus its output room, so short meetings use less memory than long ones.
+`LlamaGenerator` caps the model's context at the smallest of its training length, `llm::llama::MAX_CONTEXT` (32,768 tokens), and its registry `context_limit`, which a model with a fast-growing key-value cache sets lower (a model with no registry entry, such as an import or a model since removed from the list, gets 32K). Each `generate` call creates a fresh llama.cpp context sized to that prompt plus its output room, so short meetings use less memory than long ones.
 
 | Output room | Size |
 |---|---|
