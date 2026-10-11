@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use super::{CommandError, CommandResult, ErrorKind, blocking, open_with_system};
 use crate::models::download::{HttpFetch, Phase, download, partial_path};
 use crate::models::manager::{DownloadEvent, Downloads, EventSink, StartError};
-use crate::models::{self, GEMMA_4_E2B, ImportError, KNOWN_MODELS, KnownModel};
+use crate::models::{self, ImportError, KNOWN_MODELS, KnownModel, QWEN_3_5_4B};
 use crate::store::{ModelRecord, Store};
 
 /// Exactly which file a model is, on Hugging Face.
@@ -98,7 +98,7 @@ pub async fn available_models(
                     file_name: model.file_name,
                     size_bytes: model.size_bytes,
                     hugging_face: model.into(),
-                    recommended: model.id == GEMMA_4_E2B.id,
+                    recommended: model.id == QWEN_3_5_4B.id,
                     installed: store.model_by_sha256(model.sha256)?.is_some(),
                     partial_bytes: std::fs::metadata(partial_path(&dir.join(model.file_name)))
                         .map(|m| m.len())

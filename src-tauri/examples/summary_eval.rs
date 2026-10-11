@@ -3,7 +3,7 @@
 //! tests, so this is a tool for comparing prompts, sampling, and approaches.
 //!
 //!   cargo run --release --example summary_eval -- \
-//!     --model tests/models/gemma-4-E4B-it-Q4_K_M.gguf \
+//!     --model tests/models/Qwen3.5-4B-Q4_K_M.gguf \
 //!     [--sampling faithful|gemma4] [--context TOKENS] [--approach single|extract] \
 //!     [--noisy] [--pad MINUTES] [--terms "Name One, Name Two"] [--json] \
 //!     tests/fixtures/meetings/*.json

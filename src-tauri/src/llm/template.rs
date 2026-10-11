@@ -155,24 +155,9 @@ mod tests {
     }
 
     #[test]
-    fn renders_the_qwen3_instruct_2507_template() {
+    fn renders_the_qwen3_5_template_with_thinking_off() {
         let prompt = render(
-            &fixture("qwen3-2507"),
-            &conversation(),
-            &SpecialTokens::default(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            prompt,
-            "<|im_start|>system\nSummarize meetings.<|im_end|>\n<|im_start|>user\nNotes and transcript<|im_end|>\n<|im_start|>assistant\n"
-        );
-    }
-
-    #[test]
-    fn renders_the_qwen3_template_with_thinking_off() {
-        let prompt = render(
-            &fixture("qwen3"),
+            &fixture("qwen3.5"),
             &conversation(),
             &SpecialTokens::default(),
         )
@@ -180,6 +165,10 @@ mod tests {
 
         assert!(
             prompt.starts_with("<|im_start|>system\nSummarize meetings.<|im_end|>\n"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains("<|im_start|>user\nNotes and transcript<|im_end|>\n"),
             "{prompt}"
         );
         assert!(
@@ -200,21 +189,6 @@ mod tests {
         assert_eq!(
             prompt,
             "<s>[SYSTEM_PROMPT]Summarize meetings.[/SYSTEM_PROMPT][INST]Notes and transcript[/INST]"
-        );
-    }
-
-    #[test]
-    fn renders_the_phi_4_mini_template() {
-        let prompt = render(
-            &fixture("phi4-mini"),
-            &conversation(),
-            &SpecialTokens::default(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            prompt,
-            "<|system|>Summarize meetings.<|end|><|user|>Notes and transcript<|end|><|assistant|>"
         );
     }
 
