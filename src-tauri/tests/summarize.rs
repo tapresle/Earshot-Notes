@@ -6,6 +6,7 @@
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, MutexGuard};
 
 use earshot_lib::llm::generator::{GenerateError, Generator};
 use earshot_lib::llm::llama::{LlamaGenerator, MAX_CONTEXT, Placement};
@@ -14,6 +15,15 @@ use earshot_lib::store::{Source, TranscriptSegment};
 use earshot_lib::summarize::run::{Progress, Request, summarize};
 
 const MODEL: &str = "tests/models/smollm2-135m-instruct-q4_k_m.gguf";
+
+// llama.cpp's CPU threads wait for each other by spinning. Several models
+// running at once on a runner with few cores stall each other, so tests that
+// run the model take turns. Take the turn first, so it's released last.
+static MODEL_TURN: Mutex<()> = Mutex::new(());
+
+fn turn() -> MutexGuard<'static, ()> {
+    MODEL_TURN.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 fn placement() -> Placement {
     match std::env::var("EARSHOT_TEST_CPU").as_deref() {
@@ -52,6 +62,7 @@ fn transcript(lines: usize) -> Vec<TranscriptSegment> {
 
 #[test]
 fn generates_and_streams_the_same_text() {
+    let _turn = turn();
     let mut model = model();
     let mut streamed = String::new();
 
@@ -67,6 +78,7 @@ fn generates_and_streams_the_same_text() {
 
 #[test]
 fn stops_at_the_token_limit() {
+    let _turn = turn();
     let mut model = model();
 
     let output = model
@@ -83,6 +95,7 @@ fn stops_at_the_token_limit() {
 
 #[test]
 fn stops_when_cancelled_mid_generation() {
+    let _turn = turn();
     let mut model = model();
     let cancel = AtomicBool::new(false);
     let mut pieces = 0;
@@ -103,6 +116,7 @@ fn stops_when_cancelled_mid_generation() {
 
 #[test]
 fn summarizes_a_short_meeting_in_one_pass() {
+    let _turn = turn();
     let mut model = model();
     let segments = transcript(6);
     let mut progress = Vec::new();
@@ -127,6 +141,7 @@ fn summarizes_a_short_meeting_in_one_pass() {
 
 #[test]
 fn condenses_in_parts_when_the_meeting_exceeds_the_context() {
+    let _turn = turn();
     let mut model = model_with_context_limit(2560);
     let segments = transcript(120);
     let mut progress = Vec::new();

@@ -35,6 +35,17 @@ fn backend() -> Result<&'static LlamaBackend, GenerateError> {
         .map_err(|e| GenerateError::Model(e.clone()))
 }
 
+/// llama.cpp's default CPU thread count.
+const DEFAULT_THREADS: usize = 4;
+
+/// llama.cpp's default, but never more threads than cores. Its threads wait for
+/// each other by spinning, so one more thread than cores makes the model run
+/// about 80 times slower, as on 3-core CI runners.
+fn threads() -> i32 {
+    std::thread::available_parallelism().map_or(DEFAULT_THREADS, |n| n.get().min(DEFAULT_THREADS))
+        as i32
+}
+
 /// Where a model runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Placement {
@@ -223,7 +234,9 @@ impl Generator for LlamaGenerator {
             .with_n_batch(BATCH as u32)
             // Without these, llama.cpp still moves the cache and large operations to the GPU.
             .with_offload_kqv(on_gpu)
-            .with_op_offload(on_gpu);
+            .with_op_offload(on_gpu)
+            .with_n_threads(threads())
+            .with_n_threads_batch(threads());
         let mut ctx = self
             .model
             .new_context(backend, params)
@@ -309,6 +322,13 @@ impl Utf8Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uses_no_more_threads_than_cores() {
+        let cores = std::thread::available_parallelism().unwrap().get();
+
+        assert_eq!(threads() as usize, cores.min(DEFAULT_THREADS));
+    }
 
     #[test]
     fn holds_back_a_split_character_until_it_completes() {
