@@ -1,14 +1,18 @@
 # Rust format, lint, and tests. These need macOS 26 on Apple Silicon: the
 # prebuilt needle engine supports nothing else, and the build targets macOS 26.
-# macOS minutes cost more, so until the repository is public (#78) this runs
-# only on request: add the `macos-ci` label to a pull request, or run it from
-# the Actions tab. It also runs only when Rust or its inputs change.
+# It takes several minutes, so it runs only when Rust or its inputs change.
 name: Rust
 
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - "src-tauri/**"
+      - "scripts/fetch-native.sh"
+      - "scripts/build-whisper.sh"
+      - ".github/workflows/rust.yml"
+  push:
+    branches: [main]
     paths:
       - "src-tauri/**"
       - "scripts/fetch-native.sh"
@@ -19,17 +23,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   rust:
     name: Rust format, clippy, and tests
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'macos-ci')
-    # At the job, so a run for another label, which skips this job, can't cancel one in progress.
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
     runs-on: macos-26
     timeout-minutes: 60
     defaults:
