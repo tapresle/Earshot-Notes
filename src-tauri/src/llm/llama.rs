@@ -233,7 +233,10 @@ impl Generator for LlamaGenerator {
             Some(n) => params.with_n_threads(n).with_n_threads_batch(n),
             None => params,
         };
-        eprintln!("DIAGNOSTIC threads={:?}", threads);
+        #[allow(clippy::print_stderr)]
+        {
+            eprintln!("DIAGNOSTIC threads={:?}", threads);
+        }
         let mut ctx = self
             .model
             .new_context(backend, params)
