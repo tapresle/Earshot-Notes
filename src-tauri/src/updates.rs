@@ -8,11 +8,6 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-/// Off until the repository is public: GitHub's releases API answers 404 for
-/// a private repository without signing in, and the app never carries a token.
-/// TODO(#62): turn this on when tapresle/Earshot-Notes is public, then remove it.
-pub const ENABLED: bool = false;
-
 const REPOSITORY: &str = "https://github.com/tapresle/Earshot-Notes";
 const LATEST_RELEASE: &str = "https://api.github.com/repos/tapresle/Earshot-Notes/releases/latest";
 /// Release notes are a few kilobytes; anything far larger isn't a release.

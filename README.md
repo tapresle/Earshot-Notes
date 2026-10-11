@@ -17,7 +17,7 @@ Your meetings stay on your Mac.
 
 - **On-device:** transcription, summaries, and chat run on your Mac. Audio, transcripts, notes, summaries, and chats are stored on it and nowhere else.
 - **Nothing to sign up for:** no account, no cloud service, no subscription, and no analytics. The app's logs stay on your Mac too.
-- **Works offline:** once a local AI model is downloaded, Earshot Notes makes no network requests. The only ones it ever makes are the model downloads you start.
+- **Works offline:** once a local AI model is downloaded, Earshot Notes makes no network requests on its own. The only ones it ever makes are the model downloads you start, and a check for a newer version when you press **Check for updates** in **Settings**.
 - **No recordings by default:** audio is transcribed and discarded. It's kept only if you turn on **Keep audio recordings** in **Settings**.
 - **Free and open source:** licensed under the GNU General Public License, version 3, so anyone can check these claims in the code.
 

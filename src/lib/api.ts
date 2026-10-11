@@ -414,7 +414,6 @@ export const api = {
   vocabulary: () => invoke<VocabularyTerm[]>("vocabulary"),
   /** Saves the vocabulary and corrects every stored transcript with it. */
   setVocabulary: (terms: VocabularyTerm[]) => invoke<SavedVocabulary>("set_vocabulary", { terms }),
-  updateCheckEnabled: () => invoke<boolean>("update_check_enabled"),
   /** Contacts GitHub. Call only when the user asks. */
   checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
   openReleasePage: (version: string) => invoke<void>("open_release_page", { version }),
