@@ -1,0 +1,51 @@
+name: Bug report
+description: Something in Earshot Notes doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste real meeting content here.** That includes transcripts, summaries, notes, recordings, screenshots of real meetings, and the names of people, customers, or products from them. Describe the shape of the problem instead, or reproduce it with invented text.
+
+        To report a security problem, use **Report a vulnerability** on the **Security** tab instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start a recording in a Slack call without headphones.
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Earshot Notes version
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac and macOS version
+      placeholder: "MacBook Air, M2, 16 GB, macOS 26.1"
+    validations:
+      required: true
+  - type: input
+    id: models
+    attributes:
+      label: Transcription model and local AI model
+      placeholder: "Whistle, Qwen3.5 4B"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Earshot Notes logs to `~/Library/Logs/com.tedpresley.earshot/`. Check the lines you paste for anything private first.
+      render: text

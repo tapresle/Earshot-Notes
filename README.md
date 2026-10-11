@@ -85,6 +85,10 @@ What's new in each version is on the [releases page](https://github.com/tapresle
 
 With Xcode, Rust, Node.js, and CMake installed, run `./scripts/fetch-native.sh`, `npm install`, and `./scripts/build-macos.sh`. [Building Earshot Notes](docs/building.md) covers each step, signing, and notarizing.
 
+## Contributing
+
+Bug reports, ideas, and pull requests are welcome. [Contributing to Earshot Notes](CONTRIBUTING.md) covers setup, the checks, and the one firm rule: never share real meeting content. To report a security problem privately, see the [security policy](SECURITY.md).
+
 ## License
 
 Earshot Notes is free software, licensed under the [GNU General Public License, version 3](LICENSE) only (`GPL-3.0-only`).
