@@ -1,5 +1,5 @@
 import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Markdown } from "./Markdown";
 
 function html(source: string): string {
@@ -58,12 +58,23 @@ describe("Markdown", () => {
   });
 
   it("renders citation groups with the citation renderer", () => {
-    const cite = (labels: string[], key: number) => <sup key={key}>{labels.join("+")}</sup>;
+    const cite = (labels: string[]) => <sup>{labels.join("+")}</sup>;
     const out = render(<Markdown source={"- Friday [S2, N1] and **May [S3]** [x] \\[S4]"} citation={cite} />);
 
     expect(out.container.firstElementChild!.innerHTML).toBe(
       "<ul><li>Friday <sup>S2+N1</sup> and <strong>May <sup>S3</sup></strong> [x] [S4]</li></ul>",
     );
+  });
+
+  it("gives a citation a key of its own after the text before it", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cite = (labels: string[]) => <sup>{labels.join("+")}</sup>;
+
+    render(<Markdown source="Friday [S2] and Monday [S3]." citation={cite} />);
+    const logged = errors.mock.calls.length;
+    errors.mockRestore();
+
+    expect(logged).toBe(0);
   });
 
   it("drops a citation group the renderer returns nothing for, with the space before it", () => {

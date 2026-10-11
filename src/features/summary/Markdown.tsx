@@ -4,7 +4,7 @@ import { Fragment, type ReactNode } from "react";
  * Renders a citation group, such as the labels `S3` and `N1` from `[S3, N1]`.
  * Returning null drops the group.
  */
-export type RenderCitation = (labels: string[], key: number) => ReactNode;
+export type RenderCitation = (labels: string[]) => ReactNode;
 
 /**
  * Renders the Markdown subset summaries and chat answers use: headings,
@@ -149,12 +149,12 @@ function inline(text: string, citation?: RenderCitation): ReactNode {
     }
     const cited = citation && CITATION.exec(rest);
     if (cited) {
-      const rendered = citation(cited[1].split(/[,;]/).map((label) => label.trim()), nodes.length);
+      const rendered = citation(cited[1].split(/[,;]/).map((label) => label.trim()));
       if (rendered == null) {
         plain = plain.trimEnd(); // A dropped group takes the space before it.
       } else {
         flush();
-        nodes.push(rendered);
+        nodes.push(<Fragment key={nodes.length}>{rendered}</Fragment>);
       }
       i += cited[0].length;
       continue;
