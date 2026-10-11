@@ -44,17 +44,15 @@ Before you hand off work, run the lint, typecheck, test, format, and screenshot 
 
 ## Continuous integration
 
-GitHub Actions runs these checks on pull requests to `main`, and the Linux ones on pushes to `main` too:
+GitHub Actions runs these checks on pull requests to `main` and on pushes to `main`:
 
 | Workflow | Runner | Jobs |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | `ubuntu-latest` | Frontend lint, typecheck, and tests; `./scripts/generate-notices.sh --check` |
-| `.github/workflows/screenshots.yml` | `macos-26`, on request | `npm run screenshots:check`; on failure, uploads the rendered screenshots and their differences as the `screenshots` artifact |
-| `.github/workflows/rust.yml` | `macos-26` (Apple Silicon), on request | `./scripts/fetch-native.sh`, then `cargo fmt --check`, clippy, and `cargo test --workspace` (summary tests on the CPU, see **Summary tests**) |
+| `.github/workflows/screenshots.yml` | `macos-26` | `npm run screenshots:check`; on failure, uploads the rendered screenshots and their differences as the `screenshots` artifact |
+| `.github/workflows/rust.yml` | `macos-26` (Apple Silicon) | `./scripts/fetch-native.sh`, then `cargo fmt --check`, clippy, and `cargo test --workspace` (summary tests on the CPU, see **Summary tests**) |
 
-macOS minutes are expensive for a private repository, so until it's public (#78) the two macOS workflows run only on request: add the `macos-ci` label to a pull request (each later push reruns them while the label is on), or run them from the **Actions** tab. Nothing runs on macOS for pushes to `main`. Run the macOS checks locally before every handoff; CI may not repeat them.
-
-The screenshots workflow runs on macOS because the UI uses the system font, and only when the UI, the preview, or the screenshots change. The Rust workflow needs macOS 26 on Apple Silicon, because the prebuilt needle engine supports nothing else. macOS minutes cost more, so it runs only when `src-tauri/`, `scripts/fetch-native.sh`, `scripts/build-whisper.sh`, or the workflow itself changes. It caches the fetched native files and the whisper.cpp library (keyed on `fetch-native.sh`, `build-whisper.sh`, and the whisper.cpp interface in `src-tauri/crates/whisper-sys/native/`; checksums are still verified) and the cargo build (keyed on the repository name, the Rust version, and `Cargo.lock`; the build records absolute paths, which include the checkout folder named after the repository). A newer run on the same pull request cancels the older one. To rerun a failed job, use **Re-run failed jobs** on the run's page, or `gh run rerun <run id> --failed`. Workflows keep `permissions: contents: read` and pin each action to a full commit SHA, with its version in a comment.
+The screenshots workflow runs on macOS because the UI uses the system font, and only when the UI, the preview, or the screenshots change. The Rust workflow needs macOS 26 on Apple Silicon, because the prebuilt needle engine supports nothing else. It takes several minutes, so it runs only when `src-tauri/`, `scripts/fetch-native.sh`, `scripts/build-whisper.sh`, or the workflow itself changes. It caches the fetched native files and the whisper.cpp library (keyed on `fetch-native.sh`, `build-whisper.sh`, and the whisper.cpp interface in `src-tauri/crates/whisper-sys/native/`; checksums are still verified) and the cargo build (keyed on the repository name, the Rust version, and `Cargo.lock`; the build records absolute paths, which include the checkout folder named after the repository). A newer run on the same pull request cancels the older one. To rerun a failed job, use **Re-run failed jobs** on the run's page, or `gh run rerun <run id> --failed`. Workflows keep `permissions: contents: read` and pin each action to a full commit SHA, with its version in a comment.
 
 Two more jobs keep the pins current (see **Updating pinned versions**). `.github/workflows/upstream.yml` runs `scripts/upstream/check.ts` every Monday, or from **Run workflow** on its page, and keeps one open issue, "Upstream updates available", current; it also has `issues: write`, for that issue only. Dependabot (`.github/dependabot.yml`) checks weekly and opens one grouped pull request each for Cargo, npm, and GitHub Actions minor and patch updates, and a separate pull request for each major update.
 

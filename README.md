@@ -19,15 +19,17 @@ Your meetings stay on your Mac.
 - **Nothing to sign up for:** no account, no cloud service, no subscription, and no analytics. The app's logs stay on your Mac too.
 - **Works offline:** once a local AI model is downloaded, Earshot Notes makes no network requests. The only ones it ever makes are the model downloads you start.
 - **No recordings by default:** audio is transcribed and discarded. It's kept only if you turn on **Keep audio recordings** in **Settings**.
+- **Free and open source:** licensed under the GNU General Public License, version 3, so anyone can check these claims in the code.
 
 ## How it's different
 
 | Most AI note takers | Earshot Notes |
 |---|---|
 | Upload your audio to their servers | Transcribes and summarizes on your Mac |
-| Need an account and a subscription | Needs neither |
+| Need an account and a subscription | Needs neither, and it's free and open source |
 | Use whichever model the vendor picked | Lets you choose the model, or bring your own |
 | Stop working without a connection | Works offline once a model is downloaded |
+| Ask you to trust their privacy policy | Lets anyone check the code |
 
 ## What it does
 
