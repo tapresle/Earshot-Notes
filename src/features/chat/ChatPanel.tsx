@@ -96,13 +96,13 @@ function MessageBody({ message, onShowNotes }: { message: ChatMessage; onShowNot
       </p>
     );
   }
-  const citation: RenderCitation = (labels, key) => {
+  const citation: RenderCitation = (labels) => {
     const cited = labels
       .map((label) => message.sources.find((source) => source.label === label))
       .filter((source): source is Citation => source !== undefined);
     if (cited.length === 0) return null;
     return (
-      <span key={key} className="citations">
+      <span className="citations">
         {cited.map((source) => (
           <CitationButton key={source.label} source={source} onShowNotes={onShowNotes} />
         ))}
