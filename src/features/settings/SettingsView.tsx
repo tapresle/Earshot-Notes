@@ -647,17 +647,9 @@ function InstalledModel({
 }
 
 function UpdatesSection() {
-  const [enabled, setEnabled] = useState(false);
   const [checking, setChecking] = useState(false);
   const [found, setFound] = useState<UpdateCheck | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .updateCheckEnabled()
-      .then(setEnabled)
-      .catch((e) => setError(errorMessage(e)));
-  }, []);
 
   async function check() {
     setChecking(true);
@@ -681,21 +673,15 @@ function UpdatesSection() {
     }
   }
 
-  if (!enabled && !error) return null;
-
   return (
     <section className="settings-section" aria-labelledby="updates-heading">
       <h2 id="updates-heading">Updates</h2>
-      {enabled && (
-        <>
-          <p className="settings-help">
-            Checks GitHub for a newer release. Earshot Notes contacts GitHub only when you press the button.
-          </p>
-          <button type="button" className="button subtle" onClick={() => void check()} disabled={checking}>
-            {checking ? "Checking…" : "Check for updates"}
-          </button>
-        </>
-      )}
+      <p className="settings-help">
+        Checks GitHub for a newer release. Earshot Notes contacts GitHub only when you press the button.
+      </p>
+      <button type="button" className="button subtle" onClick={() => void check()} disabled={checking}>
+        {checking ? "Checking…" : "Check for updates"}
+      </button>
       {found && !found.newer && <p role="status">You have the latest version, {found.current}.</p>}
       {found?.newer && (
         <div className="update-card">

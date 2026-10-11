@@ -181,7 +181,6 @@ pub fn run() {
             commands::setup::open_privacy_settings,
             commands::setup::setup_complete,
             commands::setup::set_setup_complete,
-            commands::updates::update_check_enabled,
             commands::updates::check_for_update,
             commands::updates::open_release_page,
             commands::vocabulary::vocabulary,

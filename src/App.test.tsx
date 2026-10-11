@@ -1298,16 +1298,8 @@ describe("App", () => {
         return { backend, user };
       }
 
-      it("isn't offered while switched off", async () => {
-        const { backend } = await openWith((state) => (state.updateCheckEnabled = false));
-
-        expect(screen.queryByRole("heading", { name: "Updates" })).not.toBeInTheDocument();
-        expect(screen.queryByRole("button", { name: "Check for updates" })).not.toBeInTheDocument();
-        expect(backend.state.updateChecks).toBe(0);
-      });
-
       it("contacts GitHub only when asked", async () => {
-        const { backend, user } = await openWith((state) => (state.updateCheckEnabled = true));
+        const { backend, user } = await openWith(() => {});
 
         expect(await screen.findByRole("button", { name: "Check for updates" })).toBeInTheDocument();
         expect(backend.state.updateChecks).toBe(0);
@@ -1317,7 +1309,6 @@ describe("App", () => {
 
       it("shows a newer release's notes and opens its page", async () => {
         const { backend, user } = await openWith((state) => {
-          state.updateCheckEnabled = true;
           state.updateCheck = {
             current: "0.1.6",
             latest: "0.2.0",
@@ -1336,7 +1327,7 @@ describe("App", () => {
       });
 
       it("says when you have the latest version", async () => {
-        await openWith((state) => (state.updateCheckEnabled = true));
+        await openWith(() => {});
 
         await userEvent.click(await screen.findByRole("button", { name: "Check for updates" }));
 
@@ -1346,7 +1337,6 @@ describe("App", () => {
 
       it("explains a failed check", async () => {
         await openWith((state) => {
-          state.updateCheckEnabled = true;
           state.updateCheckError = {
             kind: "unavailable",
             message: "couldn't reach GitHub, check your internet connection: dns lookup failed",

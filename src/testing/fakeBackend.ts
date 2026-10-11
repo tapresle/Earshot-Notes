@@ -76,7 +76,6 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     vocabulary: [] as VocabularyTerm[],
     vocabularyUpdated: 0,
     vocabularyError: null as unknown,
-    updateCheckEnabled: false,
     updateChecks: 0,
     updateCheck: { current: "0.1.6", latest: "0.1.6", newer: false, notes: "" } as UpdateCheck,
     updateCheckError: null as unknown,
@@ -265,9 +264,7 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
       }));
       return { terms: state.vocabulary, updated: state.vocabularyUpdated };
     },
-    update_check_enabled: () => state.updateCheckEnabled,
     check_for_update: () => {
-      if (!state.updateCheckEnabled) throw { kind: "unavailable", message: "checking for updates isn't available" };
       state.updateChecks++;
       if (state.updateCheckError) throw state.updateCheckError;
       return { ...state.updateCheck };
