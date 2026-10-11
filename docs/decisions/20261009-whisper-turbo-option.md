@@ -26,6 +26,7 @@ From [`docs/benchmarks/20261009-transcription-models.md`](../benchmarks/20261009
 - **FluidAudio (Parakeet on Apple's Neural Engine):** fast and Apache 2.0, but Apple platforms only. Windows and Linux would need a second engine.
 - **sherpa-onnx (Parakeet, Whisper, and more):** cross-platform and Apache 2.0, but ships ONNX Runtime, a large dependency. Kept in reserve if Whisper had disappointed.
 - **Whisper small:** 190 MB and about 3.5 times faster on the CPU, but makes noticeably more errors (17.6% and 19.4%). Not offered on the Mac; revisit as the fallback for Windows and Linux machines whose CPUs can't keep up with turbo.
+- **Turbo's Q8_0 file (874 MB):** measured in #112 on the same synthetic speech. It was no more accurate than Q5_0 (10.4% and 13.0% word errors, 17 of 26 terms at phone quality), and it costs 300 MB more to download and about 0.3 GB more memory.
 - **Whisper as the default:** more accurate, but a 574 MB download would stand between installing the app and the first recording. **Settings** offers it instead.
 
 ## Consequences
