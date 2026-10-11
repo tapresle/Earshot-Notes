@@ -97,7 +97,7 @@ Earshot pins exact versions, and nothing moves a pin without a pull request:
 
 - **needle and Whistle:** revisions and checksums in `scripts/fetch-native.sh`.
 - **whisper.cpp:** the tag and commit in `scripts/build-whisper.sh`. The upstream workflow doesn't check it yet.
-- **Summary models and Whisper large-v3-turbo:** repository, revision, and SHA-256 in `src-tauri/src/models/mod.rs`.
+- **Local AI models and Whisper large-v3-turbo:** repository, revision, and SHA-256 in `src-tauri/src/models/mod.rs`. Each revision is the last commit that changed the pinned file, which its Hugging Face page shows, not the head of the repository. Find it with the `paths-info` API and `expand: true`, and name its short form in the `version` string.
 - **llama.cpp:** `llama-cpp-2` pinned with `=` in `src-tauri/Cargo.toml`, matching `RUNTIME_VERSION`.
 - **Everything else:** `Cargo.lock`, `package-lock.json`, and the action SHAs.
 

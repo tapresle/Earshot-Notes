@@ -91,10 +91,10 @@ pub const MINISTRAL_3_8B: KnownModel = KnownModel {
     file_name: "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
     quantization: "Q4_K_M",
     repo: "unsloth/Ministral-3-8B-Instruct-2512-GGUF",
-    revision: "3731507ec3e867db16d620f73e14d689125758f4",
+    revision: "1b83c277dcaa1f736c25cf1e3cc4b48110697df2",
     sha256: "5dbc3647eb563b9f8d3c70ec3d906cce84b86bb35c5e0b8a36e7df3937ab7174",
     size_bytes: 5_198_386_720,
-    version: "Ministral-3-8B-Instruct-2512 Q4_K_M (unsloth 3731507)",
+    version: "Ministral-3-8B-Instruct-2512 Q4_K_M (unsloth 1b83c27)",
     min_runtime: "0.1.158",
     description: "Very complete summaries. The slowest option, and uses more memory.",
     context_limit: 16_384,
@@ -528,6 +528,11 @@ mod tests {
                 model.file_name
             );
             assert_eq!(model.revision.len(), 40, "{} must pin a commit", model.id);
+            assert!(
+                model.version.contains(&model.revision[..7]),
+                "{}'s version must name its revision",
+                model.id
+            );
             assert_eq!(model.sha256.len(), 64, "{} needs a sha256", model.id);
             assert!(
                 model
