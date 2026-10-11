@@ -62,6 +62,14 @@ const QWEN: FilePin = {
   path: "Qwen3-8B-Q4_K_M.gguf",
   sha256: "120307ba529eb2439d6c430d94104dabd578497bc7bfe7e322b5d9933b449bd4",
 };
+// A model the shipped registry pins, so reading the real file finds it.
+const QWEN_3_5_9B: FilePin = {
+  name: "Qwen3.5 9B",
+  repo: "unsloth/Qwen3.5-9B-GGUF",
+  revision: "99a1b2185534379e6e8b5ec869da25d3e7b3f73c",
+  path: "Qwen3.5-9B-Q4_K_M.gguf",
+  sha256: "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+};
 
 /** Answers each URL with a recorded response, and records the requests. */
 function recorded(responses: Record<string, unknown>) {
@@ -101,8 +109,8 @@ describe("reading pins", () => {
   it("reads every summary model in the registry", () => {
     const pins = readModelPins(repoFile("src-tauri/src/models/mod.rs"));
 
-    expect(pins.length).toBeGreaterThanOrEqual(7);
-    expect(pins).toContainEqual(QWEN);
+    expect(pins.length).toBeGreaterThanOrEqual(4);
+    expect(pins).toContainEqual(QWEN_3_5_9B);
   });
 
   it("reads the locked llama-cpp-2 version", () => {

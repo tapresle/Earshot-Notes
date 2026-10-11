@@ -158,28 +158,28 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     selected_model: () => state.model,
     available_models: () => [
       {
-        id: "gemma-4-e2b-it-q4_k_m",
-        displayName: "Gemma 4 E2B",
-        description: "Fast and light. A good fit for most meetings.",
-        fileName: "gemma-4-E2B-it-Q4_K_M.gguf",
-        huggingFace: GEMMA_SOURCE,
-        sizeBytes: 3_106_738_272,
+        id: "qwen3.5-4b-q4_k_m",
+        displayName: "Qwen3.5 4B",
+        description: "Fast and light, with detailed summaries. A good fit for most meetings.",
+        fileName: "Qwen3.5-4B-Q4_K_M.gguf",
+        huggingFace: RECOMMENDED_SOURCE,
+        sizeBytes: 2_740_937_888,
         recommended: true,
         installed: state.model !== null,
         partialBytes: state.partialBytes,
-        download: state.downloading ? { phase: "downloading", received: state.partialBytes, total: 3_106_738_272 } : null,
+        download: state.downloading ? { phase: "downloading", received: state.partialBytes, total: 2_740_937_888 } : null,
       },
       {
-        id: "qwen3-8b-q4_k_m",
-        displayName: "Qwen3 8B",
-        description: "High-quality summaries. Slower, and uses more memory.",
-        fileName: "Qwen3-8B-Q4_K_M.gguf",
+        id: "qwen3.5-9b-q4_k_m",
+        displayName: "Qwen3.5 9B",
+        description: "The most detailed summaries. Slower, and uses more memory.",
+        fileName: "Qwen3.5-9B-Q4_K_M.gguf",
         huggingFace: {
-          repo: "unsloth/Qwen3-8B-GGUF",
+          repo: "unsloth/Qwen3.5-9B-GGUF",
           quantization: "Q4_K_M",
-          revision: "a6adef130ffb23ddaf1a62fec9dced968c9bc482",
+          revision: "99a1b2185534379e6e8b5ec869da25d3e7b3f73c",
         },
-        sizeBytes: 5_027_784_512,
+        sizeBytes: 5_680_522_464,
         recommended: false,
         installed: false,
         partialBytes: 0,
@@ -306,7 +306,7 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
       state.inputDevice = (deviceId as string | null) ?? null;
     },
     installed_models: () => ({
-      models: state.installed.map((m) => ({ ...m, huggingFace: m.id === "gemma-4-e2b-it-q4_k_m" ? GEMMA_SOURCE : null })),
+      models: state.installed.map((m) => ({ ...m, huggingFace: m.id === "qwen3.5-4b-q4_k_m" ? RECOMMENDED_SOURCE : null })),
       selectedId: state.model?.id ?? null,
     }),
     open_model_page: ({ modelId }) => {
@@ -383,18 +383,18 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
 
 export type FakeBackend = ReturnType<typeof createFakeBackend>;
 
-export const GEMMA_SOURCE = {
-  repo: "unsloth/gemma-4-E2B-it-GGUF",
+export const RECOMMENDED_SOURCE = {
+  repo: "unsloth/Qwen3.5-4B-GGUF",
   quantization: "Q4_K_M",
-  revision: "0314792d7f1f7e229411f620751375812bb9faf2",
+  revision: "720bb031aae5488eae5d6a78768e6d826662b2ae",
 };
 
-export function testModel(path = "/models/gemma.gguf"): ModelRecord {
+export function testModel(path = "/models/qwen.gguf"): ModelRecord {
   return {
-    id: "gemma-4-e2b-it-q4_k_m",
-    displayName: "Gemma 4 E2B",
+    id: "qwen3.5-4b-q4_k_m",
+    displayName: "Qwen3.5 4B",
     filePath: path,
-    sizeBytes: 3_106_738_272,
+    sizeBytes: 2_740_937_888,
     sha256: "abc",
     source: "import",
     sourceUrl: null,
@@ -405,7 +405,7 @@ export function testModel(path = "/models/gemma.gguf"): ModelRecord {
 }
 
 export function savedSummary(meetingId: number, bodyMarkdown: string, isFinal = true): Summary {
-  return { id: 1, meetingId, uptoMs: 754_000, isFinal, bodyMarkdown, modelId: "gemma-4-e2b-it-q4_k_m", createdAt: 0 };
+  return { id: 1, meetingId, uptoMs: 754_000, isFinal, bodyMarkdown, modelId: "qwen3.5-4b-q4_k_m", createdAt: 0 };
 }
 
 export function segment(id: number, meetingId: number, source: "me" | "them", startMs: number, text: string): TranscriptSegment {
@@ -428,6 +428,6 @@ export function chatExchange(
   const base = { meetingId, createdAt: 0 };
   return [
     { ...base, id, role: "user", bodyMarkdown: question, sources: [], modelId: null },
-    { ...base, id: id + 1, role: "assistant", bodyMarkdown: answer, sources, modelId: "gemma-4-e2b-it-q4_k_m" },
+    { ...base, id: id + 1, role: "assistant", bodyMarkdown: answer, sources, modelId: "qwen3.5-4b-q4_k_m" },
   ];
 }

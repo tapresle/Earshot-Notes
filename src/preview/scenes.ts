@@ -94,7 +94,7 @@ function history(): MeetingDetail[] {
 /** A backend with the sample history, a local AI model, Whisper chosen for transcripts, and the design sync's summary. */
 function withHistory(extra: MeetingDetail[] = [], segments: TranscriptSegment[] = []): FakeBackend {
   const backend = createFakeBackend([...extra, ...history()], [...transcript(1, DESIGN_TRANSCRIPT, 1), ...segments]);
-  const model = testModel("/Users/you/Library/Application Support/com.tedpresley.earshot/models/gemma-4-E2B-it-Q4_K_M.gguf");
+  const model = testModel("/Users/you/Library/Application Support/com.tedpresley.earshot/models/Qwen3.5-4B-Q4_K_M.gguf");
   backend.state.installed = [{ ...model, source: "download" }];
   backend.state.model = backend.state.installed[0];
   backend.state.summaries.set(1, { ...savedSummary(1, DESIGN_SUMMARY), uptoMs: 42 * MINUTE });

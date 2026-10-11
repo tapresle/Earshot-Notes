@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn scales_output_room_with_the_context() {
-        // Ministral 3 14B, Qwen3 8B and Ministral 3 8B, then the 32K models.
+        // An 8K context, Ministral 3 8B at 16K, then the 32K models.
         assert_eq!((summary_tokens(8_192), part_tokens(8_192)), (2_048, 1_024));
         assert_eq!(
             (summary_tokens(16_384), part_tokens(16_384)),

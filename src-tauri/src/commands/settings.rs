@@ -278,8 +278,8 @@ mod tests {
     #[test]
     fn installed_models_carry_their_hugging_face_source_when_known() {
         let known = InstalledModel {
-            hugging_face: models::known_by_id("qwen3-8b-q4_k_m").map(Into::into),
-            model: record("qwen3-8b-q4_k_m"),
+            hugging_face: models::known_by_id("qwen3.5-9b-q4_k_m").map(Into::into),
+            model: record("qwen3.5-9b-q4_k_m"),
         };
         let imported = InstalledModel {
             hugging_face: models::known_by_id("local-abc").map(Into::into),
@@ -291,9 +291,9 @@ mod tests {
         assert_eq!(
             known["huggingFace"],
             serde_json::json!({
-                "repo": "unsloth/Qwen3-8B-GGUF",
+                "repo": "unsloth/Qwen3.5-9B-GGUF",
                 "quantization": "Q4_K_M",
-                "revision": "a6adef130ffb23ddaf1a62fec9dced968c9bc482",
+                "revision": "99a1b2185534379e6e8b5ec869da25d3e7b3f73c",
             })
         );
         assert_eq!(

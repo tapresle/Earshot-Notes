@@ -53,80 +53,36 @@ impl KnownModel {
     }
 }
 
-/// The recommended summary model.
-pub const GEMMA_4_E2B: KnownModel = KnownModel {
-    id: "gemma-4-e2b-it-q4_k_m",
-    display_name: "Gemma 4 E2B",
-    file_name: "gemma-4-E2B-it-Q4_K_M.gguf",
+/// The recommended local AI model (#96).
+pub const QWEN_3_5_4B: KnownModel = KnownModel {
+    id: "qwen3.5-4b-q4_k_m",
+    display_name: "Qwen3.5 4B",
+    file_name: "Qwen3.5-4B-Q4_K_M.gguf",
     quantization: "Q4_K_M",
-    repo: "unsloth/gemma-4-E2B-it-GGUF",
-    revision: "0314792d7f1f7e229411f620751375812bb9faf2",
-    sha256: "740185b21d22ceb83a11c3aa62ad5842ef32c70f6096d756bbee85a1e4ec34b8",
-    size_bytes: 3_106_738_272,
-    version: "gemma-4-E2B-it Q4_K_M (unsloth 0314792)",
+    repo: "unsloth/Qwen3.5-4B-GGUF",
+    // The commit that last changed this file, which its Hugging Face page shows.
+    revision: "720bb031aae5488eae5d6a78768e6d826662b2ae",
+    sha256: "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    size_bytes: 2_740_937_888,
+    version: "Qwen3.5-4B Q4_K_M (unsloth 720bb03)",
     min_runtime: "0.1.158",
-    description: "Fast and light. A good fit for most meetings.",
+    description: "Fast and light, with detailed summaries. A good fit for most meetings.",
     context_limit: MAX_CONTEXT,
 };
 
-pub const QWEN_3_4B_2507: KnownModel = KnownModel {
-    id: "qwen3-4b-instruct-2507-q4_k_m",
-    display_name: "Qwen3 4B Instruct",
-    file_name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-    quantization: "Q4_K_M",
-    repo: "unsloth/Qwen3-4B-Instruct-2507-GGUF",
-    revision: "a06e946bb6b655725eafa393f4a9745d460374c9",
-    sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
-    size_bytes: 2_497_281_120,
-    version: "Qwen3-4B-Instruct-2507 Q4_K_M (unsloth a06e946)",
-    min_runtime: "0.1.158",
-    description: "Small, with detailed summaries for its size.",
-    context_limit: MAX_CONTEXT,
-};
-
-pub const PHI_4_MINI: KnownModel = KnownModel {
-    id: "phi-4-mini-instruct-q4_k_m",
-    display_name: "Phi-4 mini",
-    file_name: "Phi-4-mini-instruct-Q4_K_M.gguf",
-    quantization: "Q4_K_M",
-    repo: "unsloth/Phi-4-mini-instruct-GGUF",
-    revision: "78eb92a46fc37e6b524df991ed9aca9bc6aa7b80",
-    sha256: "88c00229914083cd112853aab84ed51b87bdf6b9ce42f532d8c85c7c63b1730a",
-    size_bytes: 2_491_874_272,
-    version: "Phi-4-mini-instruct Q4_K_M (unsloth 78eb92a)",
-    min_runtime: "0.1.158",
-    description: "Small and fast, with shorter summaries.",
-    context_limit: MAX_CONTEXT,
-};
-
-pub const GEMMA_4_E4B: KnownModel = KnownModel {
-    id: "gemma-4-e4b-it-q4_k_m",
+pub const GEMMA_4_E4B_QAT: KnownModel = KnownModel {
+    id: "gemma-4-e4b-it-qat-ud-q4_k_xl",
     display_name: "Gemma 4 E4B",
-    file_name: "gemma-4-E4B-it-Q4_K_M.gguf",
-    quantization: "Q4_K_M",
-    repo: "unsloth/gemma-4-E4B-it-GGUF",
-    revision: "bfc15c382204943c3a8fff0c750b94ae2364d7a3",
-    sha256: "85a896a047553e842f25297ee5b031d64ff30147d9c4af17b1e4b394cd1fab87",
-    size_bytes: 4_977_171_584,
-    version: "gemma-4-E4B-it Q4_K_M (unsloth bfc15c3)",
+    file_name: "gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf",
+    quantization: "UD-Q4_K_XL",
+    repo: "unsloth/gemma-4-E4B-it-qat-GGUF",
+    revision: "8c5a9e4fd5482e2be20fe0bf013b4c262a8f4265",
+    sha256: "df0fd4ee07072c607c29a0a1cb4f98918426cca12f45a2776bdd6ee6d09a4de3",
+    size_bytes: 4_215_695_776,
+    version: "gemma-4-E4B-it-qat UD-Q4_K_XL (unsloth 8c5a9e4)",
     min_runtime: "0.1.158",
-    description: "Better summaries than E2B, a little slower.",
+    description: "Google's model, with well-organized summaries. A little slower.",
     context_limit: MAX_CONTEXT,
-};
-
-pub const QWEN_3_8B: KnownModel = KnownModel {
-    id: "qwen3-8b-q4_k_m",
-    display_name: "Qwen3 8B",
-    file_name: "Qwen3-8B-Q4_K_M.gguf",
-    quantization: "Q4_K_M",
-    repo: "unsloth/Qwen3-8B-GGUF",
-    revision: "a6adef130ffb23ddaf1a62fec9dced968c9bc482",
-    sha256: "120307ba529eb2439d6c430d94104dabd578497bc7bfe7e322b5d9933b449bd4",
-    size_bytes: 5_027_784_512,
-    version: "Qwen3-8B Q4_K_M (unsloth a6adef1)",
-    min_runtime: "0.1.158",
-    description: "High-quality summaries. Slower, and uses more memory.",
-    context_limit: 16_384,
 };
 
 pub const MINISTRAL_3_8B: KnownModel = KnownModel {
@@ -140,23 +96,23 @@ pub const MINISTRAL_3_8B: KnownModel = KnownModel {
     size_bytes: 5_198_386_720,
     version: "Ministral-3-8B-Instruct-2512 Q4_K_M (unsloth 3731507)",
     min_runtime: "0.1.158",
-    description: "High-quality summaries. Slower, and uses more memory.",
+    description: "Very complete summaries. The slowest option, and uses more memory.",
     context_limit: 16_384,
 };
 
-pub const MINISTRAL_3_14B: KnownModel = KnownModel {
-    id: "ministral-3-14b-instruct-2512-q4_k_m",
-    display_name: "Ministral 3 14B",
-    file_name: "Ministral-3-14B-Instruct-2512-Q4_K_M.gguf",
+pub const QWEN_3_5_9B: KnownModel = KnownModel {
+    id: "qwen3.5-9b-q4_k_m",
+    display_name: "Qwen3.5 9B",
+    file_name: "Qwen3.5-9B-Q4_K_M.gguf",
     quantization: "Q4_K_M",
-    repo: "unsloth/Ministral-3-14B-Instruct-2512-GGUF",
-    revision: "9b948841b705cc11285ff274b84ba6c885908b19",
-    sha256: "76ce697c065f2e40f1e8e958118b02cab38e2c10a6015f7d7908036a292dc8c8",
-    size_bytes: 8_239_067_840,
-    version: "Ministral-3-14B-Instruct-2512 Q4_K_M (unsloth 9b94884)",
+    repo: "unsloth/Qwen3.5-9B-GGUF",
+    revision: "99a1b2185534379e6e8b5ec869da25d3e7b3f73c",
+    sha256: "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+    size_bytes: 5_680_522_464,
+    version: "Qwen3.5-9B Q4_K_M (unsloth 99a1b21)",
     min_runtime: "0.1.158",
-    description: "The most capable option. Needs at least 16 GB of memory.",
-    context_limit: 8_192,
+    description: "The most detailed summaries. Slower, and uses more memory.",
+    context_limit: MAX_CONTEXT,
 };
 
 /// Whisper large-v3-turbo, the optional transcription model (#25). It isn't a
@@ -180,20 +136,13 @@ pub const WHISPER_TURBO: KnownModel = KnownModel {
 };
 
 /// Every downloadable model, in the order the app lists them (see `display_order`).
-pub const KNOWN_MODELS: &[KnownModel] = &[
-    GEMMA_4_E2B,
-    PHI_4_MINI,
-    QWEN_3_4B_2507,
-    GEMMA_4_E4B,
-    QWEN_3_8B,
-    MINISTRAL_3_8B,
-    MINISTRAL_3_14B,
-];
+pub const KNOWN_MODELS: &[KnownModel] =
+    &[QWEN_3_5_4B, GEMMA_4_E4B_QAT, MINISTRAL_3_8B, QWEN_3_5_9B];
 
 /// The order the app lists models in: the recommended model first, then
 /// smallest first.
 pub fn display_order(id: &str, size_bytes: u64) -> (bool, u64) {
-    (id != GEMMA_4_E2B.id, size_bytes)
+    (id != QWEN_3_5_4B.id, size_bytes)
 }
 
 /// Sorts installed models into `display_order`.
@@ -399,17 +348,17 @@ mod tests {
         let sha256: &'static str = Box::leak(sha256_file(&source).unwrap().into_boxed_str());
         let known = KnownModel {
             sha256,
-            ..GEMMA_4_E2B
+            ..QWEN_3_5_4B
         };
 
         let record = import(&source, &dir.path().join("models"), &store, &[known]).unwrap();
 
-        assert_eq!(record.id, GEMMA_4_E2B.id);
-        assert_eq!(record.display_name, "Gemma 4 E2B");
-        assert!(record.file_path.ends_with(GEMMA_4_E2B.file_name));
-        assert_eq!(record.version.as_deref(), Some(GEMMA_4_E2B.version));
+        assert_eq!(record.id, QWEN_3_5_4B.id);
+        assert_eq!(record.display_name, "Qwen3.5 4B");
+        assert!(record.file_path.ends_with(QWEN_3_5_4B.file_name));
+        assert_eq!(record.version.as_deref(), Some(QWEN_3_5_4B.version));
         assert_eq!(record.min_runtime.as_deref(), Some("0.1.158"));
-        assert_eq!(record.source_url, Some(GEMMA_4_E2B.url()));
+        assert_eq!(record.source_url, Some(QWEN_3_5_4B.url()));
     }
 
     #[test]
@@ -599,7 +548,7 @@ mod tests {
                 model.id
             );
         }
-        assert_eq!(KNOWN_MODELS[0], GEMMA_4_E2B);
+        assert_eq!(KNOWN_MODELS[0], QWEN_3_5_4B);
     }
 
     #[test]
@@ -628,7 +577,7 @@ mod tests {
         };
         let mut models = [
             model("local-big", 9_000_000_000),
-            model(GEMMA_4_E2B.id, GEMMA_4_E2B.size_bytes as i64),
+            model(QWEN_3_5_4B.id, QWEN_3_5_4B.size_bytes as i64),
             model("local-small", 1_000),
         ];
 
@@ -636,26 +585,25 @@ mod tests {
 
         assert_eq!(
             models.map(|m| m.id),
-            [GEMMA_4_E2B.id, "local-small", "local-big"]
+            [QWEN_3_5_4B.id, "local-small", "local-big"]
         );
     }
 
     #[test]
     fn links_to_the_repository_page() {
         assert_eq!(
-            known_by_id("qwen3-8b-q4_k_m")
+            known_by_id("qwen3.5-9b-q4_k_m")
                 .map(KnownModel::page_url)
                 .as_deref(),
-            Some("https://huggingface.co/unsloth/Qwen3-8B-GGUF")
+            Some("https://huggingface.co/unsloth/Qwen3.5-9B-GGUF")
         );
         assert_eq!(known_by_id("local-abc123"), None);
     }
 
     #[test]
     fn context_limit_uses_the_registry_and_falls_back_for_imports() {
-        assert_eq!(context_limit(MINISTRAL_3_14B.sha256), 8_192);
-        assert_eq!(context_limit(QWEN_3_8B.sha256), 16_384);
-        assert_eq!(context_limit(GEMMA_4_E2B.sha256), MAX_CONTEXT);
+        assert_eq!(context_limit(MINISTRAL_3_8B.sha256), 16_384);
+        assert_eq!(context_limit(QWEN_3_5_4B.sha256), MAX_CONTEXT);
         assert_eq!(context_limit("0".repeat(64).as_str()), MAX_CONTEXT);
     }
 

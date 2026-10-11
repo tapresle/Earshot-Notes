@@ -574,7 +574,7 @@ describe("App", () => {
 
     it("explains how to add a model and imports one", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
-      vi.mocked(open).mockResolvedValue("/Users/me/Downloads/gemma-4-E2B-it-Q4_K_M.gguf");
+      vi.mocked(open).mockResolvedValue("/Users/me/Downloads/Qwen3.5-4B-Q4_K_M.gguf");
       const user = await openMeeting("Sync");
 
       await user.click(screen.getByRole("tab", { name: "Summary" }));
@@ -582,7 +582,7 @@ describe("App", () => {
       await user.click(await screen.findByRole("button", { name: "Import model file" }));
 
       expect(await screen.findByText(/No summary yet/)).toBeInTheDocument();
-      expect(backend.state.model?.filePath).toBe("/Users/me/Downloads/gemma-4-E2B-it-Q4_K_M.gguf");
+      expect(backend.state.model?.filePath).toBe("/Users/me/Downloads/Qwen3.5-4B-Q4_K_M.gguf");
     });
 
     it("leaves things unchanged when the file picker is cancelled", async () => {
@@ -740,18 +740,18 @@ describe("App", () => {
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
       expect(await screen.findByText("Recommended")).toBeInTheDocument();
-      await user.click(within(screen.getByRole("group", { name: "Gemma 4 E2B" })).getByRole("button", { name: "Download (3.1 GB)" }));
+      await user.click(within(screen.getByRole("group", { name: "Qwen3.5 4B" })).getByRole("button", { name: "Download (2.7 GB)" }));
 
       expect(backend.state.downloading).toBe(true);
       emit("model:download-progress", {
-        modelId: "gemma-4-e2b-it-q4_k_m",
+        modelId: "qwen3.5-4b-q4_k_m",
         phase: "downloading",
-        received: 1_553_369_136,
-        total: 3_106_738_272,
+        received: 1_370_468_944,
+        total: 2_740_937_888,
       });
-      expect(screen.getByRole("status")).toHaveTextContent("1.6 GB of 3.1 GB (50%)");
-      expect(screen.getByRole("progressbar", { name: "Downloading Gemma 4 E2B" })).toHaveAttribute("value", "1553369136");
-      emit("model:download-progress", { modelId: "gemma-4-e2b-it-q4_k_m", phase: "verifying" });
+      expect(screen.getByRole("status")).toHaveTextContent("1.4 GB of 2.7 GB (50%)");
+      expect(screen.getByRole("progressbar", { name: "Downloading Qwen3.5 4B" })).toHaveAttribute("value", "1370468944");
+      emit("model:download-progress", { modelId: "qwen3.5-4b-q4_k_m", phase: "verifying" });
       expect(screen.getByText("Verifying the download…")).toBeInTheDocument();
 
       emit("model:download-done", { model: testModel() });
@@ -759,19 +759,19 @@ describe("App", () => {
       expect(await screen.findByText(/No summary yet/)).toBeInTheDocument();
     });
 
-    it("lists every model with a description and recommends only Gemma 4 E2B", async () => {
+    it("lists every model with a description and recommends only Qwen3.5 4B", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       const user = await openMeeting("Sync");
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
-      expect(await screen.findByText("High-quality summaries. Slower, and uses more memory.")).toBeInTheDocument();
-      expect(screen.getByText("Fast and light. A good fit for most meetings.")).toBeInTheDocument();
+      expect(await screen.findByText("The most detailed summaries. Slower, and uses more memory.")).toBeInTheDocument();
+      expect(screen.getByText("Fast and light, with detailed summaries. A good fit for most meetings.")).toBeInTheDocument();
       expect(screen.getAllByText("Recommended")).toHaveLength(1);
-      const qwen = screen.getByRole("group", { name: "Qwen3 8B" });
+      const qwen = screen.getByRole("group", { name: "Qwen3.5 9B" });
 
-      await user.click(within(qwen).getByRole("button", { name: "Download (5.0 GB)" }));
+      await user.click(within(qwen).getByRole("button", { name: "Download (5.7 GB)" }));
 
-      expect(backend.state.downloadedId).toBe("qwen3-8b-q4_k_m");
+      expect(backend.state.downloadedId).toBe("qwen3.5-9b-q4_k_m");
     });
 
     it("shows where each model comes from and opens its Hugging Face page", async () => {
@@ -779,11 +779,11 @@ describe("App", () => {
       const user = await openMeeting("Sync");
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
-      const qwen = await screen.findByRole("group", { name: "Qwen3 8B" });
-      expect(qwen).toHaveTextContent("unsloth/Qwen3-8B-GGUF - Q4_K_M - a6adef1");
-      await user.click(within(qwen).getByRole("button", { name: "unsloth/Qwen3-8B-GGUF" }));
+      const qwen = await screen.findByRole("group", { name: "Qwen3.5 9B" });
+      expect(qwen).toHaveTextContent("unsloth/Qwen3.5-9B-GGUF - Q4_K_M - 99a1b21");
+      await user.click(within(qwen).getByRole("button", { name: "unsloth/Qwen3.5-9B-GGUF" }));
 
-      expect(backend.state.openedModelPage).toBe("qwen3-8b-q4_k_m");
+      expect(backend.state.openedModelPage).toBe("qwen3.5-9b-q4_k_m");
     });
 
     it("explains when a model's page can't be opened", async () => {
@@ -792,7 +792,7 @@ describe("App", () => {
       const user = await openMeeting("Sync");
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
-      await user.click(await screen.findByRole("button", { name: "unsloth/gemma-4-E2B-it-GGUF" }));
+      await user.click(await screen.findByRole("button", { name: "unsloth/Qwen3.5-4B-GGUF" }));
 
       expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't open the model's Hugging Face page");
     });
@@ -803,25 +803,25 @@ describe("App", () => {
       const user = await openMeeting("Sync");
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
-      expect(await screen.findByRole("button", { name: "Resume download (1.2 of 3.1 GB)" })).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "Resume download (1.2 of 2.7 GB)" })).toBeInTheDocument();
     });
 
     it("cancels a download and explains a failed one", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       const user = await openMeeting("Sync");
       await user.click(screen.getByRole("tab", { name: "Summary" }));
-      await user.click(within(await screen.findByRole("group", { name: "Gemma 4 E2B" })).getByRole("button", { name: "Download (3.1 GB)" }));
+      await user.click(within(await screen.findByRole("group", { name: "Qwen3.5 4B" })).getByRole("button", { name: "Download (2.7 GB)" }));
 
       await user.click(await screen.findByRole("button", { name: "Cancel" }));
       expect(backend.state.downloadCancelled).toBe(true);
       backend.state.downloading = false;
       backend.state.partialBytes = 400_000_000;
-      emit("model:download-failed", { modelId: "gemma-4-e2b-it-q4_k_m", message: "the download was cancelled", cancelled: true });
-      expect(await screen.findByRole("button", { name: "Resume download (0.4 of 3.1 GB)" })).toBeInTheDocument();
+      emit("model:download-failed", { modelId: "qwen3.5-4b-q4_k_m", message: "the download was cancelled", cancelled: true });
+      expect(await screen.findByRole("button", { name: "Resume download (0.4 of 2.7 GB)" })).toBeInTheDocument();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
       emit("model:download-failed", {
-        modelId: "gemma-4-e2b-it-q4_k_m",
+        modelId: "qwen3.5-4b-q4_k_m",
         message: "there isn't enough free disk space for this model",
         cancelled: false,
       });
@@ -831,12 +831,12 @@ describe("App", () => {
     it("picks up a download already in progress", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       backend.state.downloading = true;
-      backend.state.partialBytes = 310_673_828;
+      backend.state.partialBytes = 274_093_789;
       const user = await openMeeting("Sync");
 
       await user.click(screen.getByRole("tab", { name: "Summary" }));
 
-      expect(await screen.findByText(/0.3 GB of 3.1 GB \(10%\)/)).toBeInTheDocument();
+      expect(await screen.findByText(/0.3 GB of 2.7 GB \(10%\)/)).toBeInTheDocument();
     });
   });
 
@@ -999,7 +999,7 @@ describe("App", () => {
       expect(await screen.findByRole("heading", { name: "Add a local AI model" })).toBeInTheDocument();
       expect(document.querySelectorAll(".model-setup")).toHaveLength(1);
 
-      vi.mocked(open).mockResolvedValue("/Users/me/Downloads/gemma-4-E2B-it-Q4_K_M.gguf");
+      vi.mocked(open).mockResolvedValue("/Users/me/Downloads/Qwen3.5-4B-Q4_K_M.gguf");
       await user.click(await screen.findByRole("button", { name: "Import model file" }));
       expect(await screen.findByText(/No summary yet/)).toBeInTheDocument();
       await user.click(screen.getByRole("tab", { name: "Chat" }));
@@ -1483,19 +1483,19 @@ describe("App", () => {
 
     it("switches the local AI model", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
-      const gemma = testModel();
+      const recommended = testModel();
       const other = { ...testModel("/models/other.gguf"), id: "local-abc", displayName: "My fine-tune", source: "import" as const };
-      backend.state.installed = [gemma, other];
-      backend.state.model = gemma;
+      backend.state.installed = [recommended, other];
+      backend.state.model = recommended;
       const user = userEvent.setup();
       render(<App />);
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
-      const gemmaChoice = await screen.findByRole("radio", { name: /Gemma 4 E2B/ });
-      expect(gemmaChoice).toBeChecked();
+      const recommendedChoice = await screen.findByRole("radio", { name: /Qwen3.5 4B/ });
+      expect(recommendedChoice).toBeChecked();
       const localModels = screen.getByRole("region", { name: "Local AI model" });
       expect(within(localModels).getAllByText("Selected")).toHaveLength(1);
-      expect(gemmaChoice.closest("label")).toHaveTextContent("Selected");
+      expect(recommendedChoice.closest("label")).toHaveTextContent("Selected");
       await user.click(screen.getByRole("radio", { name: /My fine-tune/ }));
 
       await waitFor(() => expect(backend.state.model?.id).toBe("local-abc"));
@@ -1531,7 +1531,7 @@ describe("App", () => {
       await openSettings();
 
       // The download card appears once the installed models have loaded.
-      await screen.findByRole("button", { name: "Download (3.1 GB)" });
+      await screen.findByRole("button", { name: "Download (2.7 GB)" });
       expect(screen.queryByLabelText("Keep the model loaded")).not.toBeInTheDocument();
     });
 
@@ -1543,30 +1543,30 @@ describe("App", () => {
       const user = userEvent.setup();
       render(<App />);
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
-      const gemmaCard = (await screen.findByRole("radio", { name: /Gemma 4 E2B/ })).closest(".installed-model") as HTMLElement;
+      const recommendedCard = (await screen.findByRole("radio", { name: /Qwen3.5 4B/ })).closest(".installed-model") as HTMLElement;
       const otherCard = screen.getByRole("radio", { name: /My fine-tune/ }).closest(".installed-model") as HTMLElement;
 
-      expect(gemmaCard).toHaveTextContent("unsloth/gemma-4-E2B-it-GGUF - Q4_K_M - 0314792");
+      expect(recommendedCard).toHaveTextContent("unsloth/Qwen3.5-4B-GGUF - Q4_K_M - 720bb03");
       expect(within(otherCard).queryByRole("button", { name: /GGUF/ })).not.toBeInTheDocument();
-      await user.click(within(gemmaCard).getByRole("button", { name: "unsloth/gemma-4-E2B-it-GGUF" }));
+      await user.click(within(recommendedCard).getByRole("button", { name: "unsloth/Qwen3.5-4B-GGUF" }));
 
-      expect(backend.state.openedModelPage).toBe("gemma-4-e2b-it-q4_k_m");
-      expect(screen.getByRole("radio", { name: /Gemma 4 E2B/ })).toBeChecked();
+      expect(backend.state.openedModelPage).toBe("qwen3.5-4b-q4_k_m");
+      expect(screen.getByRole("radio", { name: /Qwen3.5 4B/ })).toBeChecked();
     });
 
     it("removes a model after confirming, and can cancel", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
-      const gemma = testModel();
+      const recommended = testModel();
       const other = { ...testModel("/models/other.gguf"), id: "local-abc", displayName: "My fine-tune" };
-      backend.state.installed = [gemma, other];
-      backend.state.model = gemma;
+      backend.state.installed = [recommended, other];
+      backend.state.model = recommended;
       const user = userEvent.setup();
       render(<App />);
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
       await user.click(await screen.findByRole("button", { name: "Remove My fine-tune" }));
       const confirm = screen.getByRole("group", { name: "Remove My fine-tune" });
-      expect(confirm).toHaveTextContent("Delete it and free 3.1 GB? You can import it again later.");
+      expect(confirm).toHaveTextContent("Delete it and free 2.7 GB? You can import it again later.");
       expect(within(confirm).getByRole("button", { name: "Cancel" })).toHaveFocus();
       await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
       expect(screen.getByRole("button", { name: "Remove My fine-tune" })).toHaveFocus();
@@ -1576,47 +1576,47 @@ describe("App", () => {
       await user.click(within(screen.getByRole("group", { name: "Remove My fine-tune" })).getByRole("button", { name: "Remove" }));
 
       await waitFor(() => expect(screen.queryByRole("radio", { name: /My fine-tune/ })).not.toBeInTheDocument());
-      expect(backend.state.installed).toEqual([gemma]);
-      expect(screen.getByRole("radio", { name: /Gemma 4 E2B/ })).toBeChecked();
+      expect(backend.state.installed).toEqual([recommended]);
+      expect(screen.getByRole("radio", { name: /Qwen3.5 4B/ })).toBeChecked();
     });
 
     it("switches to the remaining model when the selected one is removed", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
-      const gemma = testModel();
+      const recommended = testModel();
       const other = { ...testModel("/models/other.gguf"), id: "local-abc", displayName: "My fine-tune" };
-      backend.state.installed = [gemma, other];
-      backend.state.model = gemma;
+      backend.state.installed = [recommended, other];
+      backend.state.model = recommended;
       const user = userEvent.setup();
       render(<App />);
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
-      await user.click(await screen.findByRole("button", { name: "Remove Gemma 4 E2B" }));
-      await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
+      await user.click(await screen.findByRole("button", { name: "Remove Qwen3.5 4B" }));
+      await user.click(within(screen.getByRole("group", { name: "Remove Qwen3.5 4B" })).getByRole("button", { name: "Remove" }));
 
       expect(await screen.findByRole("radio", { name: /My fine-tune/ })).toBeChecked();
-      expect(screen.queryByRole("radio", { name: /Gemma 4 E2B/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("radio", { name: /Qwen3.5 4B/ })).not.toBeInTheDocument();
     });
 
     it("offers the download again after removing the last model", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
-      const gemma = { ...testModel(), source: "download" as const };
-      backend.state.installed = [gemma];
-      backend.state.model = gemma;
+      const recommended = { ...testModel(), source: "download" as const };
+      backend.state.installed = [recommended];
+      backend.state.model = recommended;
       const user = userEvent.setup();
       render(<App />);
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
-      const card = await screen.findByRole("group", { name: "Gemma 4 E2B" });
+      const card = await screen.findByRole("group", { name: "Qwen3.5 4B" });
       await waitFor(() => expect(within(card).getByText("Installed")).toBeInTheDocument());
 
-      await user.click(screen.getByRole("button", { name: "Remove Gemma 4 E2B" }));
-      expect(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).toHaveTextContent("You can download it again later.");
-      await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
+      await user.click(screen.getByRole("button", { name: "Remove Qwen3.5 4B" }));
+      expect(screen.getByRole("group", { name: "Remove Qwen3.5 4B" })).toHaveTextContent("You can download it again later.");
+      await user.click(within(screen.getByRole("group", { name: "Remove Qwen3.5 4B" })).getByRole("button", { name: "Remove" }));
 
       await waitFor(() =>
         expect(within(screen.getByRole("region", { name: "Local AI model" })).queryByRole("radio")).not.toBeInTheDocument(),
       );
       expect(
-        within(await screen.findByRole("group", { name: "Gemma 4 E2B" })).getByRole("button", { name: "Download (3.1 GB)" }),
+        within(await screen.findByRole("group", { name: "Qwen3.5 4B" })).getByRole("button", { name: "Download (2.7 GB)" }),
       ).toBeInTheDocument();
     });
 
@@ -1624,15 +1624,15 @@ describe("App", () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       backend.state.installed = [testModel()];
       backend.state.model = testModel();
-      backend.state.removeError = { kind: "notFound", missing: "model", message: "model gemma-4-e2b-it-q4_k_m doesn't exist" };
+      backend.state.removeError = { kind: "notFound", missing: "model", message: "model qwen3.5-4b-q4_k_m doesn't exist" };
       const user = userEvent.setup();
       render(<App />);
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
-      await user.click(await screen.findByRole("button", { name: "Remove Gemma 4 E2B" }));
+      await user.click(await screen.findByRole("button", { name: "Remove Qwen3.5 4B" }));
       backend.state.installed = [];
       backend.state.model = null;
 
-      await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
+      await user.click(within(screen.getByRole("group", { name: "Remove Qwen3.5 4B" })).getByRole("button", { name: "Remove" }));
 
       await waitFor(() =>
         expect(within(screen.getByRole("region", { name: "Local AI model" })).queryByRole("radio")).not.toBeInTheDocument(),
@@ -1666,11 +1666,11 @@ describe("App", () => {
       render(<App />);
       await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
 
-      await user.click(await screen.findByRole("button", { name: "Remove Gemma 4 E2B" }));
-      await user.click(within(screen.getByRole("group", { name: "Remove Gemma 4 E2B" })).getByRole("button", { name: "Remove" }));
+      await user.click(await screen.findByRole("button", { name: "Remove Qwen3.5 4B" }));
+      await user.click(within(screen.getByRole("group", { name: "Remove Qwen3.5 4B" })).getByRole("button", { name: "Remove" }));
 
       expect(await screen.findByRole("alert")).toHaveTextContent("A summary is already being written");
-      expect(screen.getByRole("radio", { name: /Gemma 4 E2B/ })).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: /Qwen3.5 4B/ })).toBeInTheDocument();
     });
 
     it("offers Whistle, selected, and Whisper to download", async () => {
@@ -1839,7 +1839,7 @@ describe("App", () => {
         state.model = testModel();
       });
 
-      expect(await screen.findByText("Ready, using Gemma 4 E2B")).toBeInTheDocument();
+      expect(await screen.findByText("Ready, using Qwen3.5 4B")).toBeInTheDocument();
     });
 
     it("can be shown again from settings", async () => {

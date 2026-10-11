@@ -57,7 +57,7 @@ Whistle is the default. The measurements are in [the transcription model compari
 
 You decide which model writes your notes.
 
-- **Choose from the list:** in **Settings**, download Gemma 4 E2B (recommended), Phi-4 mini, Qwen3 4B Instruct, Gemma 4 E4B, Qwen3 8B, Ministral 3 8B, or Ministral 3 14B. Each download is pinned to a checksum and verified before use.
+- **Choose from the list:** in **Settings**, download Qwen3.5 4B (recommended), Gemma 4 E4B, Ministral 3 8B, or Qwen3.5 9B. Each download is pinned to a checksum and verified before use.
 - **Or import your own:** import any GGUF model file you already have.
 - **Built for Apple Silicon:** summaries run through [llama.cpp](https://github.com/ggml-org/llama.cpp) with Metal. Every listed model is sized to leave room for your call on a Mac with 16 GB of memory.
 - **One model for summaries and chat:** the selected model writes summaries and answers questions.
@@ -77,7 +77,7 @@ You decide which model writes your notes.
 3. Open Earshot Notes. A checklist asks for two permissions:
    - **Microphone:** for your side of the conversation.
    - **Screen & System Audio Recording:** for the other side of your calls. Earshot Notes records only audio, never your screen. If you decline, recording continues with only your microphone.
-4. Download a local AI model from the checklist or from **Settings**. Gemma 4 E2B, the recommended model, is 3.1 GB.
+4. Download a local AI model from the checklist or from **Settings**. Qwen3.5 4B, the recommended model, is 2.7 GB.
 
 What's new in each version is on the [releases page](https://github.com/tapresle/Earshot-Notes/releases).
 
