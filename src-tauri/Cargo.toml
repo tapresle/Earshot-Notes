@@ -33,7 +33,7 @@ audioadapter-buffers = "5"
 macos-audio = { version = "0.1.0", path = "crates/macos-audio" }
 llama-cpp-2 = { version = "=0.1.158", default-features = false, features = ["metal"] }
 minijinja = { version = "2", features = ["loop_controls", "json"] }
-minijinja-contrib = { version = "2", features = ["pycompat"] }
+minijinja-contrib = { version = "3", features = ["pycompat"] }
 sha2 = "0.11.0"
 tauri-plugin-dialog = "2"
 ureq = "3"
