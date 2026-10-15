@@ -42,7 +42,9 @@ concurrency:
 jobs:
   screenshots:
     name: Screenshots match the UI
-    runs-on: macos-26
+    # macOS 27, the version the committed screenshots are rendered on. GitHub
+    # names this image after its Xcode version; there is no macos-27 label.
+    runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -59,7 +61,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/Library/Caches/ms-playwright
-          key: playwright-macos-26-${{ steps.playwright.outputs.version }}
+          key: playwright-macos-27-${{ steps.playwright.outputs.version }}
       - name: Install Playwright's browser
         if: steps.browser.outputs.cache-hit != 'true'
         run: npx playwright install chromium
