@@ -10,6 +10,12 @@ updates:
     schedule:
       interval: weekly
     groups:
+      # minijinja-contrib builds on minijinja, so a major release of one fails
+      # to compile without the other. Dependabot uses the first group that
+      # matches, so this one has to come before the catch-all.
+      minijinja:
+        patterns: [minijinja, minijinja-contrib]
+        update-types: [major]
       cargo:
         patterns: ["*"]
         update-types: [minor, patch]
