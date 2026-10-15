@@ -1,9 +1,8 @@
 //! Renders a model's own Jinja chat template, as embedded in its GGUF file.
 
 use minijinja::{Environment, Error, ErrorKind, Value, context};
-use serde::Serialize;
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Message {
     pub role: &'static str,
     pub content: String,
@@ -29,6 +28,10 @@ impl Message {
             role: "assistant",
             content: content.into(),
         }
+    }
+
+    fn to_value(&self) -> Value {
+        context! { role => self.role, content => self.content.as_str() }
     }
 }
 
@@ -79,11 +82,11 @@ fn render_once(
     env.get_template("chat")
         .and_then(|t| {
             t.render(context! {
-                messages => messages,
+                messages => messages.iter().map(Message::to_value).collect::<Vec<_>>(),
                 add_generation_prompt => true,
                 enable_thinking => false,
-                bos_token => tokens.bos,
-                eos_token => tokens.eos,
+                bos_token => tokens.bos.as_str(),
+                eos_token => tokens.eos.as_str(),
             })
         })
         .map_err(|e| TemplateError(e.to_string()))
