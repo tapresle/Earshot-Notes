@@ -11,7 +11,9 @@ use crate::chunker::Sensitivity;
 use crate::llm::resident::KeepLoaded;
 use crate::llm::worker::ModelWorker;
 use crate::models::{self, RemoveError};
-use crate::store::settings::{INPUT_DEVICE, KEEP_MODEL_LOADED, sensitivity_key};
+use crate::store::settings::{
+    INPUT_DEVICE, KEEP_MODEL_LOADED, ON, RECORD_NEW_MEETINGS, sensitivity_key,
+};
 use crate::store::{ModelRecord, Source, Store};
 use macos_audio::LoginItem;
 
@@ -192,6 +194,31 @@ pub async fn select_model(
     .await
 }
 
+fn record_new_meetings_in(store: &Store) -> CommandResult<bool> {
+    Ok(store.setting(RECORD_NEW_MEETINGS)?.as_deref() == Some(ON))
+}
+
+fn set_record_new_meetings_in(store: &Store, enabled: bool) -> CommandResult<()> {
+    Ok(store.set_setting(RECORD_NEW_MEETINGS, enabled.then_some(ON))?)
+}
+
+/// Whether **New meeting** in the window also starts recording.
+#[tauri::command]
+pub async fn record_new_meetings(store: State<'_, Arc<Store>>) -> CommandResult<bool> {
+    let store = Arc::clone(&store);
+    blocking(move || record_new_meetings_in(&store)).await
+}
+
+/// Turns starting a recording with each new meeting on or off.
+#[tauri::command]
+pub async fn set_record_new_meetings(
+    store: State<'_, Arc<Store>>,
+    enabled: bool,
+) -> CommandResult<()> {
+    let store = Arc::clone(&store);
+    blocking(move || set_record_new_meetings_in(&store, enabled)).await
+}
+
 fn keep_model_loaded_in(store: &Store) -> CommandResult<KeepLoaded> {
     Ok(KeepLoaded::from_setting(
         store.setting(KEEP_MODEL_LOADED)?.as_deref(),
@@ -361,6 +388,19 @@ mod tests {
             serde_json::to_value(pending).unwrap(),
             serde_json::json!({ "enabled": true, "needsApproval": true, "available": true })
         );
+    }
+
+    #[test]
+    fn records_new_meetings_only_after_you_turn_it_on() {
+        let store = Store::open_in_memory().unwrap();
+        assert!(!record_new_meetings_in(&store).unwrap());
+
+        set_record_new_meetings_in(&store, true).unwrap();
+        assert!(record_new_meetings_in(&store).unwrap());
+
+        set_record_new_meetings_in(&store, false).unwrap();
+        assert!(!record_new_meetings_in(&store).unwrap());
+        assert_eq!(store.setting(RECORD_NEW_MEETINGS).unwrap(), None);
     }
 
     #[test]

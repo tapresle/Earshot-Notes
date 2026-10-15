@@ -398,6 +398,9 @@ export const api = {
   setInputDevice: (deviceId: string | null) => invoke<void>("set_input_device", { deviceId }),
   keepAudio: () => invoke<boolean>("keep_audio"),
   setKeepAudio: (enabled: boolean) => invoke<void>("set_keep_audio", { enabled }),
+  /** Whether **New meeting** also starts recording the meeting. */
+  recordNewMeetings: () => invoke<boolean>("record_new_meetings"),
+  setRecordNewMeetings: (enabled: boolean) => invoke<void>("set_record_new_meetings", { enabled }),
   /** The total size of the kept recordings, in bytes. */
   recordingsSize: () => invoke<number>("recordings_size"),
   /** Deletes every kept recording and resolves to the size left. Refused while recording. */
