@@ -42,14 +42,15 @@ use earshot_lib::summarize::run::{Progress, Request, summarize};
 use earshot_lib::summarize::title::suggest_title;
 use serde::{Deserialize, Serialize};
 
-/// Examples the summary prompts give. Notes for a meeting that doesn't contain
-/// one have copied it from the prompt.
+/// Examples the summary prompts give, and the ones they gave before #162. Notes
+/// for a meeting that doesn't contain one have copied it from the prompt.
 const PROMPT_EXAMPLES: &[&str] = &[
     "Dana",
     "Lindgren",
     "Lindgrin",
     "export job",
     "empty folders",
+    "lunar rover",
 ];
 
 #[derive(Deserialize)]
