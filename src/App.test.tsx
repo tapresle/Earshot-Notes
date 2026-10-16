@@ -94,8 +94,8 @@ describe("App", () => {
 
       expect(shown).toBe(false); // The webview's own menu is prevented.
       expect(screen.getByRole("menu", { name: "Design sync" })).toBeInTheDocument();
-      expect(menuItems()).toEqual(["Export…", "Delete…"]);
-      expect(screen.getByRole("menuitem", { name: "Export…" })).toHaveFocus();
+      expect(menuItems()).toEqual(["Export", "Delete"]);
+      expect(screen.getByRole("menuitem", { name: "Export" })).toHaveFocus();
       await user.keyboard("{Escape}");
       expect(screen.queryByRole("menu")).not.toBeInTheDocument();
       expect(meeting).toHaveFocus();
@@ -106,7 +106,7 @@ describe("App", () => {
       vi.mocked(save).mockResolvedValue("/Users/me/Documents/design.md");
       await rightClick(user, item("Design sync"));
 
-      await user.click(screen.getByRole("menuitem", { name: "Export…" }));
+      await user.click(screen.getByRole("menuitem", { name: "Export" }));
 
       expect(vi.mocked(save)).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "2026-10-03-meeting-1.md" }));
       expect(await within(sidebar()).findByText("/Users/me/Documents/design.md")).toBeInTheDocument();
@@ -120,7 +120,7 @@ describe("App", () => {
       await user.click(item("Design sync"));
       await rightClick(user, item("Retro"));
 
-      await user.click(screen.getByRole("menuitem", { name: "Delete…" }));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
       const dialog = screen.getByRole("dialog", { name: "Delete “Retro”?" });
       expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
       await user.click(within(dialog).getByRole("button", { name: "Delete meeting" }));
@@ -134,7 +134,7 @@ describe("App", () => {
     it("keeps the meeting when you cancel the delete", async () => {
       const { backend, user } = await start([seedMeeting(1, "Design sync")]);
       await rightClick(user, item("Design sync"));
-      await user.click(screen.getByRole("menuitem", { name: "Delete…" }));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
 
       await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
 
@@ -154,8 +154,8 @@ describe("App", () => {
       await rightClick(user, item("Three"));
 
       expect(screen.getByRole("menu", { name: "2 selected meetings" })).toBeInTheDocument();
-      expect(menuItems()).toEqual(["Export 2 meetings…"]);
-      await user.click(screen.getByRole("menuitem", { name: "Export 2 meetings…" }));
+      expect(menuItems()).toEqual(["Export 2 meetings"]);
+      await user.click(screen.getByRole("menuitem", { name: "Export 2 meetings" }));
       expect(await within(sidebar()).findByText(/Exported 2 meetings/)).toBeInTheDocument();
       expect(backend.state.exports[0].ids).toEqual([1, 3]);
     });
@@ -170,7 +170,7 @@ describe("App", () => {
       await rightClick(user, item("Two"));
 
       expect(screen.getByRole("menu", { name: "Two" })).toBeInTheDocument();
-      expect(menuItems()).toEqual(["Export…", "Delete…"]);
+      expect(menuItems()).toEqual(["Export", "Delete"]);
     });
 
     it("opens from the keyboard and moves with the arrow keys", async () => {
@@ -179,11 +179,11 @@ describe("App", () => {
 
       await user.keyboard("{Shift>}{F10}{/Shift}");
 
-      expect(screen.getByRole("menuitem", { name: "Export…" })).toHaveFocus();
+      expect(screen.getByRole("menuitem", { name: "Export" })).toHaveFocus();
       await user.keyboard("{ArrowDown}");
-      expect(screen.getByRole("menuitem", { name: "Delete…" })).toHaveFocus();
+      expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveFocus();
       await user.keyboard("{ArrowDown}");
-      expect(screen.getByRole("menuitem", { name: "Export…" })).toHaveFocus();
+      expect(screen.getByRole("menuitem", { name: "Export" })).toHaveFocus();
       await user.keyboard("{ArrowUp}{Enter}");
       expect(screen.getByRole("dialog", { name: "Delete “Design sync”?" })).toBeInTheDocument();
     });

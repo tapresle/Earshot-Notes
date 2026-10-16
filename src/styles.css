@@ -405,10 +405,16 @@ body {
   cursor: default;
 }
 
-.context-menu-item:hover,
+/* Like a macOS menu, nothing is highlighted until you point at an item or
+   use the keyboard: the first item has focus from the start, so the arrow
+   keys work, but plain focus doesn't show. */
 .context-menu-item:focus {
-  background: var(--selected);
   outline: none;
+}
+
+.context-menu-item:hover,
+.context-menu-item:focus-visible {
+  background: var(--selected);
 }
 
 .context-menu-item:focus-visible {

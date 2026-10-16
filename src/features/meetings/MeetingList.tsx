@@ -77,14 +77,14 @@ export function MeetingList({
     if (multiSelect && selectedIds.includes(meetingId)) {
       return {
         label: `${selectedIds.length} selected meetings`,
-        items: [{ label: `Export ${selectedIds.length} meetings…`, onSelect: () => onExport(selectedIds) }],
+        items: [{ label: `Export ${selectedIds.length} meetings`, onSelect: () => onExport(selectedIds) }],
       };
     }
     return {
       label: title,
       items: [
-        { label: "Export…", onSelect: () => onExport([meetingId]) },
-        { label: "Delete…", onSelect: () => onDelete(meetingId, title), danger: true },
+        { label: "Export", onSelect: () => onExport([meetingId]) },
+        { label: "Delete", onSelect: () => onDelete(meetingId, title), danger: true },
       ],
     };
   }

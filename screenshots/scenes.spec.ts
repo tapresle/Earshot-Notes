@@ -45,8 +45,32 @@ test("meeting menu", async ({ page }) => {
   const meeting = sidebar(page).getByRole("button", { name: /^Launch planning,/ });
   const box = (await meeting.boundingBox())!;
   await page.mouse.click(box.x + 60, box.y + box.height / 2, { button: "right" });
-  await expect(page.getByRole("menuitem", { name: "Export…" })).toBeFocused();
+  await expect(page.getByRole("menuitem", { name: "Export" })).toBeFocused();
   await expect(page).toHaveScreenshot("meeting-menu.png");
+});
+
+test("the meeting menu highlights an item only on hover or from the keyboard", async ({ page }) => {
+  await open(page, "meeting");
+  await openMeeting(page, "Design sync");
+  const meeting = sidebar(page).getByRole("button", { name: /^Launch planning,/ });
+  const exportItem = page.getByRole("menuitem", { name: "Export" });
+  const background = () => exportItem.evaluate((item) => getComputedStyle(item).backgroundColor);
+  const box = (await meeting.boundingBox())!;
+
+  await page.mouse.click(box.x + 60, box.y + box.height / 2, { button: "right" });
+  await expect(exportItem).toBeFocused();
+  const plain = await background();
+  expect(plain).toBe("rgba(0, 0, 0, 0)");
+
+  await exportItem.hover();
+  expect(await background()).not.toBe(plain);
+
+  await page.keyboard.press("Escape");
+  await page.mouse.move(0, 0);
+  await meeting.focus();
+  await page.keyboard.press("Shift+F10");
+  await expect(exportItem).toBeFocused();
+  expect(await background()).not.toBe(plain);
 });
 
 test("delete dialog", async ({ page }) => {
