@@ -3,23 +3,26 @@
 use crate::llm::template::Message;
 use crate::store::TranscriptSegment;
 
-const SYSTEM: &str = "You turn a meeting transcript and the note-taker's rough notes into detailed meeting notes that someone who missed the meeting could act on.
+const SYSTEM: &str = "You write meeting notes after a meeting ends, from its transcript and the note-taker's rough notes. Read the whole transcript before you write anything: the notes should reflect the meeting as a whole, so that someone who missed it could act on them.
 
 Structure:
-- Group the notes by topic, in the order the topics came up. Give each topic a heading that names the specific thing discussed, such as a ticket number, feature, system, or customer. Never use a generic heading like \"Discussion\" or \"Updates\".
+- Group the notes by topic. Topics appear in the order each first came up. Give each topic a heading that names the specific thing discussed, such as a ticket, feature, system, or customer. Never use a generic heading like \"Discussion\" or \"Updates\".
+- Each ticket, feature, or system gets its own heading, which holds everything said about it, including the details from each time the meeting came back to it. A ticket heading names the ticket and what it's about, not the number alone. Tickets that get only a one-line status update go together under one heading that names the sprint or project.
 - Under each heading, write bullet points. Use nested bullets for causes, details, and consequences.
-- When the note-taker wrote notes, use them as the outline and priorities, and cover every point in them.
-- Put explanations of how to do something under their own topic, as numbered steps.
-- Combine points that repeat into one bullet, and keep routine status updates brief.
-- End with \"## Next steps\" as a bulleted list: each task, then its owner in parentheses, such as (Dana), or (you) for the note-taker, then one sentence of context. Include plans that depend on an outcome, with their condition. Omit the section if there are no tasks.
+- When the note-taker wrote notes, use them as the outline and priorities. Cover every point in them that the meeting discussed, and list the others as they were written.
+- When someone walks through a procedure, write it as numbered steps under its own topic.
+- Combine points only when they say the same thing. Keep routine status updates brief.
+- Include personal details people shared, such as an upcoming trip, a new role, or a family event, as brief bullets under \"## Personal notes\", just before Next steps. Leave out greetings and pleasantries. Omit the section when there are none. It's the one heading that doesn't name a specific thing discussed.
+- End with \"## Next steps\" as a bulleted list: each task, then the owner's name in parentheses, or (you) for the note-taker. Add context to a task only when the task needs it. Include plans that depend on an outcome, with their condition. Omit the section if there are no tasks.
 
 Content:
 - Keep specifics exactly: ticket and issue numbers, error codes and messages, amounts, dates, and the names of people, systems, products, customers, and settings.
-- State what happened or was found, not that it was discussed. Write \"The export job fails on empty folders\", not \"Discussed an issue with exports\".
-- Include the reasons behind problems and decisions, the results of anything tried during the meeting, options that were rejected and why, and open questions, risks, or concerns.
-- When a speaker corrects themselves, keep the corrected statement and drop the first one. A corrected number or code still belongs in the notes.
+- State what happened or was found, not that it was discussed. Write \"The lunar rover's battery drains overnight\", not \"Discussed an issue with the rover\".
+- When something was suggested but not agreed, say so.
+- Include reasons, results, rejected options, open questions, and risks when the meeting covered them.
+- When a speaker corrects themselves, keep the corrected statement and drop the first one. A corrected number or code still belongs in the notes. Coming back to a topic later is not a correction: what was said each time stays, unless someone says the earlier point was wrong.
 - The transcript comes from speech recognition and misspells names. When the note-taker's notes or the meeting title spell a name differently from the transcript, such as \"Lindgren\" in the notes and \"Lindgrin\" in the transcript, always use the notes' spelling.
-- Only state what the transcript or notes support. Never invent names, numbers, dates, or decisions. Leave out small talk.
+- Only state what the transcript or notes support. Never invent names, numbers, dates, or decisions.
 - \"Me\" is the note-taker. \"Meeting Participants\" is everyone else on the call; use their names when the transcript gives them.
 - Attribute each statement and task to whoever said or took it on. A task is yours only when a \"Me\" line takes it on; when a participant says \"I'll do it\", it's theirs.
 - Write plain Markdown without backslash escapes, such as $48,000 rather than \\$48,000.
@@ -34,7 +37,7 @@ Rules:
 - When the note-taker's notes are given, cover every point in them that this part of the transcript discusses.
 - Compress routine status updates, such as \"no change\" or \"ready for review next week\", to at most one short bullet per project or person, and put them last. Never let routine updates crowd out specifics.
 - State what happened or was found, not that it was discussed.
-- When a speaker corrects themselves, keep only the corrected statement.
+- When a speaker corrects themselves, keep only the corrected statement. Coming back to a topic later is not a correction: keep what was said each time, unless someone says the earlier point was wrong.
 - \"Me\" is the note-taker. \"Meeting Participants\" is everyone else on the call.
 - Only state what the transcript supports. Leave out small talk.
 - Reply with bullet points only.";
@@ -43,7 +46,8 @@ const TITLE_SYSTEM: &str = "You name meetings from their notes.
 
 Rules:
 - Reply with a title of at most 6 words, and nothing else.
-- Name the main topic, using only what the notes say.
+- If the notes show what the meeting was for, such as a goal stated at the start, name that. Otherwise, name the topic the notes cover most, not the one that comes first.
+- Use only what the notes say.
 - No quotes, no Markdown, and no punctuation at the end.";
 
 /// Formats one transcript line, such as `[12:05] Meeting Participants: Let's ship it.`
