@@ -5,10 +5,11 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use super::models::models_dir;
 use super::{CommandResult, blocking};
 use crate::audio::{Capture, mic, system};
+use crate::llm::worker::ModelWorker;
 use crate::models::transcription;
 use crate::recording::{self, CaptureStarter, IssueSink, Recorder, SourceProblem, StartReport};
 use crate::recordings::Recordings;
-use crate::store::settings::INPUT_DEVICE;
+use crate::store::settings::{INPUT_DEVICE, SUMMARIZE_ON_STOP};
 use crate::store::{Source, Store, TranscriptSegment};
 use crate::transcribe::worker::TranscriptionWorker;
 use crate::tray;
@@ -90,12 +91,41 @@ pub(crate) fn start(app: &AppHandle, meeting_id: i64) -> CommandResult<StartRepo
 /// Stops the active recording and tells the UI and the menu bar. Waits for
 /// the audio pipelines to finish, so never call it on the main thread.
 pub(crate) fn stop(app: &AppHandle) -> CommandResult<Option<i64>> {
-    let stopped =
-        recording::stop_recording(&app.state::<Arc<Store>>(), &app.state::<Arc<Recorder>>())?;
-    if stopped.is_some() {
+    let store = app.state::<Arc<Store>>();
+    let stopped = recording::stop_recording(&store, &app.state::<Arc<Recorder>>())?;
+    if let Some(meeting_id) = stopped {
         announce(app, None, tray::Status::Idle);
+        summarize_when_transcribed(app, &store, meeting_id);
     }
     Ok(stopped)
+}
+
+/// With **Summarize a meeting when I stop recording** on, summarizes the
+/// meeting once the segments the stop flushed are transcribed and saved, so
+/// the summary covers the whole transcript (#142). Quitting stops the
+/// recording without coming through here.
+fn summarize_when_transcribed(app: &AppHandle, store: &Store, meeting_id: i64) {
+    match store.switch(SUMMARIZE_ON_STOP) {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(error) => {
+            log::error!("couldn't read whether to summarize meeting {meeting_id} on stop: {error}");
+            return;
+        }
+    }
+    let worker = Arc::clone(&app.state::<Arc<ModelWorker>>());
+    let summarize = {
+        let worker = Arc::clone(&worker);
+        move || worker.summarize_stopped(meeting_id)
+    };
+    // Without a transcription worker, nothing is left to transcribe.
+    let queued = match &app.state::<Arc<Transcription>>().0 {
+        Ok(transcription) => transcription.after_queued(summarize).is_ok(),
+        Err(_) => false,
+    };
+    if !queued {
+        worker.summarize_stopped(meeting_id);
+    }
 }
 
 fn announce(app: &AppHandle, meeting_id: Option<i64>, status: tray::Status) {

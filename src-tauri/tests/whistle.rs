@@ -288,6 +288,77 @@ mod worker {
         assert!(results.recv_timeout(Duration::from_secs(2)).is_err());
     }
 
+    #[test]
+    fn runs_a_callback_after_the_jobs_queued_before_it() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let (events_tx, events) = mpsc::channel();
+        let results_tx = events_tx.clone();
+        let (worker, _) = TranscriptionWorker::spawn(vec![PathBuf::from(MODEL)], move |job, _| {
+            results_tx
+                .send(format!("segment at {}", job.start_ms))
+                .unwrap();
+        })
+        .unwrap();
+        let job = Job {
+            meeting_id: 1,
+            source: Source::Me,
+            start_ms: 0,
+            end_ms: 5000,
+            samples: speech_fixture(),
+            speech: Speech {
+                ms: 5000,
+                margin: 10.0,
+            },
+            keywords: None,
+            engine: Engine::Whistle,
+        };
+
+        worker.submit(job).unwrap();
+        worker
+            .after_queued(move || events_tx.send("after".into()).unwrap())
+            .unwrap();
+
+        let order: Vec<String> = (0..2)
+            .map(|_| events.recv_timeout(Duration::from_secs(10)).unwrap())
+            .collect();
+        assert_eq!(order, ["segment at 0", "after"]);
+        worker.shutdown(Duration::from_secs(10));
+    }
+
+    #[test]
+    fn skips_a_queued_callback_when_shutting_down() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let (worker, _) =
+            TranscriptionWorker::spawn(vec![PathBuf::from(MODEL)], |_, _| {}).unwrap();
+        let (ran_tx, ran) = mpsc::channel::<()>();
+        // Speech takes far longer to transcribe than the calls below take, so
+        // the callback is still queued when the shutdown starts.
+        for start_ms in [0, 5000] {
+            worker
+                .submit(Job {
+                    meeting_id: 1,
+                    source: Source::Me,
+                    start_ms,
+                    end_ms: start_ms + 5000,
+                    samples: speech_fixture(),
+                    speech: Speech {
+                        ms: 5000,
+                        margin: 10.0,
+                    },
+                    keywords: None,
+                    engine: Engine::Whistle,
+                })
+                .unwrap();
+        }
+        worker
+            .after_queued(move || ran_tx.send(()).unwrap())
+            .unwrap();
+
+        worker.shutdown(Duration::from_secs(10));
+
+        assert!(ran.recv_timeout(Duration::from_millis(200)).is_err());
+    }
+
     const WHISPER_MODEL: &str = "tests/models/ggml-tiny.en-q5_1.bin";
 
     /// Runs one speech job on `engine` and returns the engine that transcribed

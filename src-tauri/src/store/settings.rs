@@ -6,11 +6,14 @@ use super::{Source, Store, StoreError};
 pub const INPUT_DEVICE: &str = "input_device_id";
 /// Whether recordings keep their audio; "on" keeps it, absent means off.
 pub const KEEP_AUDIO: &str = "keep_audio_recordings";
-/// The stored value of `KEEP_AUDIO` and `RECORD_NEW_MEETINGS` when they're on.
+/// The stored value of an on/off setting, such as `KEEP_AUDIO`, when it's on.
 pub const ON: &str = "on";
 /// Whether **New meeting** in the window also starts recording; "on" starts
 /// it, absent means off.
 pub const RECORD_NEW_MEETINGS: &str = "record_new_meetings";
+/// Whether stopping a recording summarizes the meeting; "on" summarizes it,
+/// absent means off.
+pub const SUMMARIZE_ON_STOP: &str = "summarize_on_stop";
 /// How readily quiet microphone audio counts as speech; absent means normal.
 pub const MIC_SENSITIVITY: &str = "mic_speech_sensitivity";
 /// How readily quiet system audio counts as speech; absent means normal.
@@ -39,6 +42,16 @@ impl Store {
                 row.get(0)
             })
             .optional()?)
+    }
+
+    /// Whether an on/off setting is on; absent means off.
+    pub fn switch(&self, key: &str) -> Result<bool, StoreError> {
+        Ok(self.setting(key)?.as_deref() == Some(ON))
+    }
+
+    /// Turns an on/off setting on, or removes it to turn it off.
+    pub fn set_switch(&self, key: &str, on: bool) -> Result<(), StoreError> {
+        self.set_setting(key, on.then_some(ON))
     }
 
     /// Stores a setting, or removes it when `value` is `None`.
@@ -74,6 +87,30 @@ mod tests {
 
         store.set_setting(INPUT_DEVICE, None).unwrap();
         assert_eq!(store.setting(INPUT_DEVICE).unwrap(), None);
+    }
+
+    #[test]
+    fn switches_stay_off_until_turned_on() {
+        let store = Store::open_in_memory().unwrap();
+        for key in [RECORD_NEW_MEETINGS, SUMMARIZE_ON_STOP] {
+            assert!(!store.switch(key).unwrap());
+
+            store.set_switch(key, true).unwrap();
+            assert!(store.switch(key).unwrap());
+
+            store.set_switch(key, false).unwrap();
+            assert!(!store.switch(key).unwrap());
+            assert_eq!(store.setting(key).unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn switches_are_independent() {
+        let store = Store::open_in_memory().unwrap();
+        store.set_switch(SUMMARIZE_ON_STOP, true).unwrap();
+
+        assert!(store.switch(SUMMARIZE_ON_STOP).unwrap());
+        assert!(!store.switch(RECORD_NEW_MEETINGS).unwrap());
     }
 
     #[test]

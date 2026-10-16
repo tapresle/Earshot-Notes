@@ -175,6 +175,8 @@ pub fn run() {
             commands::settings::set_keep_model_loaded,
             commands::settings::record_new_meetings,
             commands::settings::set_record_new_meetings,
+            commands::settings::summarize_on_stop,
+            commands::settings::set_summarize_on_stop,
             commands::models::open_model_page,
             commands::setup::mic_permission,
             commands::setup::request_mic_permission,

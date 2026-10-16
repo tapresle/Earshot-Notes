@@ -120,44 +120,71 @@ function StartupSection() {
 }
 
 function RecordingSection() {
-  const [record, setRecord] = useState<boolean | null>(null);
+  return (
+    <section className="settings-section" aria-labelledby="recording-heading">
+      <h2 id="recording-heading">Recording</h2>
+      <SwitchRow
+        label="Start recording when I create a new meeting"
+        help="Saves a click at the start of a call. If another meeting is already recording, it keeps recording instead."
+        read={api.recordNewMeetings}
+        write={api.setRecordNewMeetings}
+      />
+      <SwitchRow
+        label="Summarize a meeting when I stop recording"
+        help="Writes the summary with the local AI model once the last words are transcribed. A meeting that already has a summary keeps it."
+        read={api.summarizeOnStop}
+        write={api.setSummarizeOnStop}
+      />
+    </section>
+  );
+}
+
+/** A checkbox for an on/off setting, with its help text and any error. */
+function SwitchRow({
+  label,
+  help,
+  read,
+  write,
+}: {
+  label: string;
+  help: string;
+  read: () => Promise<boolean>;
+  write: (enabled: boolean) => Promise<void>;
+}) {
+  const [on, setOn] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api
-      .recordNewMeetings()
-      .then(setRecord)
+    read()
+      .then(setOn)
       .catch((e) => setError(errorMessage(e)));
-  }, []);
+  }, [read]);
 
   async function toggle(enabled: boolean) {
     setError(null);
     try {
-      await api.setRecordNewMeetings(enabled);
-      setRecord(enabled);
+      await write(enabled);
+      setOn(enabled);
     } catch (e) {
       setError(errorMessage(e));
     }
   }
 
   return (
-    <section className="settings-section" aria-labelledby="recording-heading">
-      <h2 id="recording-heading">Recording</h2>
-      {record !== null && (
+    <>
+      {on !== null && (
         <label className="settings-row">
-          <input type="checkbox" checked={record} onChange={(e) => void toggle(e.target.checked)} />
-          Start recording when I create a new meeting
+          <input type="checkbox" checked={on} onChange={(e) => void toggle(e.target.checked)} />
+          {label}
         </label>
       )}
-      <p className="settings-help">
-        Saves a click at the start of a call. If another meeting is already recording, it keeps recording instead.
-      </p>
+      <p className="settings-help">{help}</p>
       {error && (
         <p className="field-error" role="alert">
           {error}
         </p>
       )}
-    </section>
+    </>
   );
 }
 

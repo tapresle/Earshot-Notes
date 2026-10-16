@@ -2,6 +2,7 @@
 //! owns the model they share, and reports progress. The model stays loaded
 //! between requests for as long as `KeepLoaded` says.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -68,6 +69,8 @@ type Active = Arc<Mutex<Option<Running>>>;
 
 enum Message {
     Summary(Box<SummaryJob>),
+    /// A meeting that just stopped recording, to summarize unless it has a summary.
+    SummarizeStopped(i64),
     Chat(Box<ChatJob>),
     /// How long an idle model stays loaded; `None` keeps it indefinitely.
     IdleLimit(Option<Duration>),
@@ -79,6 +82,8 @@ enum Message {
 pub struct ModelWorker {
     inbox: Sender<Message>,
     active: Active,
+    /// Set once the app starts quitting, so no new summary loads the model.
+    closing: Arc<AtomicBool>,
 }
 
 impl ModelWorker {
@@ -99,6 +104,8 @@ impl ModelWorker {
         let (inbox, messages) = mpsc::channel();
         let active: Active = Arc::default();
         let finished = active.clone();
+        let closing = Arc::new(AtomicBool::new(false));
+        let quitting = closing.clone();
         thread::Builder::new()
             .name("model-worker".into())
             .spawn(move || {
@@ -106,14 +113,21 @@ impl ModelWorker {
                     &store,
                     Resident::new(load),
                     idle_limit,
-                    &messages,
+                    Inbox {
+                        messages: &messages,
+                        closing: &quitting,
+                    },
                     &finished,
                     &on_event,
                     &on_chat,
                 )
             })
             .expect("couldn't start the worker thread");
-        Self { inbox, active }
+        Self {
+            inbox,
+            active,
+            closing,
+        }
     }
 
     /// Changes how long the model stays loaded after each request. The idle
@@ -136,6 +150,7 @@ impl ModelWorker {
     /// to `timeout` for the thread to confirm. ggml's Metal backend aborts the
     /// process at exit if a model is still loaded.
     pub fn shutdown(&self, timeout: Duration) {
+        self.closing.store(true, Ordering::Release);
         if let Some(running) = lock(&self.active).as_ref() {
             running.cancel.store(true, Ordering::Relaxed);
         }
@@ -158,33 +173,31 @@ impl ModelWorker {
     ) -> Result<(), WorkerError> {
         let mut active = lock(&self.active);
         refuse_if_busy(&active)?;
-        let model = store.selected_model()?.ok_or(WorkerError::NoModel)?;
-        let detail = store.get_meeting(meeting_id)?;
-        let segments = store.list_segments(meeting_id)?;
-        if segments.is_empty() && detail.notes_markdown.trim().is_empty() {
-            return Err(WorkerError::NothingToSummarize);
-        }
-        let cancel = Arc::new(AtomicBool::new(false));
-        let job = SummaryJob {
+        let job = summary_job(store, meeting_id, is_final)?;
+        let running = Running {
             meeting_id,
-            model,
-            title: detail.meeting.title,
-            notes_markdown: detail.notes_markdown,
-            upto_ms: segments.iter().map(|s| s.end_ms).max().unwrap_or(0),
-            segments,
-            terms: terms(store)?,
-            is_final,
-            cancel: cancel.clone(),
+            work: Work::Summary,
+            cancel: job.cancel.clone(),
         };
         self.inbox
             .send(Message::Summary(Box::new(job)))
             .map_err(|_| WorkerError::Stopped)?;
-        *active = Some(Running {
-            meeting_id,
-            work: Work::Summary,
-            cancel,
-        });
+        *active = Some(running);
         Ok(())
+    }
+
+    /// Summarizes a meeting that has just stopped recording, unless it
+    /// already has a summary (#142). It waits behind the request in progress,
+    /// if any, and reports a summary it can't start, except for a missing
+    /// model, as `SummaryEvent::Failed`.
+    pub fn summarize_stopped(&self, meeting_id: i64) {
+        if self
+            .inbox
+            .send(Message::SummarizeStopped(meeting_id))
+            .is_err()
+        {
+            log::warn!("couldn't summarize meeting {meeting_id}: the model worker has stopped");
+        }
     }
 
     /// Queues a question about the meeting as it stands now. The answer sees
@@ -285,6 +298,47 @@ fn refuse_if_busy(active: &Option<Running>) -> Result<(), WorkerError> {
     }
 }
 
+/// A summary of the meeting as it stands now.
+fn summary_job(store: &Store, meeting_id: i64, is_final: bool) -> Result<SummaryJob, WorkerError> {
+    let model = store.selected_model()?.ok_or(WorkerError::NoModel)?;
+    let detail = store.get_meeting(meeting_id)?;
+    let segments = store.list_segments(meeting_id)?;
+    if segments.is_empty() && detail.notes_markdown.trim().is_empty() {
+        return Err(WorkerError::NothingToSummarize);
+    }
+    Ok(SummaryJob {
+        meeting_id,
+        model,
+        title: detail.meeting.title,
+        notes_markdown: detail.notes_markdown,
+        upto_ms: segments.iter().map(|s| s.end_ms).max().unwrap_or(0),
+        segments,
+        terms: terms(store)?,
+        is_final,
+        cancel: Arc::new(AtomicBool::new(false)),
+    })
+}
+
+/// The summary for a meeting that stopped recording, or `None` when it needs
+/// none: it has a summary already, partial or not, or there's no model, which
+/// the meeting's Summary tab explains as it does when you click Summarize.
+fn stopped_summary_job(store: &Store, meeting_id: i64) -> Result<Option<SummaryJob>, WorkerError> {
+    if store.latest_summary(meeting_id)?.is_some() {
+        log::debug!("meeting {meeting_id} already has a summary; not summarizing it on stop");
+        return Ok(None);
+    }
+    match summary_job(store, meeting_id, true) {
+        Ok(job) => Ok(Some(job)),
+        Err(WorkerError::NoModel) => {
+            log::info!(
+                "not summarizing meeting {meeting_id} on stop: no local AI model is selected"
+            );
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 /// The vocabulary's terms, for the model to spell.
 fn terms(store: &Store) -> Result<Vec<String>, WorkerError> {
     Ok(store
@@ -297,29 +351,83 @@ fn terms(store: &Store) -> Result<Vec<String>, WorkerError> {
 
 /// Runs jobs as they arrive, and frees the model once it has been idle for
 /// `idle_limit`.
+/// The worker thread's messages, and whether the app is quitting.
+struct Inbox<'a> {
+    messages: &'a Receiver<Message>,
+    closing: &'a AtomicBool,
+}
+
+/// What to do with a meeting that stopped recording.
+enum Stopped {
+    /// Summarize it; the job holds the slot.
+    Start(Box<SummaryJob>),
+    /// A request made while it waited holds the slot, so it goes after that.
+    Wait,
+    /// It needs no summary.
+    Skip,
+}
+
+/// Takes the slot for a stopped meeting's summary, unless it needs none or a
+/// request made while it waited holds the slot.
+fn start_stopped(
+    store: &Store,
+    finished: &Active,
+    meeting_id: i64,
+) -> Result<Stopped, WorkerError> {
+    let mut active = lock(finished);
+    match active.as_ref() {
+        // A summary of this meeting was requested while this one waited.
+        Some(running) if running.meeting_id == meeting_id && running.work == Work::Summary => {
+            return Ok(Stopped::Skip);
+        }
+        Some(_) => return Ok(Stopped::Wait),
+        None => {}
+    }
+    let Some(job) = stopped_summary_job(store, meeting_id)? else {
+        return Ok(Stopped::Skip);
+    };
+    *active = Some(Running {
+        meeting_id,
+        work: Work::Summary,
+        cancel: job.cancel.clone(),
+    });
+    Ok(Stopped::Start(Box::new(job)))
+}
+
 fn run_worker(
     store: &Store,
     mut resident: Resident,
     mut idle_limit: Option<Duration>,
-    messages: &Receiver<Message>,
+    inbox: Inbox,
     finished: &Active,
     on_summary: &dyn Fn(SummaryEvent),
     on_chat: &dyn Fn(ChatEvent),
 ) {
+    // Stopped meetings waiting for a request made in the meantime.
+    let mut waiting = VecDeque::new();
     loop {
-        let message = match idle_limit.filter(|_| resident.is_loaded()) {
-            Some(limit) => match messages.recv_timeout(limit) {
-                Ok(message) => message,
-                Err(RecvTimeoutError::Timeout) => {
-                    resident.unload();
-                    continue;
-                }
-                Err(RecvTimeoutError::Disconnected) => return,
-            },
-            None => match messages.recv() {
-                Ok(message) => message,
-                Err(_) => return,
-            },
+        let next_waiting = if lock(finished).is_none() {
+            waiting.pop_front()
+        } else {
+            None
+        };
+        let message = if let Some(meeting_id) = next_waiting {
+            Message::SummarizeStopped(meeting_id)
+        } else {
+            match idle_limit.filter(|_| resident.is_loaded()) {
+                Some(limit) => match inbox.messages.recv_timeout(limit) {
+                    Ok(message) => message,
+                    Err(RecvTimeoutError::Timeout) => {
+                        resident.unload();
+                        continue;
+                    }
+                    Err(RecvTimeoutError::Disconnected) => return,
+                },
+                None => match inbox.messages.recv() {
+                    Ok(message) => message,
+                    Err(_) => return,
+                },
+            }
         };
         match message {
             Message::Summary(job) => {
@@ -327,6 +435,25 @@ fn run_worker(
                 // Clear the slot before announcing, so the UI can start the next one.
                 *lock(finished) = None;
                 on_summary(event);
+            }
+            Message::SummarizeStopped(meeting_id) => {
+                if inbox.closing.load(Ordering::Acquire) {
+                    continue;
+                }
+                match start_stopped(store, finished, meeting_id) {
+                    Ok(Stopped::Start(job)) => {
+                        let event = summary_job::run(store, &mut resident, *job, on_summary);
+                        *lock(finished) = None;
+                        on_summary(event);
+                    }
+                    Ok(Stopped::Wait) => waiting.push_back(meeting_id),
+                    Ok(Stopped::Skip) => {}
+                    Err(error) => on_summary(SummaryEvent::Failed {
+                        meeting_id,
+                        message: error.to_string(),
+                        cancelled: false,
+                    }),
+                }
             }
             Message::Chat(job) => {
                 let event = chat_job::run(store, &mut resident, *job, on_chat);
@@ -1040,6 +1167,197 @@ mod tests {
         );
         release.send(()).unwrap();
         answered(&h);
+    }
+
+    /// Another meeting with something to summarize.
+    fn second_meeting(store: &Store) -> i64 {
+        let meeting = store.create_meeting("Retro").unwrap();
+        store
+            .insert_segment(NewSegment {
+                meeting_id: meeting.id,
+                source: Source::Them,
+                start_ms: 0,
+                end_ms: 3000,
+                text: "Fix the build first.".into(),
+                language: Some("en".into()),
+            })
+            .unwrap();
+        meeting.id
+    }
+
+    /// Waits until the worker has handled every message sent before this one.
+    /// Unlike `shutdown`, it doesn't mark the app as quitting first.
+    fn drain(h: &Harness) {
+        let (done, confirmed) = mpsc::channel();
+        h.worker.inbox.send(super::Message::Shutdown(done)).unwrap();
+        confirmed.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+
+    #[test]
+    fn summarizes_a_stopped_meeting_in_full() {
+        let h = harness(None, true);
+
+        h.worker.summarize_stopped(h.meeting_id);
+
+        let (summary, _) = done(&h.events);
+        assert!(summary.is_final);
+        assert_eq!(summary.meeting_id, h.meeting_id);
+        assert_eq!(summary.upto_ms, 4200);
+    }
+
+    #[test]
+    fn leaves_a_stopped_meeting_s_summary_alone() {
+        let h = harness(None, true);
+        summarize_once(&h);
+        let other = second_meeting(&h.store);
+
+        h.worker.summarize_stopped(h.meeting_id);
+        h.worker.summarize_stopped(other);
+
+        // The first event belongs to the other meeting, so the first was skipped.
+        let first = next(&h.events);
+        assert!(matches!(first, SummaryEvent::Progress { meeting_id, .. } if meeting_id == other));
+        let (summary, _) = done(&h.events);
+        assert_eq!(summary.meeting_id, other);
+        assert_eq!(
+            h.generations.load(Ordering::Relaxed),
+            2,
+            "one summary and its title"
+        );
+    }
+
+    #[test]
+    fn counts_a_partial_summary_as_a_summary() {
+        let h = harness(None, true);
+        h.worker.summarize(&h.store, h.meeting_id, false).unwrap();
+        done(&h.events);
+        let generations = h.generations.load(Ordering::Relaxed);
+
+        h.worker.summarize_stopped(h.meeting_id);
+        drain(&h);
+
+        assert!(h.events.try_recv().is_err());
+        assert_eq!(h.generations.load(Ordering::Relaxed), generations);
+        assert!(
+            !h.store
+                .latest_summary(h.meeting_id)
+                .unwrap()
+                .unwrap()
+                .is_final
+        );
+    }
+
+    #[test]
+    fn summarizes_a_stopped_meeting_once_the_answer_is_written() {
+        let (release, gate) = mpsc::channel();
+        let h = harness(Some(gate), true);
+        h.worker.ask(&h.store, h.meeting_id, "Ship?").unwrap();
+
+        h.worker.summarize_stopped(h.meeting_id);
+
+        assert_eq!(h.worker.active_summary(), None);
+        release.send(()).unwrap();
+        answered(&h);
+        let (summary, _) = done(&h.events);
+        assert!(summary.is_final);
+    }
+
+    #[test]
+    fn a_stopped_meeting_waits_for_a_request_made_while_it_was_queued() {
+        let h = harness(None, true);
+        let active: Active = Arc::default();
+        let hold = |work| {
+            *lock(&active) = Some(Running {
+                meeting_id: h.meeting_id,
+                work,
+                cancel: Arc::default(),
+            });
+        };
+
+        hold(Work::Chat);
+        assert!(matches!(
+            start_stopped(&h.store, &active, h.meeting_id),
+            Ok(Stopped::Wait)
+        ));
+        hold(Work::Summary);
+        assert!(matches!(
+            start_stopped(&h.store, &active, h.meeting_id),
+            Ok(Stopped::Skip)
+        ));
+        *lock(&active) = None;
+        assert!(matches!(
+            start_stopped(&h.store, &active, h.meeting_id),
+            Ok(Stopped::Start(_))
+        ));
+        assert_eq!(lock(&active).as_ref().map(|r| r.work), Some(Work::Summary));
+    }
+
+    #[test]
+    fn reports_a_stopped_meeting_with_nothing_to_summarize() {
+        let h = harness(None, true);
+        let empty = h.store.create_meeting("Empty").unwrap().id;
+
+        h.worker.summarize_stopped(empty);
+
+        match next(&h.events) {
+            SummaryEvent::Failed {
+                meeting_id,
+                message,
+                cancelled,
+            } => {
+                assert_eq!(meeting_id, empty);
+                assert_eq!(message, WorkerError::NothingToSummarize.to_string());
+                assert!(!cancelled);
+            }
+            other => panic!("expected a failure, got {other:?}"),
+        }
+        assert_eq!(h.worker.active_summary(), None);
+    }
+
+    #[test]
+    fn skips_a_stopped_meeting_without_a_model() {
+        let h = harness(None, false);
+
+        h.worker.summarize_stopped(h.meeting_id);
+        drain(&h);
+
+        assert!(
+            h.events.try_recv().is_err(),
+            "the Summary tab offers to add a model instead"
+        );
+        assert_eq!(h.store.latest_summary(h.meeting_id).unwrap(), None);
+    }
+
+    #[test]
+    fn doesn_t_summarize_a_stopped_meeting_while_quitting() {
+        let (release, gate) = mpsc::channel();
+        let h = harness(Some(gate), true);
+        let other = second_meeting(&h.store);
+        h.worker.summarize(&h.store, h.meeting_id, true).unwrap();
+        while !matches!(next(&h.events), SummaryEvent::Text { .. }) {}
+        h.worker.summarize_stopped(other);
+        let cancelled = || {
+            lock(&h.worker.active)
+                .as_ref()
+                .is_some_and(|running| running.cancel.load(Ordering::Relaxed))
+        };
+
+        thread::scope(|scope| {
+            scope.spawn(|| h.worker.shutdown(Duration::from_secs(5)));
+            assert!(eventually(cancelled));
+            release.send(()).unwrap();
+        });
+
+        assert!(matches!(
+            next(&h.events),
+            SummaryEvent::Failed {
+                cancelled: true,
+                ..
+            }
+        ));
+        assert!(h.events.try_recv().is_err());
+        assert_eq!(h.store.latest_summary(other).unwrap(), None);
+        assert_eq!(count(&h.loads), 1);
     }
 
     #[test]

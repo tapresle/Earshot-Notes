@@ -57,6 +57,7 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     sensitivity: { me: "normal", them: "normal" } as Record<string, string>,
     keepAudio: false,
     recordNewMeetings: false,
+    summarizeOnStop: false,
     keepModelLoaded: "fiveMinutes" as string,
     launchAtLogin: { enabled: false, needsApproval: false, available: true },
     launchAtLoginError: null as unknown,
@@ -282,6 +283,10 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     record_new_meetings: () => state.recordNewMeetings,
     set_record_new_meetings: ({ enabled }) => {
       state.recordNewMeetings = Boolean(enabled);
+    },
+    summarize_on_stop: () => state.summarizeOnStop,
+    set_summarize_on_stop: ({ enabled }) => {
+      state.summarizeOnStop = Boolean(enabled);
     },
     keep_audio: () => state.keepAudio,
     set_keep_audio: ({ enabled }) => {
