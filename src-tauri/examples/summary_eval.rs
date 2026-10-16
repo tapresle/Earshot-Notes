@@ -51,6 +51,8 @@ const PROMPT_EXAMPLES: &[&str] = &[
     "export job",
     "empty folders",
     "lunar rover",
+    "Moon",
+    "dragon",
 ];
 
 #[derive(Deserialize)]
