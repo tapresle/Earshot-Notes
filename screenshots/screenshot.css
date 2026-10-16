@@ -1,0 +1,12 @@
+/* Applied only while Playwright takes the screenshots (stylePath in
+   playwright.config.ts), never in the app. Chromium draws a native select's
+   arrow differently on different macOS builds, by more than the check
+   tolerates, so the screenshots show selects as plain boxes without it. */
+select {
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 2px 8px;
+  background: var(--surface-2);
+  color: inherit;
+}
