@@ -1,0 +1,483 @@
+{
+  "about": "Synthetic team meeting for evaluating whether summaries reflect the whole meeting (#162). Every name, product, system, and number is invented. It has no title and no stated purpose. It plants, each in its own stretch: a side issue that opens the meeting (staging certificate, 0:00), a control specific in a topic that never comes back (Parley seats, 2:00 to 3:55), a topic visited twice with different specifics each time (Quarry imports, 5:00 and 14:30), small talk with a greeting to leave out and a personal detail for Personal notes (7:00), the main topic with the most discussion (Bramble, 8:30 to 12:25), an idea suggested and not agreed (a daily digest, 9:43), a ticket discussed by number (WEB-1194, 13:30), and a line in the notes the meeting never discusses (hiring plan). Each expect entry lists accepted spellings separated by |.",
+  "notes": "- staging cert\n- Parley renewal\n- Quarry import timeouts\n- Bramble rollout Monday\n- ask about hiring plan for Q1",
+  "segments": [
+    [
+      "me",
+      0,
+      "Hi everyone, happy Thursday. Before anything else, quick one."
+    ],
+    [
+      "me",
+      6000,
+      "The TLS certificate on the staging load balancer expires this Saturday. Who can renew it?"
+    ],
+    [
+      "them",
+      14000,
+      "Tomas here. I can do it. Is it still the wildcard certificate from the old vendor?"
+    ],
+    [
+      "me",
+      21000,
+      "Yes, same one. The renewal email went to the shared ops inbox."
+    ],
+    [
+      "them",
+      27000,
+      "Okay, I'll renew it this afternoon and swap it on staging before Friday evening."
+    ],
+    [
+      "me",
+      35000,
+      "Thanks. If it lapses, the mobile test builds stop connecting, so let's not cut it close."
+    ],
+    [
+      "me",
+      120000,
+      "Next, the Parley analytics licenses. The renewal invoice came in."
+    ],
+    [
+      "them",
+      127000,
+      "Ilse here. We're paying for thirty-five seats, and the invoice is six thousand three hundred dollars for the year."
+    ],
+    [
+      "them",
+      137000,
+      "But only twenty-two people logged in during the last ninety days."
+    ],
+    [
+      "me",
+      144000,
+      "So we could drop seats. What's the minimum they'll sell?"
+    ],
+    [
+      "them",
+      149000,
+      "Their minimum is twenty-five seats. At that size it comes to four thousand five hundred."
+    ],
+    [
+      "them",
+      158000,
+      "Tomas. Careful, the support team said they want three more seats in January for the new hires."
+    ],
+    [
+      "me",
+      166000,
+      "Then twenty-five leaves them no room. What about twenty-eight?"
+    ],
+    [
+      "them",
+      172000,
+      "Ilse. Twenty-eight is five thousand and forty. Still more than a thousand cheaper than now."
+    ],
+    [
+      "me",
+      181000,
+      "Let's go with twenty-eight seats. Ilse, can you tell their account manager before the renewal date?"
+    ],
+    [
+      "them",
+      189000,
+      "The renewal date is the third of November. I'll email them tomorrow."
+    ],
+    [
+      "them",
+      197000,
+      "One thing to know, unused seats don't roll over, so if we need more later we pay the full per-seat price mid-year."
+    ],
+    [
+      "me",
+      207000,
+      "That's fine. We can live with that risk for three people."
+    ],
+    [
+      "them",
+      215000,
+      "Also the Parley dashboards for the board deck need to move off the shared login before then, or they break when seats drop."
+    ],
+    [
+      "me",
+      226000,
+      "Good catch. Ilse, add that to the email to the account manager so they can move them."
+    ],
+    [
+      "them",
+      234000,
+      "Will do."
+    ],
+    [
+      "me",
+      300000,
+      "Okay, Quarry imports. Fen, you were looking at the timeouts?"
+    ],
+    [
+      "them",
+      306000,
+      "Fen here. Yes. Any import over fifty thousand rows times out. The job gives up after ninety seconds."
+    ],
+    [
+      "them",
+      315000,
+      "Smaller files are fine. A twenty thousand row file finishes in about forty seconds."
+    ],
+    [
+      "me",
+      323000,
+      "Is the ninety-second limit ours or the database's?"
+    ],
+    [
+      "them",
+      328000,
+      "Ours. It's the job runner's default, nobody ever changed it."
+    ],
+    [
+      "me",
+      334000,
+      "Could we just raise it?"
+    ],
+    [
+      "them",
+      337000,
+      "We could, but then a stuck import holds a worker for longer. I'd rather find out why it's slow first."
+    ],
+    [
+      "me",
+      346000,
+      "Fair. Keep digging and we'll come back to it at the end if you have more."
+    ],
+    [
+      "them",
+      352000,
+      "Sure, I'm running a test import right now."
+    ],
+    [
+      "them",
+      420000,
+      "Wren here, sorry I'm late. Hi all."
+    ],
+    [
+      "me",
+      424000,
+      "Hey Wren, no problem. How was the trip?"
+    ],
+    [
+      "them",
+      428000,
+      "Good, thanks. Oh, and heads up, I'm out from the twentieth of November for two weeks. My sister is getting married in Porto."
+    ],
+    [
+      "them",
+      438000,
+      "Ilse. Oh congratulations, that's lovely."
+    ],
+    [
+      "them",
+      442000,
+      "Wren. Thanks. I'll be fully offline, so whoever covers notifications will need the runbook."
+    ],
+    [
+      "me",
+      450000,
+      "Noted. Okay, we're all here, so let's get into it."
+    ],
+    [
+      "me",
+      510000,
+      "Bramble. Wren, where are we with the new notification service?"
+    ],
+    [
+      "them",
+      516000,
+      "Wren. The Bramble service is done and running in staging. The plan is to switch ten percent of users over on Monday."
+    ],
+    [
+      "them",
+      525000,
+      "In staging the push delivery rate is ninety-seven point two percent. The old system sits around ninety-one."
+    ],
+    [
+      "me",
+      534000,
+      "What's the other three percent?"
+    ],
+    [
+      "them",
+      538000,
+      "Mostly devices that haven't opened the app in months, so their push tokens are stale. Bramble drops a token after three failed sends."
+    ],
+    [
+      "them",
+      548000,
+      "Tomas. And the old system never dropped them, which is why its rate is worse."
+    ],
+    [
+      "me",
+      554000,
+      "How do we roll back if something goes wrong on Monday?"
+    ],
+    [
+      "them",
+      559000,
+      "Wren. There's a flag per user cohort. Setting it to zero sends everyone back to the old system within a minute. We tested that twice."
+    ],
+    [
+      "me",
+      569000,
+      "Good. What about email digests?"
+    ],
+    [
+      "them",
+      573000,
+      "Bramble batches the digest emails every hour. Each person gets at most one email per hour, with everything since the last one."
+    ],
+    [
+      "them",
+      583000,
+      "Tomas. Honestly, I'd send the digest once a day instead of hourly. Hourly still feels like a lot of email."
+    ],
+    [
+      "them",
+      591000,
+      "Wren. Maybe. But support said people complained that daily was too slow when they're waiting on a reply."
+    ],
+    [
+      "them",
+      599000,
+      "Wren. I'd want to check with support before changing it. Let's not decide that today."
+    ],
+    [
+      "me",
+      606000,
+      "Okay, so hourly for now, and the daily idea stays open until Wren hears from support."
+    ],
+    [
+      "them",
+      613000,
+      "Fen. What about quiet hours? Do people get pushes at night?"
+    ],
+    [
+      "them",
+      618000,
+      "Wren. Bramble respects the device's do not disturb, but it has no quiet hours of its own yet. That's an open question for product."
+    ],
+    [
+      "me",
+      628000,
+      "Which teams send the most notifications?"
+    ],
+    [
+      "them",
+      632000,
+      "Wren. Orders sends about sixty percent of all pushes, then chat with about twenty-five. Orders is in the first ten percent on Monday."
+    ],
+    [
+      "them",
+      642000,
+      "Ilse. Is there a risk around the Apple push certificate? Ours expires in January."
+    ],
+    [
+      "them",
+      649000,
+      "Wren. Bramble uses the token-based key instead of the certificate, so the January expiry doesn't affect it. The old system still needs it renewed though."
+    ],
+    [
+      "me",
+      660000,
+      "Then let's not renew it unless the rollout slips past January."
+    ],
+    [
+      "them",
+      665000,
+      "Tomas. If we don't renew it and Bramble has a problem in January, we can't roll back."
+    ],
+    [
+      "me",
+      672000,
+      "Fair point. Renew it anyway, it's cheap insurance."
+    ],
+    [
+      "them",
+      677000,
+      "Wren. Okay, I'll renew it next week."
+    ],
+    [
+      "me",
+      682000,
+      "What's the plan after the first ten percent?"
+    ],
+    [
+      "them",
+      686000,
+      "Wren. If the error rate stays under half a percent for a week, we go to fifty percent on the third of November, then everyone the week after."
+    ],
+    [
+      "them",
+      696000,
+      "Wren. If the error rate goes over half a percent, we roll back and look at it before trying again."
+    ],
+    [
+      "me",
+      704000,
+      "Who watches the dashboards on Monday?"
+    ],
+    [
+      "them",
+      708000,
+      "Fen. I'm on call Monday, so I'll watch them. I'll post the numbers in the rollout channel at noon and at five."
+    ],
+    [
+      "me",
+      717000,
+      "And the runbook for while Wren is away?"
+    ],
+    [
+      "them",
+      722000,
+      "Wren. I'll write it this week. It covers the cohort flag, the rollback, and where the delivery logs are."
+    ],
+    [
+      "me",
+      730000,
+      "Great. Anything else on Bramble?"
+    ],
+    [
+      "them",
+      734000,
+      "Wren. One more. The unsubscribe link in digest emails is broken in staging. It points at the old preferences page. I'll fix it before Monday."
+    ],
+    [
+      "me",
+      744000,
+      "Good, that one would have hurt."
+    ],
+    [
+      "me",
+      810000,
+      "Next, WEB-1194."
+    ],
+    [
+      "them",
+      814000,
+      "Ilse. That's the date picker bug. For users with a German locale, the calendar starts the week on Sunday instead of Monday."
+    ],
+    [
+      "them",
+      823000,
+      "Ilse. The fix reads the first day of the week from the locale instead of hard-coding it. It's in review."
+    ],
+    [
+      "me",
+      831000,
+      "Who's reviewing?"
+    ],
+    [
+      "them",
+      834000,
+      "Tomas. Me, I'll review it tomorrow morning."
+    ],
+    [
+      "me",
+      870000,
+      "Fen, back to Quarry. Did the test import finish?"
+    ],
+    [
+      "them",
+      875000,
+      "Fen. Yes, and I found it. The import writes rows in batches of five hundred, so a fifty thousand row file makes a hundred round trips to the database."
+    ],
+    [
+      "them",
+      886000,
+      "Fen. I raised the batch size to two thousand in the test, and the same file finished in thirty-one seconds instead of timing out."
+    ],
+    [
+      "me",
+      895000,
+      "So we don't need to touch the ninety-second limit at all."
+    ],
+    [
+      "them",
+      899000,
+      "Fen. Right, the limit stays at ninety. I'd rather not hide slow imports behind a longer timeout."
+    ],
+    [
+      "them",
+      906000,
+      "Tomas. Any memory concern with bigger batches?"
+    ],
+    [
+      "them",
+      910000,
+      "Fen. Memory went from about two hundred megabytes to three hundred during the import. That's well within the worker's limit."
+    ],
+    [
+      "me",
+      919000,
+      "Ship it then. Fen, can you open the change today?"
+    ],
+    [
+      "them",
+      923000,
+      "Fen. Yes, today, and I'll run it against the largest customer file in staging first."
+    ],
+    [
+      "me",
+      960000,
+      "Great, that's everything. Thanks all."
+    ],
+    [
+      "them",
+      964000,
+      "Thanks, bye."
+    ]
+  ],
+  "expect": [
+    "certificate|cert",
+    "Parley",
+    "6,300|6300|six thousand three hundred|6.3",
+    "28 seats|twenty-eight seats|28-seat",
+    "Quarry",
+    "50,000|50000|fifty thousand|50k",
+    "500|five hundred",
+    "2,000|2000|two thousand",
+    "31 seconds|31s|31 s|thirty-one seconds",
+    "Bramble",
+    "97.2",
+    "half a percent|0.5%|0.5 percent",
+    "WEB-1194",
+    "Porto",
+    "Tomas",
+    "Ilse",
+    "Wren",
+    "Fen"
+  ],
+  "forbid": [
+    "happy Thursday"
+  ],
+  "together": [
+    {
+      "expect": [
+        "50,000|50000|fifty thousand|50k",
+        "2,000|2000|two thousand",
+        "31 seconds|31s|31 s|thirty-one seconds"
+      ]
+    },
+    {
+      "heading": "WEB-1194",
+      "expect": [
+        "date picker|calendar"
+      ]
+    },
+    {
+      "heading": "Personal notes",
+      "expect": [
+        "Porto"
+      ]
+    }
+  ],
+  "title_words": [
+    "Bramble|notification"
+  ]
+}

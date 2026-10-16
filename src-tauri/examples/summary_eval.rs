@@ -20,6 +20,14 @@
 //! [`noisy`]) without touching the planted specifics. `--pad MINUTES` spreads
 //! the meeting across that many minutes of unrelated status updates (see
 //! [`padded`]), to test whether specifics survive a long meeting.
+//!
+//! Each meeting also reports the heading each specific landed under, and can
+//! require groups of specifics to share a heading (`together`, #162). A
+//! fixture without a `title` is untitled: it's summarized under the app's
+//! default title and then named with the app's title code, and the title is
+//! checked against `title_words`. The prompt's own examples are forbidden in
+//! every meeting that doesn't contain them, because finding one in the notes
+//! means the model copied it.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -28,20 +36,56 @@ use std::time::Instant;
 use earshot_lib::llm::generator::{GenerateError, Generator};
 use earshot_lib::llm::llama::{LlamaGenerator, MAX_CONTEXT, Sampling};
 use earshot_lib::llm::template::Message;
-use earshot_lib::store::{Source, TranscriptSegment};
+use earshot_lib::store::{DEFAULT_TITLE, Source, TranscriptSegment};
 use earshot_lib::summarize::prompt::{self, transcript_line};
 use earshot_lib::summarize::run::{Progress, Request, summarize};
+use earshot_lib::summarize::title::suggest_title;
 use serde::{Deserialize, Serialize};
+
+/// Examples the summary prompts give. Notes for a meeting that doesn't contain
+/// one have copied it from the prompt.
+const PROMPT_EXAMPLES: &[&str] = &[
+    "Dana",
+    "Lindgren",
+    "Lindgrin",
+    "export job",
+    "empty folders",
+];
 
 #[derive(Deserialize)]
 struct Meeting {
-    title: String,
+    /// Absent for an untitled meeting.
+    title: Option<String>,
     notes: String,
     segments: Vec<(Source, i64, String)>,
     /// Specifics that must survive; each lists accepted spellings separated by `|`.
     expect: Vec<String>,
     /// Text that must not appear, such as a value a speaker corrected.
     forbid: Vec<String>,
+    /// Groups of specifics that must each appear under one heading.
+    #[serde(default)]
+    together: Vec<Group>,
+    /// Words an untitled meeting's generated title must contain; each lists
+    /// accepted spellings separated by `|`.
+    #[serde(default)]
+    title_words: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct Group {
+    /// Text the heading must contain, with accepted spellings separated by
+    /// `|`. Any heading will do when it's absent.
+    heading: Option<String>,
+    expect: Vec<String>,
+}
+
+/// Where one specific appears in the notes.
+#[derive(Serialize)]
+struct Landing {
+    specific: String,
+    /// The nearest heading above each line it appears on, in order, without
+    /// repeats. Empty when it's missing; "" for lines before the first heading.
+    headings: Vec<String>,
 }
 
 struct Options {
@@ -86,6 +130,13 @@ struct Outcome {
     expected: usize,
     missing: Vec<String>,
     forbidden: Vec<String>,
+    landed: Vec<Landing>,
+    /// Groups from `together` that no single heading holds.
+    groups_apart: Vec<String>,
+    /// The title the app's title code gave an untitled meeting.
+    generated_title: Option<String>,
+    /// Entries of `title_words` the generated title lacks.
+    title_missing: Vec<String>,
     /// "Me" written as a name, as in "Me suggested", instead of "you" (#100).
     me_as_name: usize,
     /// "You (you)", which an earlier prompt produced (#70).
@@ -175,6 +226,37 @@ fn print_markdown(outcome: &Outcome) {
     if !outcome.forbidden.is_empty() {
         println!("forbidden text present: {}", outcome.forbidden.join(", "));
     }
+    if !outcome.groups_apart.is_empty() {
+        println!("not under one heading: {}", outcome.groups_apart.join("; "));
+    }
+    if let Some(title) = &outcome.generated_title {
+        print!("generated title: {title}");
+        if outcome.title_missing.is_empty() {
+            println!();
+        } else {
+            println!(" (lacks {})", outcome.title_missing.join(", "));
+        }
+    }
+    println!("\nWhere each specific landed:\n");
+    for landing in &outcome.landed {
+        let headings = if landing.headings.is_empty() {
+            "missing".to_owned()
+        } else {
+            landing
+                .headings
+                .iter()
+                .map(|h| {
+                    if h.is_empty() {
+                        "(before any heading)"
+                    } else {
+                        h
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("; ")
+        };
+        println!("- {}: {headings}", landing.specific);
+    }
     println!("\n```markdown\n{}\n```\n", outcome.notes.trim());
 }
 
@@ -219,9 +301,10 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
         .map(transcript_line)
         .collect::<Vec<_>>()
         .join("\n");
+    let title = meeting.title.as_deref().unwrap_or(DEFAULT_TITLE);
     let prompt_tokens = generator
         .prompt_tokens(&prompt::summary_messages(
-            &meeting.title,
+            title,
             &meeting.notes,
             terms,
             &transcript,
@@ -236,7 +319,7 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
         extract_then_write(generator, &meeting, &transcript, &cancel)
     } else {
         let request = Request {
-            title: &meeting.title,
+            title,
             notes_markdown: &meeting.notes,
             segments: &segments,
             terms,
@@ -282,11 +365,61 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
             .filter(|e| contains_any(&condensed, e))
             .count()
     });
-    let forbidden: Vec<String> = meeting.forbid.iter().filter(|f| has(f)).cloned().collect();
+    let mut forbidden: Vec<String> = meeting.forbid.iter().filter(|f| has(f)).cloned().collect();
+    let fixture_text = format!(
+        "{title}\n{}\n{}",
+        meeting.notes,
+        meeting
+            .segments
+            .iter()
+            .map(|(_, _, text)| text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    forbidden.extend(
+        PROMPT_EXAMPLES
+            .iter()
+            .filter(|e| !contains_any(&fixture_text, e) && has(e))
+            .map(|e| format!("{e} (a prompt example)")),
+    );
+    let landed = meeting
+        .expect
+        .iter()
+        .map(|specific| Landing {
+            specific: specific.clone(),
+            headings: landings(&notes, specific),
+        })
+        .collect();
+    let sections = sections(&notes);
+    let groups_apart = meeting
+        .together
+        .iter()
+        .filter(|group| !sections.iter().any(|section| section.holds(group)))
+        .map(|group| {
+            format!(
+                "{} under {}",
+                group.expect.join(", "),
+                group.heading.as_deref().unwrap_or("one heading")
+            )
+        })
+        .collect();
+    let generated_title = meeting.title.is_none().then(|| {
+        suggest_title(generator, &notes, &cancel)
+            .expect("titling failed")
+            .unwrap_or_default()
+    });
+    let title_missing = generated_title.as_ref().map_or_else(Vec::new, |generated| {
+        meeting
+            .title_words
+            .iter()
+            .filter(|w| !contains_any(generated, w))
+            .cloned()
+            .collect()
+    });
     Outcome {
         model: String::new(),
         fixture: path.file_name().unwrap().to_string_lossy().into_owned(),
-        title: meeting.title,
+        title: title.to_owned(),
         pad_minutes,
         noisy: noisy_transcript,
         load_seconds: 0.0,
@@ -302,6 +435,10 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
         expected: meeting.expect.len(),
         missing,
         forbidden,
+        landed,
+        groups_apart,
+        generated_title,
+        title_missing,
         me_as_name: me_as_name(&notes),
         doubled_you: notes.to_lowercase().matches("you (you)").count(),
         notes,
@@ -314,6 +451,67 @@ fn contains_any(text: &str, alternatives: &str) -> bool {
     alternatives
         .split('|')
         .any(|a| lower.contains(&a.to_lowercase()))
+}
+
+/// A Markdown heading's level and text, such as `(2, "Budget")` for `## Budget`.
+fn heading(line: &str) -> Option<(usize, &str)> {
+    let line = line.trim_start();
+    let level = line.chars().take_while(|c| *c == '#').count();
+    let text = line[level..].strip_prefix(' ')?;
+    (level > 0).then(|| (level, text.trim()))
+}
+
+/// The nearest heading above each line of `notes` that contains the specific,
+/// in order and without repeats.
+fn landings(notes: &str, specific: &str) -> Vec<String> {
+    let mut current = "";
+    let mut found: Vec<String> = Vec::new();
+    for line in notes.lines() {
+        if let Some((_, text)) = heading(line) {
+            current = text;
+        }
+        if contains_any(line, specific) && !found.iter().any(|h| h == current) {
+            found.push(current.to_owned());
+        }
+    }
+    found
+}
+
+/// One heading and everything under it, including its subheadings.
+struct Section {
+    heading: String,
+    text: String,
+}
+
+impl Section {
+    fn holds(&self, group: &Group) -> bool {
+        group
+            .heading
+            .as_deref()
+            .is_none_or(|h| contains_any(&self.heading, h))
+            && group.expect.iter().all(|e| contains_any(&self.text, e))
+    }
+}
+
+/// Each heading in `notes` with its text: the heading line and every line up
+/// to the next heading at the same or a higher level.
+fn sections(notes: &str) -> Vec<Section> {
+    let lines: Vec<&str> = notes.lines().collect();
+    lines
+        .iter()
+        .enumerate()
+        .filter_map(|(start, line)| {
+            let (level, text) = heading(line)?;
+            let end = lines[start + 1..]
+                .iter()
+                .position(|l| heading(l).is_some_and(|(other, _)| other <= level))
+                .map_or(lines.len(), |offset| start + 1 + offset);
+            Some(Section {
+                heading: text.to_owned(),
+                text: lines[start..end].join("\n"),
+            })
+        })
+        .collect()
 }
 
 /// Passes every call to the model through and keeps each reply, so the
@@ -385,7 +583,8 @@ fn extract_then_write(
     let facts = generator
         .generate(&extract, 2048, cancel, &mut |_| {})
         .expect("extraction failed");
-    let mut messages = prompt::summary_messages(&meeting.title, &meeting.notes, &[], transcript);
+    let title = meeting.title.as_deref().unwrap_or(DEFAULT_TITLE);
+    let mut messages = prompt::summary_messages(title, &meeting.notes, &[], transcript);
     messages[1].content.push_str(&format!(
         "\n\nFacts already extracted from the transcript. Make sure the notes keep each of them:\n<facts>\n{}\n</facts>",
         facts.trim()
@@ -621,4 +820,54 @@ fn noisy(clean: &[(Source, i64, String)]) -> Vec<(Source, i64, String)> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NOTES: &str = "Intro line about Harbor Street.\n\n## Office\n- Harbor Street, $48,000\n### Parking\n- twelve spaces\n## Next steps\n- Sign the Harbor Street lease";
+
+    #[test]
+    fn reports_the_nearest_heading_for_each_line() {
+        assert_eq!(
+            landings(NOTES, "Harbor Street"),
+            vec!["", "Office", "Next steps"]
+        );
+        assert_eq!(landings(NOTES, "twelve"), vec!["Parking"]);
+        assert!(landings(NOTES, "Elm Court").is_empty());
+    }
+
+    #[test]
+    fn a_section_includes_its_subheadings_and_stops_at_the_next_peer() {
+        let sections = sections(NOTES);
+        let office = sections.iter().find(|s| s.heading == "Office").unwrap();
+
+        assert!(office.text.contains("twelve spaces"));
+        assert!(!office.text.contains("lease"));
+    }
+
+    #[test]
+    fn checks_a_group_against_one_heading() {
+        let sections = sections(NOTES);
+        let holds = |heading: Option<&str>, expect: &[&str]| {
+            let group = Group {
+                heading: heading.map(str::to_owned),
+                expect: expect.iter().map(|e| (*e).to_owned()).collect(),
+            };
+            sections.iter().any(|s| s.holds(&group))
+        };
+
+        assert!(holds(None, &["48,000|48000", "twelve"]));
+        assert!(!holds(None, &["48,000", "lease"]));
+        assert!(holds(Some("Parking|Garage"), &["twelve"]));
+        assert!(!holds(Some("Next steps"), &["twelve"]));
+    }
+
+    #[test]
+    fn needs_a_space_after_the_hashes() {
+        assert_eq!(heading("## Budget"), Some((2, "Budget")));
+        assert_eq!(heading("#hashtag"), None);
+        assert_eq!(heading("plain"), None);
+    }
 }

@@ -1,6 +1,5 @@
 {
-  "about": "Synthetic planning meeting for evaluating summaries (#70). Every name, place, and number is invented. It plants: budget numbers, a self-corrected date, a decision with its reason, an open question, a rejected option, and tasks with owners and a conditional plan. Each expect entry lists accepted spellings separated by |.",
-  "title": "Office move planning",
+  "about": "Synthetic planning meeting for evaluating summaries (#70). Every name, place, and number is invented. It has no title, so it's named with the app's title code, and it states its purpose at the start. It plants: budget numbers, a self-corrected date, a decision with its reason, an open question, a rejected option, and tasks with owners and a conditional plan. Each expect entry lists accepted spellings separated by |.",
   "notes": "- budget\n- move date\n- Harbor Street vs Elm Court",
   "segments": [
     [
@@ -160,5 +159,8 @@
   ],
   "forbid": [
     "14th|fourteenth"
+  ],
+  "title_words": [
+    "office|move|Harbor Street|relocation"
   ]
 }
