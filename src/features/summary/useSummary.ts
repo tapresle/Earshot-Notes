@@ -21,8 +21,8 @@ export interface SummaryState {
 
 /**
  * The meeting's latest summary, the selected model, and any summary in progress.
- * `onStartedElsewhere` runs when a summary this view didn't start begins, such
- * as the one that starts when you stop recording.
+ * `onStartedElsewhere` runs when a summary this view didn't start begins or
+ * fails, such as the one that starts when you stop recording.
  */
 export function useSummary(meetingId: number, onStartedElsewhere: () => void): SummaryState {
   const [loading, setLoading] = useState(true);
@@ -31,9 +31,9 @@ export function useSummary(meetingId: number, onStartedElsewhere: () => void): S
   const [model, setModel] = useState<ModelRecord | null>(null);
   const [run, setRun] = useState<SummaryRun>({ kind: "idle" });
   const [attempt, setAttempt] = useState(0);
-  // Every run reports progress first, and Summarize marks its own run as
-  // running before then, so progress while idle means it started elsewhere.
-  const noticeStart = useEffectEvent(() => {
+  // Summarize marks its own run as running before the backend reports on it,
+  // so progress or a failure while idle comes from a run started elsewhere.
+  const noticeElsewhere = useEffectEvent(() => {
     if (run.kind !== "running") onStartedElsewhere();
   });
 
@@ -60,7 +60,7 @@ export function useSummary(meetingId: number, onStartedElsewhere: () => void): S
     const unlisteners: Promise<() => void>[] = [
       api.onSummaryProgress(({ meetingId: id, ...stage }) => {
         if (id !== meetingId) return;
-        noticeStart();
+        noticeElsewhere();
         setRun((current) => ({ kind: "running", stage, text: current.kind === "running" ? current.text : "" }));
       }),
       api.onSummaryText(({ meetingId: id, text }) => {
@@ -74,6 +74,7 @@ export function useSummary(meetingId: number, onStartedElsewhere: () => void): S
       }),
       api.onSummaryFailed(({ meetingId: id, message, cancelled }) => {
         if (id !== meetingId) return;
+        noticeElsewhere();
         setRun({ kind: "failed", message, cancelled });
       }),
     ];

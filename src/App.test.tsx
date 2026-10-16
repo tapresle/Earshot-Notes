@@ -1017,17 +1017,28 @@ describe("App", () => {
       expect(screen.getByText("Loading the model…")).toBeVisible();
     });
 
-    it("stays on your notes when another meeting's summary starts or there's nothing to summarize", async () => {
-      const backend = fakeBackend([seedMeeting(1, "Sync"), seedMeeting(2, "Other")]);
+    it("switches to the summary to explain there's nothing to summarize after the recording stops", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Empty")]);
       backend.state.model = testModel();
-      await openMeeting("Sync");
+      await openMeeting("Empty");
 
-      emit("summary:progress", { meetingId: 2, stage: "loading" });
       emit("summary:failed", {
         meetingId: 1,
         message: "there's nothing to summarize yet. Record the meeting or write some notes first",
         cancelled: false,
       });
+
+      expect(await screen.findByRole("tab", { name: "Summary", selected: true })).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent("Couldn't write the summary: there's nothing to summarize yet.");
+    });
+
+    it("stays on your notes when another meeting's summary starts or fails", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync"), seedMeeting(2, "Other")]);
+      backend.state.model = testModel();
+      await openMeeting("Sync");
+
+      emit("summary:progress", { meetingId: 2, stage: "loading" });
+      emit("summary:failed", { meetingId: 2, message: "the model couldn't load", cancelled: false });
 
       await waitFor(() => expect(screen.getByRole("button", { name: "Summarize" })).toBeEnabled());
       expect(screen.getByRole("tab", { name: "My notes", selected: true })).toBeInTheDocument();
