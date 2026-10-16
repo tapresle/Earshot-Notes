@@ -5,10 +5,10 @@ use std::sync::atomic::AtomicBool;
 use super::prompt::title_messages;
 use crate::llm::generator::{GenerateError, Generator};
 
-/// Room for the reply. A title of a few words needs far fewer.
-const MAX_TITLE_TOKENS: usize = 32;
+/// Room for the reply. A title of 15 words needs about half.
+const MAX_TITLE_TOKENS: usize = 48;
 /// Longest generated title kept, in characters.
-const MAX_TITLE_CHARS: usize = 80;
+const MAX_TITLE_CHARS: usize = 120;
 /// Quotes and Markdown emphasis that models wrap titles in.
 const WRAPPERS: &[char] = &[
     '"', '\'', '\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}', '*', '_', '`', '#',
@@ -146,6 +146,13 @@ mod tests {
             clean_title("\n\nBudget review\nThis meeting covered the budget.").as_deref(),
             Some("Budget review")
         );
+    }
+
+    #[test]
+    fn keeps_a_fifteen_word_title() {
+        let reply = "Quarterly planning for the partner portal launch, the pricing page refresh, and Q1 support staffing";
+
+        assert_eq!(clean_title(reply).as_deref(), Some(reply));
     }
 
     #[test]

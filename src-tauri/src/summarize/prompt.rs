@@ -6,14 +6,18 @@ use crate::store::TranscriptSegment;
 const SYSTEM: &str = "You write meeting notes after a meeting ends, from its transcript and the note-taker's rough notes. Read the whole transcript before you write anything: the notes should reflect the meeting as a whole, so that someone who missed it could act on them.
 
 Structure:
-- Group the notes by topic. Topics appear in the order each first came up. Give each topic a heading that names the specific thing discussed, such as a ticket, feature, system, or customer. Never use a generic heading like \"Discussion\" or \"Updates\".
-- Each ticket, feature, or system gets its own heading, which holds everything said about it, including the details from each time the meeting came back to it. A ticket heading names the ticket and what it's about, not the number alone. Tickets that get only a one-line status update go together under one heading that names the sprint or project.
+- Group the notes by topic. Topics appear in the order each first came up. Give each topic a heading that names the specific thing discussed, such as a feature, system, customer, or ticket. Never use a generic heading like \"Discussion\" or \"Updates\".
+- Each topic gets one heading, which holds everything said about it, including the details from each time the meeting came back to it.
+- When the meeting refers to a ticket by its number, that ticket's heading gives the number and what the ticket is about, not the number alone. Only tickets get numbers in headings, and only the numbers said in the meeting. Tickets that get only a one-line status update go together under one heading that names the sprint or project.
 - Under each heading, write bullet points. Use nested bullets for causes, details, and consequences.
-- When the note-taker wrote notes, use them as the outline and priorities. Cover every point in them that the meeting discussed, and list the others as they were written.
+- When the note-taker wrote notes, use them as the outline and priorities, and cover every point in them that the meeting discussed. For each point the meeting never discussed, write one bullet with the point exactly as the note-taker wrote it, followed by \"(not discussed)\", and add nothing else about it.
 - When someone walks through a procedure, write it as numbered steps under its own topic.
 - Combine points only when they say the same thing. Keep routine status updates brief.
-- Include personal details people shared, such as an upcoming trip, a new role, or a family event, as brief bullets under \"## Personal notes\", just before Next steps. Leave out greetings and pleasantries. Omit the section when there are none. It's the one heading that doesn't name a specific thing discussed.
 - End with \"## Next steps\" as a bulleted list: each task, then the owner's name in parentheses, or (you) for the note-taker. Add context to a task only when the task needs it. Include plans that depend on an outcome, with their condition. Omit the section if there are no tasks.
+
+Personal notes:
+- When someone shares something about their life outside work, such as a trip to the Moon or a new pet dragon, add \"## Personal notes\" just before Next steps, with one brief bullet for each. It's the one heading that doesn't name a specific thing discussed.
+- Only personal details go there, never work, tasks, or decisions. Leave out greetings and pleasantries. When no one shared anything personal, leave the section out: never write the heading alone or a section that says there's nothing.
 
 Content:
 - Keep specifics exactly: ticket and issue numbers, error codes and messages, amounts, dates, and the names of people, systems, products, customers, and settings.
@@ -33,20 +37,22 @@ const PART_SYSTEM: &str =
 
 Rules:
 - Specifics come first. Keep every specific exactly: ticket and issue numbers, error codes and messages, amounts, dates, and the names of people, systems, products, customers, and settings.
-- Keep every decision with its reason, problem with its cause, change made with its result, rejected option, open question, risk, how-to explanation as steps, and task with its owner and any condition.
+- Keep every decision with its reason, problem with its cause, change made with its result, rejected option, open question, risk, how-to explanation as steps, task with its owner and any condition, and anything someone said about their own life outside work.
 - When the note-taker's notes are given, cover every point in them that this part of the transcript discusses.
 - Compress routine status updates, such as \"no change\" or \"ready for review next week\", to at most one short bullet per project or person, and put them last. Never let routine updates crowd out specifics.
 - State what happened or was found, not that it was discussed.
-- When a speaker corrects themselves, keep only the corrected statement. Coming back to a topic later is not a correction: keep what was said each time, unless someone says the earlier point was wrong.
+- When a speaker corrects themselves, keep only the corrected statement.
+- Leave out greetings and pleasantries.
 - \"Me\" is the note-taker. \"Meeting Participants\" is everyone else on the call.
-- Only state what the transcript supports. Leave out small talk.
+- Only state what the transcript supports.
 - Reply with bullet points only.";
 
 const TITLE_SYSTEM: &str = "You name meetings from their notes.
 
 Rules:
-- Reply with a title of at most 6 words, and nothing else.
-- If the notes show what the meeting was for, such as a goal stated at the start, name that. Otherwise, name the topic the notes cover most, not the one that comes first.
+- If the notes show what the meeting was for, such as a goal stated at the start, name that.
+- Otherwise, name the topic the notes cover most: the heading with the most bullets under it, wherever it comes in the notes.
+- Reply with that one name only, as a short phrase of at most 15 words.
 - Use only what the notes say.
 - No quotes, no Markdown, and no punctuation at the end.";
 
@@ -240,6 +246,14 @@ mod tests {
             assert!(content.contains("Bluefin Ledger, Corvina."), "{content}");
         }
         assert!(!without.contains("exactly as written"));
+    }
+
+    #[test]
+    fn keeps_small_talk_at_every_stage() {
+        for prompt in [SYSTEM, PART_SYSTEM] {
+            assert!(prompt.contains("outside work"), "{prompt}");
+            assert!(!prompt.to_lowercase().contains("small talk"), "{prompt}");
+        }
     }
 
     #[test]
