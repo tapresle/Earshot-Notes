@@ -120,7 +120,7 @@ function LoadedMeeting({
       <header className="meeting-header">
         <TitleField meeting={meeting} onRenamed={onRenamed} />
         <ExportMeetingButton meetingId={meeting.id} />
-        <button type="button" className="button subtle" onClick={() => onDelete(meeting.id, meeting.title)}>
+        <button type="button" className="button subtle danger" onClick={() => onDelete(meeting.id, meeting.title)}>
           Delete
         </button>
       </header>

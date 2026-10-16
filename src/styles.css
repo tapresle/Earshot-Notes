@@ -226,6 +226,11 @@ body {
   color: var(--text-muted);
 }
 
+/* Red text without the border, for a delete that sits among subtle buttons. */
+.button.subtle.danger {
+  border-color: transparent;
+}
+
 .full-width {
   width: 100%;
 }
