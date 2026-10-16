@@ -132,6 +132,8 @@ struct Outcome {
     missing: Vec<String>,
     forbidden: Vec<String>,
     landed: Vec<Landing>,
+    /// Ticket numbers in the notes that the meeting never mentions.
+    invented_tickets: Vec<String>,
     /// Groups from `together` that no single heading holds.
     groups_apart: Vec<String>,
     /// The title the app's title code gave an untitled meeting.
@@ -226,6 +228,9 @@ fn print_markdown(outcome: &Outcome) {
     }
     if !outcome.forbidden.is_empty() {
         println!("forbidden text present: {}", outcome.forbidden.join(", "));
+    }
+    if !outcome.invented_tickets.is_empty() {
+        println!("invented tickets: {}", outcome.invented_tickets.join(", "));
     }
     if !outcome.groups_apart.is_empty() {
         println!("not under one heading: {}", outcome.groups_apart.join("; "));
@@ -383,6 +388,10 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
             .filter(|e| !contains_any(&fixture_text, e) && has(e))
             .map(|e| format!("{e} (a prompt example)")),
     );
+    let invented_tickets = tickets(&notes)
+        .into_iter()
+        .filter(|t| !tickets(&fixture_text).contains(t))
+        .collect();
     let landed = meeting
         .expect
         .iter()
@@ -437,6 +446,7 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
         missing,
         forbidden,
         landed,
+        invented_tickets,
         groups_apart,
         generated_title,
         title_missing,
@@ -452,6 +462,27 @@ fn contains_any(text: &str, alternatives: &str) -> bool {
     alternatives
         .split('|')
         .any(|a| lower.contains(&a.to_lowercase()))
+}
+
+/// Ticket numbers such as `SUP-4821` in `text`, in order and without repeats.
+fn tickets(text: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for word in text.split(|c: char| !c.is_ascii_alphanumeric() && c != '-') {
+        let Some((key, number)) = word.split_once('-') else {
+            continue;
+        };
+        let is_ticket = key.len() >= 2
+            && key.starts_with(|c: char| c.is_ascii_uppercase())
+            && key
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+            && !number.is_empty()
+            && number.chars().all(|c| c.is_ascii_digit());
+        if is_ticket && !found.iter().any(|t| t == word) {
+            found.push(word.to_owned());
+        }
+    }
+    found
 }
 
 /// A Markdown heading's level and text, such as `(2, "Budget")` for `## Budget`.
@@ -863,6 +894,15 @@ mod tests {
         assert!(!holds(None, &["48,000", "lease"]));
         assert!(holds(Some("Parking|Garage"), &["twelve"]));
         assert!(!holds(Some("Next steps"), &["twelve"]));
+    }
+
+    #[test]
+    fn finds_ticket_numbers() {
+        assert_eq!(
+            tickets("## WEB-1200: Parley\n- SUP-4821 and SUP-4821, not COVID-19 or x-1"),
+            vec!["WEB-1200", "SUP-4821", "COVID-19"]
+        );
+        assert!(tickets("a 2-step fix, re-run, A-1").is_empty());
     }
 
     #[test]

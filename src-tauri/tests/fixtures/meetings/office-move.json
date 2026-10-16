@@ -158,7 +158,8 @@
     "Wednesday"
   ],
   "forbid": [
-    "14th|fourteenth"
+    "14th|fourteenth",
+    "Personal notes"
   ],
   "title_words": [
     "office|move|Harbor Street|relocation"
