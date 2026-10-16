@@ -1005,6 +1005,34 @@ describe("App", () => {
       expect(await screen.findByText("Summary of the whole meeting")).toBeInTheDocument();
     });
 
+    it("switches to the summary when one starts after the recording stops", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.model = testModel();
+      const user = await openMeeting("Sync");
+      await user.click(screen.getByRole("tab", { name: "Chat" }));
+
+      emit("summary:progress", { meetingId: 1, stage: "loading" });
+
+      expect(await screen.findByRole("tab", { name: "Summary", selected: true })).toBeInTheDocument();
+      expect(screen.getByText("Loading the model…")).toBeVisible();
+    });
+
+    it("stays on your notes when another meeting's summary starts or there's nothing to summarize", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync"), seedMeeting(2, "Other")]);
+      backend.state.model = testModel();
+      await openMeeting("Sync");
+
+      emit("summary:progress", { meetingId: 2, stage: "loading" });
+      emit("summary:failed", {
+        meetingId: 1,
+        message: "there's nothing to summarize yet. Record the meeting or write some notes first",
+        cancelled: false,
+      });
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Summarize" })).toBeEnabled());
+      expect(screen.getByRole("tab", { name: "My notes", selected: true })).toBeInTheDocument();
+    });
+
     it("explains why a summary started when the recording stopped failed", async () => {
       const backend = fakeBackend([seedMeeting(1, "Empty")]);
       backend.state.model = testModel();
