@@ -72,6 +72,81 @@ describe("App", () => {
     expect(within(sidebar()).getByRole("button", { name: /Untitled meeting/, current: "page" })).toBeInTheDocument();
   });
 
+  describe("recording new meetings", () => {
+    it("doesn't start recording a new meeting when the setting is off", async () => {
+      const backend = fakeBackend();
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(await screen.findByRole("button", { name: "New meeting" }));
+
+      expect(await screen.findByRole("button", { name: "Start recording" })).toBeInTheDocument();
+      expect(backend.state.recording).toBeNull();
+    });
+
+    it("creates, opens, and records a new meeting when the setting is on", async () => {
+      const backend = fakeBackend();
+      backend.state.recordNewMeetings = true;
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(await screen.findByRole("button", { name: "New meeting" }));
+
+      expect(await screen.findByRole("button", { name: "Stop recording" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Meeting title")).toHaveValue("Untitled meeting");
+      const item = within(sidebar()).getByRole("button", { name: /Untitled meeting/, current: "page" });
+      expect(item).toHaveTextContent("Recording");
+      expect(backend.state.recording).not.toBeNull();
+    });
+
+    it("starts only once, not each time you reopen the meeting", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Design sync")]);
+      backend.state.recordNewMeetings = true;
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await screen.findByRole("button", { name: "New meeting" }));
+      await user.click(await screen.findByRole("button", { name: "Stop recording" }));
+      await screen.findByRole("button", { name: "Start recording" });
+
+      await user.click(within(sidebar()).getByRole("button", { name: /Design sync/ }));
+      await user.click(within(sidebar()).getByRole("button", { name: /Untitled meeting/ }));
+
+      expect(await screen.findByRole("button", { name: "Start recording" })).toBeInTheDocument();
+      expect(backend.state.recording).toBeNull();
+    });
+
+    it("keeps the new meeting open and explains why recording couldn't start", async () => {
+      const backend = fakeBackend();
+      backend.state.recordNewMeetings = true;
+      backend.state.startError = { kind: "unavailable", message: "microphone access is off" };
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(await screen.findByRole("button", { name: "New meeting" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Microphone access is off.");
+      expect(screen.getByLabelText("Meeting title")).toHaveValue("Untitled meeting");
+      expect(screen.getByRole("button", { name: "Start recording" })).toBeInTheDocument();
+    });
+
+    it("leaves another meeting's recording running", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Design sync")]);
+      backend.state.recordNewMeetings = true;
+      backend.state.recording = 1;
+      const user = userEvent.setup();
+      render(<App />);
+      const recording = await within(sidebar()).findByRole("button", { name: /Design sync/ });
+      await waitFor(() => expect(recording).toHaveTextContent("Recording"));
+
+      await user.click(screen.getByRole("button", { name: "New meeting" }));
+
+      expect(await screen.findByLabelText("Meeting title")).toHaveValue("Untitled meeting");
+      expect(screen.getByRole("button", { name: "Start recording" })).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(backend.state.recording).toBe(1);
+    });
+  });
+
   it("opens a meeting with its saved notes", async () => {
     fakeBackend([seedMeeting(1, "Design sync", "- ship dark mode")]);
     const user = userEvent.setup();
@@ -1382,6 +1457,21 @@ describe("App", () => {
       expect(backend.state.sensitivity).toEqual({ me: "high", them: "low" });
       expect(myVoice).toHaveValue("high");
       expect(participants).toHaveValue("low");
+    });
+
+    it("turns recording new meetings on and off", async () => {
+      const backend = fakeBackend();
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+      const record = await screen.findByRole("checkbox", { name: "Start recording when I create a new meeting" });
+
+      expect(record).not.toBeChecked();
+      await user.click(record);
+      await waitFor(() => expect(backend.state.recordNewMeetings).toBe(true));
+      expect(record).toBeChecked();
+      await user.click(record);
+      await waitFor(() => expect(backend.state.recordNewMeetings).toBe(false));
     });
 
     describe("audio recordings", () => {

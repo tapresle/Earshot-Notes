@@ -173,6 +173,8 @@ pub fn run() {
             commands::settings::remove_model,
             commands::settings::keep_model_loaded,
             commands::settings::set_keep_model_loaded,
+            commands::settings::record_new_meetings,
+            commands::settings::set_record_new_meetings,
             commands::models::open_model_page,
             commands::setup::mic_permission,
             commands::setup::request_mic_permission,

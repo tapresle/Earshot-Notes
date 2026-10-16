@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { api, errorMessage, type Source, type SourceProblem } from "../../lib/api";
 import { CONSENT_NOTICE } from "./consent";
 
@@ -7,6 +7,10 @@ interface RecordingControlsProps {
   /** The meeting currently recording, if any. */
   recordingMeetingId: number | null;
   onRecordingChange: (meetingId: number | null) => void;
+  /** Start recording once, as soon as the meeting opens, unless another meeting is recording. */
+  autoStart?: boolean;
+  /** Called when the automatic start is attempted, so it happens only once. */
+  onAutoStart?: () => void;
 }
 
 const sourceName: Record<Source, string> = {
@@ -18,7 +22,13 @@ function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-export function RecordingControls({ meetingId, recordingMeetingId, onRecordingChange }: RecordingControlsProps) {
+export function RecordingControls({
+  meetingId,
+  recordingMeetingId,
+  onRecordingChange,
+  autoStart = false,
+  onAutoStart,
+}: RecordingControlsProps) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [problems, setProblems] = useState<SourceProblem[]>([]);
@@ -39,6 +49,19 @@ export function RecordingControls({ meetingId, recordingMeetingId, onRecordingCh
       unlisten?.();
     };
   }, [meetingId]);
+
+  // Starts like clicking Start recording, so it shows the same progress and errors.
+  // The ref keeps React's development double run of effects from starting twice.
+  const autoStarted = useRef(false);
+  const startAutomatically = useEffectEvent(() => {
+    if (autoStarted.current) return;
+    autoStarted.current = true;
+    onAutoStart?.();
+    if (recordingMeetingId === null) void toggle();
+  });
+  useEffect(() => {
+    if (autoStart) startAutomatically();
+  }, [autoStart]);
 
   async function toggle() {
     setPending(true);

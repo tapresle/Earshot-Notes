@@ -6,8 +6,11 @@ use super::{Source, Store, StoreError};
 pub const INPUT_DEVICE: &str = "input_device_id";
 /// Whether recordings keep their audio; "on" keeps it, absent means off.
 pub const KEEP_AUDIO: &str = "keep_audio_recordings";
-/// The stored value of `KEEP_AUDIO` when it's on.
+/// The stored value of `KEEP_AUDIO` and `RECORD_NEW_MEETINGS` when they're on.
 pub const ON: &str = "on";
+/// Whether **New meeting** in the window also starts recording; "on" starts
+/// it, absent means off.
+pub const RECORD_NEW_MEETINGS: &str = "record_new_meetings";
 /// How readily quiet microphone audio counts as speech; absent means normal.
 pub const MIC_SENSITIVITY: &str = "mic_speech_sensitivity";
 /// How readily quiet system audio counts as speech; absent means normal.

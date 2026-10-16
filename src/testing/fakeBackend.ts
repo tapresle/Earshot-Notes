@@ -56,6 +56,7 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     inputDevice: null as string | null,
     sensitivity: { me: "normal", them: "normal" } as Record<string, string>,
     keepAudio: false,
+    recordNewMeetings: false,
     keepModelLoaded: "fiveMinutes" as string,
     launchAtLogin: { enabled: false, needsApproval: false, available: true },
     launchAtLoginError: null as unknown,
@@ -277,6 +278,10 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
       if (state.launchAtLoginError) throw state.launchAtLoginError;
       state.launchAtLogin = { ...state.launchAtLogin, enabled: Boolean(enabled) };
       return { ...state.launchAtLogin };
+    },
+    record_new_meetings: () => state.recordNewMeetings,
+    set_record_new_meetings: ({ enabled }) => {
+      state.recordNewMeetings = Boolean(enabled);
     },
     keep_audio: () => state.keepAudio,
     set_keep_audio: ({ enabled }) => {

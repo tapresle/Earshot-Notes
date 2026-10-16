@@ -38,6 +38,7 @@ export function SettingsView({ recording, onShowSetup }: { recording: boolean; o
     <article className="settings">
       <h1>Settings</h1>
       <StartupSection />
+      <RecordingSection />
       <MicrophoneSection />
       <SpeechDetectionSection />
       <TranscriptionSection recording={recording} />
@@ -109,6 +110,48 @@ function StartupSection() {
           Allow Earshot Notes in System Settings &gt; General &gt; Login Items to finish turning this on.
         </p>
       )}
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function RecordingSection() {
+  const [record, setRecord] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .recordNewMeetings()
+      .then(setRecord)
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
+
+  async function toggle(enabled: boolean) {
+    setError(null);
+    try {
+      await api.setRecordNewMeetings(enabled);
+      setRecord(enabled);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  return (
+    <section className="settings-section" aria-labelledby="recording-heading">
+      <h2 id="recording-heading">Recording</h2>
+      {record !== null && (
+        <label className="settings-row">
+          <input type="checkbox" checked={record} onChange={(e) => void toggle(e.target.checked)} />
+          Start recording when I create a new meeting
+        </label>
+      )}
+      <p className="settings-help">
+        Saves a click at the start of a call. If another meeting is already recording, it keeps recording instead.
+      </p>
       {error && (
         <p className="field-error" role="alert">
           {error}

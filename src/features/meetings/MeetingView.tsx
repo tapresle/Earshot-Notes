@@ -12,6 +12,9 @@ interface MeetingViewProps {
   meetingId: number;
   recordingMeetingId: number | null;
   onRecordingChange: (meetingId: number | null) => void;
+  /** Start recording as soon as the meeting opens (see `RecordingControls`). */
+  autoStartRecording?: boolean;
+  onAutoStartRecording?: () => void;
   onRenamed: (id: number, title: string) => void;
   onDeleted: (id: number) => void;
 }
@@ -22,6 +25,8 @@ export function MeetingView({
   meetingId,
   recordingMeetingId,
   onRecordingChange,
+  autoStartRecording,
+  onAutoStartRecording,
   onRenamed,
   onDeleted,
 }: MeetingViewProps) {
@@ -65,6 +70,8 @@ export function MeetingView({
       meeting={state.meeting}
       recordingMeetingId={recordingMeetingId}
       onRecordingChange={onRecordingChange}
+      autoStartRecording={autoStartRecording}
+      onAutoStartRecording={onAutoStartRecording}
       onRenamed={onRenamed}
       onDeleted={onDeleted}
     />
@@ -77,6 +84,8 @@ function LoadedMeeting({
   meeting,
   recordingMeetingId,
   onRecordingChange,
+  autoStartRecording,
+  onAutoStartRecording,
   onRenamed,
   onDeleted,
 }: Omit<MeetingViewProps, "meetingId"> & { meeting: MeetingDetail }) {
@@ -144,6 +153,8 @@ function LoadedMeeting({
           meetingId={meeting.id}
           recordingMeetingId={recordingMeetingId}
           onRecordingChange={onRecordingChange}
+          autoStart={autoStartRecording}
+          onAutoStart={onAutoStartRecording}
         />
         <SummarizeButton
           state={summary}
