@@ -72,6 +72,72 @@ describe("App", () => {
     expect(within(sidebar()).getByRole("button", { name: /Untitled meeting/, current: "page" })).toBeInTheDocument();
   });
 
+  describe("transcript pane", () => {
+    const transcriptPane = () => screen.queryByRole("complementary", { name: "Transcript" });
+
+    async function openSettingsFrom(title: string) {
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: new RegExp(title) }));
+      await screen.findByLabelText("Meeting title");
+      expect(transcriptPane()).toBeInTheDocument();
+      await user.click(within(sidebar()).getByRole("button", { name: "Settings" }));
+      await screen.findByRole("heading", { level: 1, name: "Settings" });
+      return user;
+    }
+
+    it("hides while Settings is open and returns with the meeting you click", async () => {
+      fakeBackend([seedMeeting(1, "Design sync"), seedMeeting(2, "Retro")], [segment(1, 1, "me", 0, "Ship it.")]);
+      const user = await openSettingsFrom("Design sync");
+
+      expect(transcriptPane()).not.toBeInTheDocument();
+
+      await user.click(within(sidebar()).getByRole("button", { name: /Design sync/ }));
+      expect(await within(transcriptPane()!).findByText("Ship it.")).toBeInTheDocument();
+    });
+
+    it("returns for another meeting you click", async () => {
+      fakeBackend([seedMeeting(1, "Design sync"), seedMeeting(2, "Retro")], [segment(2, 2, "them", 0, "Fix the build.")]);
+      const user = await openSettingsFrom("Design sync");
+
+      await user.click(within(sidebar()).getByRole("button", { name: /Retro/ }));
+
+      expect(await within(transcriptPane()!).findByText("Fix the build.")).toBeInTheDocument();
+    });
+
+    it("returns with a new meeting", async () => {
+      fakeBackend([seedMeeting(1, "Design sync")]);
+      const user = await openSettingsFrom("Design sync");
+
+      await user.click(screen.getByRole("button", { name: "New meeting" }));
+
+      expect(await screen.findByLabelText("Meeting title")).toHaveValue("Untitled meeting");
+      expect(transcriptPane()).toBeInTheDocument();
+    });
+
+    it("returns when a recording started from the menu bar opens its meeting", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Design sync")]);
+      await openSettingsFrom("Design sync");
+      const meeting = (await backend.handle("create_meeting", {})) as MeetingDetail;
+      backend.state.recording = meeting.id;
+
+      emit("recording:changed", { meetingId: meeting.id });
+
+      expect(await screen.findByLabelText("Meeting title")).toHaveValue("Untitled meeting");
+      expect(transcriptPane()).toBeInTheDocument();
+    });
+
+    it("hides while the setup checklist is open", async () => {
+      fakeBackend([seedMeeting(1, "Design sync")]);
+      const user = await openSettingsFrom("Design sync");
+
+      await user.click(screen.getByRole("button", { name: "Show the setup checklist again" }));
+
+      expect(await screen.findByRole("heading", { level: 1, name: "Get set up" })).toBeInTheDocument();
+      expect(transcriptPane()).not.toBeInTheDocument();
+    });
+  });
+
   describe("recording new meetings", () => {
     it("doesn't start recording a new meeting when the setting is off", async () => {
       const backend = fakeBackend();

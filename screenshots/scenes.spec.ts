@@ -84,6 +84,21 @@ test("settings scroll inside their pane, not the window", async ({ page }) => {
   expect(size.height).toBeLessThanOrEqual(size.window);
 });
 
+test("settings fill the window beside the meeting list as it resizes", async ({ page }) => {
+  await open(page, "settings");
+  await sidebar(page).getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Transcript" })).toHaveCount(0);
+
+  for (const width of [1200, 900]) {
+    await page.setViewportSize({ width, height: 780 });
+    const sidebarBox = await page.locator(".sidebar").boundingBox();
+    const workspace = await page.locator(".workspace").boundingBox();
+    expect(workspace!.x).toBe(sidebarBox!.x + sidebarBox!.width);
+    expect(workspace!.x + workspace!.width).toBe(width);
+  }
+});
+
 test("the meeting list scrolls while New meeting, search, and Settings stay put", async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 420 });
   await open(page, "meeting");

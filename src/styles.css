@@ -59,6 +59,11 @@ body {
   height: 100vh;
 }
 
+/* Without the transcript pane, the workspace takes its column too. */
+.app-shell.is-wide {
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+
 /* Each pane scrolls on its own. Positioning them makes each one the
    containing block for absolutely positioned content inside it, such as
    .sr-only inputs; otherwise that content escapes the pane and makes the
