@@ -8,7 +8,7 @@ The window is a React 19 app in TypeScript, built by Vite and run in the system 
 
 ```mermaid
 flowchart LR
-    subgraph shell["App.tsx: three columns"]
+    subgraph shell["App.tsx: three columns, two for Settings and setup"]
         direction LR
         subgraph left["Sidebar"]
             list["MeetingList<br/>grouped by day,<br/>multi-select like Finder"]
@@ -22,7 +22,7 @@ flowchart LR
             settings["SettingsView"]
             setup["SetupChecklist"]
         end
-        transcript["TranscriptPanel<br/>live while recording"]
+        transcript["TranscriptPanel<br/>live while recording,<br/>shown only beside a meeting"]
     end
 
     subgraph mv["MeetingView"]

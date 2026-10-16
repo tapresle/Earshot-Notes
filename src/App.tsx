@@ -113,7 +113,8 @@ export default function App() {
   const meetings = list.kind === "ready" ? list.meetings : [];
 
   return (
-    <div className="app-shell">
+    // Settings and setup have no transcript beside them, so they take its width too.
+    <div className={view === "meetings" ? "app-shell" : "app-shell is-wide"}>
       <MeetingList
         meetings={meetings}
         selectedId={selectedId}
@@ -217,7 +218,9 @@ export default function App() {
           ))}
       </main>
 
-      <TranscriptPanel meetingId={selectedId} recording={selectedId !== null && selectedId === recordingMeetingId} />
+      {view === "meetings" && (
+        <TranscriptPanel meetingId={selectedId} recording={selectedId !== null && selectedId === recordingMeetingId} />
+      )}
     </div>
   );
 }
