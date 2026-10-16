@@ -382,7 +382,6 @@ body {
 .context-menu {
   position: fixed;
   z-index: 10;
-  min-width: 180px;
   margin: 0;
   padding: 4px;
   list-style: none;
@@ -395,6 +394,7 @@ body {
 .context-menu-item {
   display: block;
   width: 100%;
+  white-space: nowrap;
   padding: 6px 10px;
   border: 0;
   border-radius: 5px;
