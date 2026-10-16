@@ -15,11 +15,15 @@ export default defineConfig({
     toHaveScreenshot: {
       // Macs on different macOS versions draw text edges slightly differently
       // (measured: up to 9 pixels per image between macOS 27 and CI's macOS 26
-      // at this threshold). A two-letter label change differs by 18 or more,
-      // and layout or clearly visible color changes by thousands. Changes
-      // smaller than that, such as a subtle shade of a color, can pass.
+      // at this threshold; CI now checks on macOS 27). A two-letter label
+      // change differs by 18 or more, and layout or clearly visible color
+      // changes by thousands. Changes smaller than that, such as a subtle shade
+      // of a color, can pass.
       threshold: 0.3,
       maxDiffPixels: 12,
+      // Native select arrows differ between macOS builds by about 34 pixels
+      // each, so the screenshots draw selects without them.
+      stylePath: "screenshots/screenshot.css",
     },
   },
   use: {

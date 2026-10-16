@@ -51,6 +51,7 @@ stateDiagram-v2
 - **The page stays loaded while hidden**, so it keeps receiving events and reopens where it was.
 - **The Dock icon** is shown and hidden only through `macos_audio::show_dock_icon` and `hide_dock_icon`, on the main thread. Tauri's activation policy redraws the whole menu bar.
 - **Recording from the menu bar:** the toggle runs on the blocking pool. Starting creates an untitled meeting and records it, deleting the meeting again if recording can't start. Starting and stopping use the same `commands::recording::start` and `stop` as the window, which emit `recording:changed` and update the menu's status and icon. The window then opens the new meeting.
+- **Recording a new meeting from the window:** with **Start recording when I create a new meeting** on (`record_new_meetings` in `settings`), **New meeting** opens the meeting and its `RecordingControls` starts recording once, as if you clicked **Start recording**, so progress and errors look the same. Unlike the menu bar, the window keeps the meeting when recording can't start, and starts nothing while another meeting is recording.
 
 ## Quitting
 

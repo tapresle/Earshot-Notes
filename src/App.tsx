@@ -26,6 +26,8 @@ export default function App() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [recordingMeetingId, setRecordingMeetingId] = useState<number | null>(null);
+  // A meeting just created with the "Start recording when I create a new meeting" setting on.
+  const [recordOnOpen, setRecordOnOpen] = useState<number | null>(null);
   const [selection, setSelection] = useState<Selection>({ ids: [], anchor: null });
   const [view, setView] = useState<View>("meetings");
   const renameInList = useCallback(
@@ -85,8 +87,17 @@ export default function App() {
     setCreating(true);
     setCreateError(null);
     try {
-      const meeting = await api.createMeeting();
+      const [meeting, record] = await Promise.all([
+        api.createMeeting(),
+        // Without the setting, the meeting still opens and you can start recording yourself.
+        api.recordNewMeetings().catch((error) => {
+          console.error("couldn't read whether to record new meetings", error);
+          return false;
+        }),
+      ]);
       updateMeetings((all) => [meeting, ...all]);
+      // Another recording keeps running; this meeting opens without starting a second one.
+      setRecordOnOpen(record && recordingMeetingId === null ? meeting.id : null);
       // A new meeting matches no search, so show the full list it belongs to.
       setSearch("");
       setSelectedId(meeting.id);
@@ -194,6 +205,8 @@ export default function App() {
               meetingId={selectedId}
               recordingMeetingId={recordingMeetingId}
               onRecordingChange={setRecordingMeetingId}
+              autoStartRecording={recordOnOpen === selectedId}
+              onAutoStartRecording={() => setRecordOnOpen(null)}
               onRenamed={renameInList}
               onDeleted={(id) => {
                 updateMeetings((all) => all.filter((m) => m.id !== id));
