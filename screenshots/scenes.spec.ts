@@ -39,6 +39,24 @@ test("meeting", async ({ page }) => {
   await expect(page).toHaveScreenshot("meeting.png");
 });
 
+test("meeting menu", async ({ page }) => {
+  await open(page, "meeting");
+  await openMeeting(page, "Design sync");
+  const meeting = sidebar(page).getByRole("button", { name: /^Launch planning,/ });
+  const box = (await meeting.boundingBox())!;
+  await page.mouse.click(box.x + 60, box.y + box.height / 2, { button: "right" });
+  await expect(page.getByRole("menuitem", { name: "Export…" })).toBeFocused();
+  await expect(page).toHaveScreenshot("meeting-menu.png");
+});
+
+test("delete dialog", async ({ page }) => {
+  await open(page, "meeting");
+  await openMeeting(page, "Design sync");
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Delete “Design sync”?" })).toBeVisible();
+  await expect(page).toHaveScreenshot("delete-dialog.png");
+});
+
 test("summary", async ({ page }) => {
   await open(page, "summary");
   await openMeeting(page, "Design sync");
