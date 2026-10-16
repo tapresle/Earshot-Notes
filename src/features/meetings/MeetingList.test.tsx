@@ -28,6 +28,8 @@ describe("MeetingList", () => {
         selectedIds={[]}
         recordingMeetingId={null}
         onSelect={() => {}}
+        onExport={() => {}}
+        onDelete={() => {}}
         onCreate={() => {}}
         creating={false}
       />,

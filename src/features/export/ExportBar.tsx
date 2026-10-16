@@ -12,7 +12,7 @@ function plural(count: number, word: string): string {
 }
 
 /** Exports meetings to a folder the user picks, and tracks how it went. */
-function useFolderExport() {
+export function useFolderExport() {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
   async function exportTo(ids: number[] | null) {
@@ -30,15 +30,20 @@ function useFolderExport() {
   return { status, exportTo, busy: status.kind === "exporting" };
 }
 
-/** The sidebar footer while several meetings are selected: export them as Markdown files. */
+export type FolderExport = ReturnType<typeof useFolderExport>;
+
+/** The sidebar footer while several meetings are selected: export them as
+    Markdown files. `folderExport` is shared with the meeting list's menu. */
 export function ExportSelectionBar({
   selectedIds,
   onClearSelection,
+  folderExport,
 }: {
   selectedIds: number[];
   onClearSelection: () => void;
+  folderExport: FolderExport;
 }) {
-  const { status, exportTo, busy } = useFolderExport();
+  const { status, exportTo, busy } = folderExport;
   if (selectedIds.length < 2 && status.kind === "idle") return null;
 
   return (
@@ -111,13 +116,13 @@ function ExportStatus({ status }: { status: Status }) {
   );
 }
 
-/** Exports one meeting to a file the user picks. */
-export function ExportMeetingButton({ meetingId }: { meetingId: number }) {
-  const [status, setStatus] = useState<{ kind: "idle" } | { kind: "done"; path: string } | { kind: "error"; message: string }>(
-    { kind: "idle" },
-  );
+type SaveStatus = { kind: "idle" } | { kind: "done"; path: string } | { kind: "error"; message: string };
 
-  async function exportMeeting() {
+/** Exports one meeting to a file the user picks, and tracks how it went. */
+export function useMeetingExport() {
+  const [status, setStatus] = useState<SaveStatus>({ kind: "idle" });
+
+  async function exportMeeting(meetingId: number) {
     try {
       const path = await api.pickSavePath(await api.exportFileName(meetingId));
       if (!path) return;
@@ -127,21 +132,38 @@ export function ExportMeetingButton({ meetingId }: { meetingId: number }) {
     }
   }
 
+  return { status, exportMeeting };
+}
+
+/** Where a single meeting's export was saved, or why it wasn't. */
+export function SaveStatusText({ status }: { status: SaveStatus }) {
+  if (status.kind === "done") {
+    return (
+      <span role="status" className="export-status">
+        Saved to <span className="selectable">{status.path}</span>
+      </span>
+    );
+  }
+  if (status.kind === "error") {
+    return (
+      <span role="alert" className="field-error">
+        {status.message}
+      </span>
+    );
+  }
+  return null;
+}
+
+/** Exports one meeting to a file the user picks. */
+export function ExportMeetingButton({ meetingId }: { meetingId: number }) {
+  const { status, exportMeeting } = useMeetingExport();
+
   return (
     <div className="export-meeting">
-      <button type="button" className="button subtle" onClick={() => void exportMeeting()}>
+      <button type="button" className="button subtle" onClick={() => void exportMeeting(meetingId)}>
         Export
       </button>
-      {status.kind === "done" && (
-        <span role="status" className="export-status">
-          Saved to <span className="selectable">{status.path}</span>
-        </span>
-      )}
-      {status.kind === "error" && (
-        <span role="alert" className="field-error">
-          {status.message}
-        </span>
-      )}
+      <SaveStatusText status={status} />
     </div>
   );
 }

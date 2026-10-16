@@ -7,7 +7,8 @@ import { SearchField } from "./features/meetings/SearchField";
 import { useDebounced } from "./features/meetings/useDebounced";
 import { MeetingView } from "./features/meetings/MeetingView";
 import { TranscriptPanel } from "./features/transcript/TranscriptPanel";
-import { ExportSelectionBar } from "./features/export/ExportBar";
+import { ExportSelectionBar, SaveStatusText, useFolderExport, useMeetingExport } from "./features/export/ExportBar";
+import { DeleteMeetingDialog } from "./features/meetings/DeleteMeetingDialog";
 import { SettingsView } from "./features/settings/SettingsView";
 import { SetupChecklist } from "./features/setup/SetupChecklist";
 import { select, type Selection } from "./features/meetings/selection";
@@ -30,6 +31,11 @@ export default function App() {
   const [recordOnOpen, setRecordOnOpen] = useState<number | null>(null);
   const [selection, setSelection] = useState<Selection>({ ids: [], anchor: null });
   const [view, setView] = useState<View>("meetings");
+  // The meeting waiting for you to confirm its deletion.
+  const [deleting, setDeleting] = useState<{ id: number; title: string } | null>(null);
+  // Shared by the meeting list's menu and the selection bar.
+  const folderExport = useFolderExport();
+  const meetingExport = useMeetingExport();
   const renameInList = useCallback(
     (id: number, title: string) => updateMeetings((all) => all.map((m) => (m.id === id ? { ...m, title } : m))),
     [updateMeetings],
@@ -112,6 +118,15 @@ export default function App() {
 
   const meetings = list.kind === "ready" ? list.meetings : [];
 
+  function removeMeeting(id: number) {
+    updateMeetings((all) => all.filter((m) => m.id !== id));
+    setSelectedId((open) => (open === id ? null : open));
+    setSelection((current) => ({
+      ids: current.ids.filter((selected) => selected !== id),
+      anchor: current.anchor === id ? null : current.anchor,
+    }));
+  }
+
   return (
     // Settings and setup have no transcript beside them, so they take its width too.
     <div className={view === "meetings" ? "app-shell" : "app-shell is-wide"}>
@@ -129,6 +144,8 @@ export default function App() {
             setView("meetings");
           }
         }}
+        onExport={(ids) => void (ids.length === 1 ? meetingExport.exportMeeting(ids[0]) : folderExport.exportTo(ids))}
+        onDelete={(id, title) => setDeleting({ id, title })}
         onCreate={() => void createMeeting()}
         creating={creating}
         search={
@@ -154,7 +171,13 @@ export default function App() {
         }
         footer={
           <>
+            {meetingExport.status.kind !== "idle" && (
+              <div className="export-bar">
+                <SaveStatusText status={meetingExport.status} />
+              </div>
+            )}
             <ExportSelectionBar
+              folderExport={folderExport}
               selectedIds={selection.ids}
               onClearSelection={() => setSelection({ ids: selectedId === null ? [] : [selectedId], anchor: selectedId })}
             />
@@ -209,14 +232,24 @@ export default function App() {
               autoStartRecording={recordOnOpen === selectedId}
               onAutoStartRecording={() => setRecordOnOpen(null)}
               onRenamed={renameInList}
-              onDeleted={(id) => {
-                updateMeetings((all) => all.filter((m) => m.id !== id));
-                setSelectedId(null);
-                setSelection((current) => ({ ids: current.ids.filter((selected) => selected !== id), anchor: null }));
-              }}
+              onDelete={(id, title) => setDeleting({ id, title })}
             />
           ))}
       </main>
+
+      {deleting && (
+        <DeleteMeetingDialog
+          key={deleting.id}
+          meetingId={deleting.id}
+          // The list has the latest title, if you renamed the meeting since it opened.
+          title={meetings.find((m) => m.id === deleting.id)?.title ?? deleting.title}
+          onDeleted={(id) => {
+            removeMeeting(id);
+            setDeleting(null);
+          }}
+          onClose={() => setDeleting(null)}
+        />
+      )}
 
       {view === "meetings" && (
         <TranscriptPanel meetingId={selectedId} recording={selectedId !== null && selectedId === recordingMeetingId} />

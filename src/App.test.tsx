@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -70,6 +70,132 @@ describe("App", () => {
 
     expect(await screen.findByLabelText("Meeting title")).toHaveValue("Untitled meeting");
     expect(within(sidebar()).getByRole("button", { name: /Untitled meeting/, current: "page" })).toBeInTheDocument();
+  });
+
+  describe("meeting menu", () => {
+    const item = (title: string) => within(sidebar()).getByRole("button", { name: new RegExp(`^${title},`) });
+    const rightClick = (user: ReturnType<typeof userEvent.setup>, target: Element) =>
+      user.pointer({ keys: "[MouseRight]", target });
+    const menuItems = () => within(screen.getByRole("menu")).getAllByRole("menuitem").map((m) => m.textContent);
+
+    async function start(seed: MeetingDetail[]) {
+      const backend = fakeBackend(seed);
+      const user = userEvent.setup();
+      render(<App />);
+      await within(sidebar()).findByRole("button", { name: new RegExp(`^${seed[0].title},`) });
+      return { backend, user };
+    }
+
+    it("offers export and delete for one meeting instead of the webview's menu", async () => {
+      const { user } = await start([seedMeeting(1, "Design sync")]);
+      const meeting = item("Design sync");
+
+      const shown = fireEvent.contextMenu(meeting);
+
+      expect(shown).toBe(false); // The webview's own menu is prevented.
+      expect(screen.getByRole("menu", { name: "Design sync" })).toBeInTheDocument();
+      expect(menuItems()).toEqual(["Export", "Delete"]);
+      expect(screen.getByRole("menuitem", { name: "Export" })).toHaveFocus();
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(meeting).toHaveFocus();
+    });
+
+    it("exports a meeting to the file you pick, as its Export button does", async () => {
+      const { backend, user } = await start([seedMeeting(1, "Design sync")]);
+      vi.mocked(save).mockResolvedValue("/Users/me/Documents/design.md");
+      await rightClick(user, item("Design sync"));
+
+      await user.click(screen.getByRole("menuitem", { name: "Export" }));
+
+      expect(vi.mocked(save)).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "2026-10-03-meeting-1.md" }));
+      expect(await within(sidebar()).findByText("/Users/me/Documents/design.md")).toBeInTheDocument();
+      expect(backend.state.savedTo).toBe("/Users/me/Documents/design.md");
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(item("Design sync")).toHaveFocus();
+    });
+
+    it("deletes a meeting that isn't open after you confirm, and keeps the open one", async () => {
+      const { backend, user } = await start([seedMeeting(1, "Design sync"), seedMeeting(2, "Retro")]);
+      await user.click(item("Design sync"));
+      await rightClick(user, item("Retro"));
+
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      const dialog = screen.getByRole("dialog", { name: "Delete “Retro”?" });
+      expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+      await user.click(within(dialog).getByRole("button", { name: "Delete meeting" }));
+
+      await waitFor(() => expect(backend.has(2)).toBe(false));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(within(sidebar()).queryByRole("button", { name: /^Retro,/ })).not.toBeInTheDocument();
+      expect(screen.getByLabelText("Meeting title")).toHaveValue("Design sync");
+    });
+
+    it("keeps the meeting when you cancel the delete", async () => {
+      const { backend, user } = await start([seedMeeting(1, "Design sync")]);
+      await rightClick(user, item("Design sync"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(backend.has(1)).toBe(true);
+      expect(item("Design sync")).toBeInTheDocument();
+    });
+
+    it("only exports a multi-selection, to the folder you pick", async () => {
+      const { backend, user } = await start([seedMeeting(1, "One"), seedMeeting(2, "Two"), seedMeeting(3, "Three")]);
+      vi.mocked(open).mockResolvedValue("/tmp/out");
+      await user.click(item("One"));
+      await user.keyboard("{Meta>}");
+      await user.click(item("Three"));
+      await user.keyboard("{/Meta}");
+
+      await rightClick(user, item("Three"));
+
+      expect(screen.getByRole("menu", { name: "2 selected meetings" })).toBeInTheDocument();
+      expect(menuItems()).toEqual(["Export 2 meetings"]);
+      await user.click(screen.getByRole("menuitem", { name: "Export 2 meetings" }));
+      expect(await within(sidebar()).findByText(/Exported 2 meetings/)).toBeInTheDocument();
+      expect(backend.state.exports[0].ids).toEqual([1, 3]);
+    });
+
+    it("acts on one meeting when you right-click outside the selection", async () => {
+      const { user } = await start([seedMeeting(1, "One"), seedMeeting(2, "Two"), seedMeeting(3, "Three")]);
+      await user.click(item("One"));
+      await user.keyboard("{Meta>}");
+      await user.click(item("Three"));
+      await user.keyboard("{/Meta}");
+
+      await rightClick(user, item("Two"));
+
+      expect(screen.getByRole("menu", { name: "Two" })).toBeInTheDocument();
+      expect(menuItems()).toEqual(["Export", "Delete"]);
+    });
+
+    it("opens from the keyboard and moves with the arrow keys", async () => {
+      const { user } = await start([seedMeeting(1, "Design sync")]);
+      item("Design sync").focus();
+
+      await user.keyboard("{Shift>}{F10}{/Shift}");
+
+      expect(screen.getByRole("menuitem", { name: "Export" })).toHaveFocus();
+      await user.keyboard("{ArrowDown}");
+      expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveFocus();
+      await user.keyboard("{ArrowDown}");
+      expect(screen.getByRole("menuitem", { name: "Export" })).toHaveFocus();
+      await user.keyboard("{ArrowUp}{Enter}");
+      expect(screen.getByRole("dialog", { name: "Delete “Design sync”?" })).toBeInTheDocument();
+    });
+
+    it("closes when you click elsewhere", async () => {
+      const { user } = await start([seedMeeting(1, "Design sync")]);
+      await rightClick(user, item("Design sync"));
+
+      await user.click(screen.getByRole("button", { name: "New meeting" }));
+
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
   });
 
   describe("transcript pane", () => {

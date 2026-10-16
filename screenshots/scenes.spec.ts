@@ -39,6 +39,48 @@ test("meeting", async ({ page }) => {
   await expect(page).toHaveScreenshot("meeting.png");
 });
 
+test("meeting menu", async ({ page }) => {
+  await open(page, "meeting");
+  await openMeeting(page, "Design sync");
+  const meeting = sidebar(page).getByRole("button", { name: /^Launch planning,/ });
+  const box = (await meeting.boundingBox())!;
+  await page.mouse.click(box.x + 60, box.y + box.height / 2, { button: "right" });
+  await expect(page.getByRole("menuitem", { name: "Export" })).toBeFocused();
+  await expect(page).toHaveScreenshot("meeting-menu.png");
+});
+
+test("the meeting menu highlights an item only on hover or from the keyboard", async ({ page }) => {
+  await open(page, "meeting");
+  await openMeeting(page, "Design sync");
+  const meeting = sidebar(page).getByRole("button", { name: /^Launch planning,/ });
+  const exportItem = page.getByRole("menuitem", { name: "Export" });
+  const background = () => exportItem.evaluate((item) => getComputedStyle(item).backgroundColor);
+  const box = (await meeting.boundingBox())!;
+
+  await page.mouse.click(box.x + 60, box.y + box.height / 2, { button: "right" });
+  await expect(exportItem).toBeFocused();
+  const plain = await background();
+  expect(plain).toBe("rgba(0, 0, 0, 0)");
+
+  await exportItem.hover();
+  expect(await background()).not.toBe(plain);
+
+  await page.keyboard.press("Escape");
+  await page.mouse.move(0, 0);
+  await meeting.focus();
+  await page.keyboard.press("Shift+F10");
+  await expect(exportItem).toBeFocused();
+  expect(await background()).not.toBe(plain);
+});
+
+test("delete dialog", async ({ page }) => {
+  await open(page, "meeting");
+  await openMeeting(page, "Design sync");
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Delete “Design sync”?" })).toBeVisible();
+  await expect(page).toHaveScreenshot("delete-dialog.png");
+});
+
 test("summary", async ({ page }) => {
   await open(page, "summary");
   await openMeeting(page, "Design sync");

@@ -16,7 +16,8 @@ interface MeetingViewProps {
   autoStartRecording?: boolean;
   onAutoStartRecording?: () => void;
   onRenamed: (id: number, title: string) => void;
-  onDeleted: (id: number) => void;
+  /** Asks before deleting the meeting. */
+  onDelete: (id: number, title: string) => void;
 }
 
 type LoadState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; meeting: MeetingDetail };
@@ -28,7 +29,7 @@ export function MeetingView({
   autoStartRecording,
   onAutoStartRecording,
   onRenamed,
-  onDeleted,
+  onDelete,
 }: MeetingViewProps) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -73,7 +74,7 @@ export function MeetingView({
       autoStartRecording={autoStartRecording}
       onAutoStartRecording={onAutoStartRecording}
       onRenamed={onRenamed}
-      onDeleted={onDeleted}
+      onDelete={onDelete}
     />
   );
 }
@@ -87,7 +88,7 @@ function LoadedMeeting({
   autoStartRecording,
   onAutoStartRecording,
   onRenamed,
-  onDeleted,
+  onDelete,
 }: Omit<MeetingViewProps, "meetingId"> & { meeting: MeetingDetail }) {
   const [tab, setTab] = useState<Tab>("notes");
   const summary = useSummary(meeting.id);
@@ -119,7 +120,9 @@ function LoadedMeeting({
       <header className="meeting-header">
         <TitleField meeting={meeting} onRenamed={onRenamed} />
         <ExportMeetingButton meetingId={meeting.id} />
-        <DeleteControl meetingId={meeting.id} onDeleted={onDeleted} />
+        <button type="button" className="button subtle" onClick={() => onDelete(meeting.id, meeting.title)}>
+          Delete
+        </button>
       </header>
       <div role="tablist" aria-label="Meeting views" className="tabs">
         {tabButton("notes", "My notes")}
@@ -221,43 +224,6 @@ function TitleField({ meeting, onRenamed }: { meeting: MeetingDetail; onRenamed:
           {error}
         </p>
       )}
-    </div>
-  );
-}
-
-function DeleteControl({ meetingId, onDeleted }: { meetingId: number; onDeleted: MeetingViewProps["onDeleted"] }) {
-  const [confirming, setConfirming] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  if (!confirming) {
-    return (
-      <button type="button" className="button subtle" onClick={() => setConfirming(true)}>
-        Delete
-      </button>
-    );
-  }
-
-  async function confirmDelete() {
-    setDeleting(true);
-    try {
-      await api.deleteMeeting(meetingId);
-      onDeleted(meetingId);
-    } catch (e) {
-      setError(errorMessage(e));
-      setDeleting(false);
-    }
-  }
-
-  return (
-    <div className="delete-confirm" role="group" aria-label="Confirm delete">
-      <span>{error ?? "Delete this meeting and its notes? You can't undo this."}</span>
-      <button type="button" className="button danger" onClick={() => void confirmDelete()} disabled={deleting}>
-        {deleting ? "Deleting…" : "Delete meeting"}
-      </button>
-      <button type="button" className="button" onClick={() => setConfirming(false)} disabled={deleting}>
-        Cancel
-      </button>
     </div>
   );
 }

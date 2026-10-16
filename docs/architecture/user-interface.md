@@ -16,7 +16,9 @@ flowchart LR
             more["LoadMore<br/>(cursor paging)"]
             exportSel["ExportSelectionBar"]
             settingsBtn["Settings button"]
+            menu["ContextMenu<br/>Export and Delete,<br/>only Export for a multi-selection"]
         end
+        deleteDialog["DeleteMeetingDialog<br/>modal, from the menu<br/>or the meeting's Delete"]
         subgraph main["Workspace: one view at a time"]
             meeting["MeetingView"]
             settings["SettingsView"]

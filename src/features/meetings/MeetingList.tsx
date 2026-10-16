@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { type MouseEvent, type ReactNode, useCallback, useState } from "react";
 import type { Meeting } from "../../lib/api";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { groupByDay } from "./groupByDay";
 import type { SelectMode } from "./selection";
 import { useToday } from "./useToday";
@@ -12,6 +13,10 @@ interface MeetingListProps {
   selectedIds: number[];
   recordingMeetingId: number | null;
   onSelect: (id: number, mode: SelectMode) => void;
+  /** Exports one meeting to a file, or several to a folder. */
+  onExport: (ids: number[]) => void;
+  /** Asks before deleting the meeting. */
+  onDelete: (id: number, title: string) => void;
   onCreate: () => void;
   creating: boolean;
   /** Shown after the last meeting, scrolling with the list, such as Load more. */
@@ -32,6 +37,8 @@ export function MeetingList({
   selectedIds,
   recordingMeetingId,
   onSelect,
+  onExport,
+  onDelete,
   onCreate,
   creating,
   listEnd,
@@ -42,6 +49,45 @@ export function MeetingList({
   const multiSelect = selectedIds.length > 1;
   const today = useToday();
   const groups = groupByDay(meetings, today);
+  const [menu, setMenu] = useState<{ meetingId: number; x: number; y: number; opener: HTMLElement } | null>(null);
+  const closeMenu = useCallback(
+    (restoreFocus: boolean) => {
+      if (restoreFocus) menu?.opener.focus();
+      setMenu(null);
+    },
+    [menu],
+  );
+
+  function openMenu(meetingId: number, event: MouseEvent<HTMLElement> | { currentTarget: HTMLElement }) {
+    const opener = event.currentTarget;
+    // From the keyboard, open under the meeting rather than at the pointer.
+    const atPointer = "clientX" in event && (event.clientX !== 0 || event.clientY !== 0);
+    const box = opener.getBoundingClientRect();
+    setMenu({
+      meetingId,
+      x: atPointer ? event.clientX : box.left + 8,
+      y: atPointer ? event.clientY : box.bottom,
+      opener,
+    });
+  }
+
+  /** Several meetings when the menu opens on one of a multi-selection, which can only be exported. */
+  function menuFor(meetingId: number): { label: string; items: MenuItem[] } {
+    const title = meetings.find((m) => m.id === meetingId)?.title ?? "Meeting";
+    if (multiSelect && selectedIds.includes(meetingId)) {
+      return {
+        label: `${selectedIds.length} selected meetings`,
+        items: [{ label: `Export ${selectedIds.length} meetings`, onSelect: () => onExport(selectedIds) }],
+      };
+    }
+    return {
+      label: title,
+      items: [
+        { label: "Export", onSelect: () => onExport([meetingId]) },
+        { label: "Delete", onSelect: () => onDelete(meetingId, title), danger: true },
+      ],
+    };
+  }
 
   return (
     <nav className="sidebar" aria-label="Meetings">
@@ -80,6 +126,16 @@ export function MeetingList({
                         event.shiftKey ? "range" : event.metaKey || event.ctrlKey ? "toggle" : "single",
                       )
                     }
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      openMenu(meeting.id, event);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                        event.preventDefault();
+                        openMenu(meeting.id, event);
+                      }
+                    }}
                   >
                     <span className="meeting-title">{meeting.title}</span>
                     <span className="meeting-meta">{meta}</span>
@@ -94,6 +150,7 @@ export function MeetingList({
       {listEnd}
       </div>
       {footer && <div className="sidebar-bottom">{footer}</div>}
+      {menu && <ContextMenu {...menuFor(menu.meetingId)} x={menu.x} y={menu.y} onClose={closeMenu} />}
     </nav>
   );
 }
