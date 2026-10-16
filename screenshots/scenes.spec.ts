@@ -1,7 +1,7 @@
 // One screenshot per scene in src/preview/scenes.ts, in light and dark mode.
 // `npm run screenshots` updates the images that changed; `npm run screenshots:check`
 // fails when the UI no longer matches them.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 /** The moment every scene is rendered at, in the configured time zone. */
 const NOW = new Date("2026-10-06T15:30:00-05:00");
@@ -79,6 +79,24 @@ test("delete dialog", async ({ page }) => {
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Delete “Design sync”?" })).toBeVisible();
   await expect(page).toHaveScreenshot("delete-dialog.png");
+});
+
+test("the meeting's Delete button is red like the dialog's, without a border", async ({ page }) => {
+  await open(page, "meeting");
+  await openMeeting(page, "Design sync");
+  const style = (element: Locator) =>
+    element.evaluate((button) => {
+      const { color, borderColor } = getComputedStyle(button);
+      return { color, borderColor };
+    });
+  const deleteButton = page.getByRole("button", { name: "Delete", exact: true });
+  const header = await style(deleteButton);
+
+  await deleteButton.click();
+  const dialog = await style(page.getByRole("button", { name: "Delete meeting" }));
+
+  expect(header.color).toBe(dialog.color);
+  expect(header.borderColor).toBe("rgba(0, 0, 0, 0)");
 });
 
 test("summary", async ({ page }) => {
