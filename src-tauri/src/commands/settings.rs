@@ -12,7 +12,7 @@ use crate::llm::resident::KeepLoaded;
 use crate::llm::worker::ModelWorker;
 use crate::models::{self, RemoveError};
 use crate::store::settings::{
-    INPUT_DEVICE, KEEP_MODEL_LOADED, ON, RECORD_NEW_MEETINGS, sensitivity_key,
+    INPUT_DEVICE, KEEP_MODEL_LOADED, RECORD_NEW_MEETINGS, SUMMARIZE_ON_STOP, sensitivity_key,
 };
 use crate::store::{ModelRecord, Source, Store};
 use macos_audio::LoginItem;
@@ -194,19 +194,11 @@ pub async fn select_model(
     .await
 }
 
-fn record_new_meetings_in(store: &Store) -> CommandResult<bool> {
-    Ok(store.setting(RECORD_NEW_MEETINGS)?.as_deref() == Some(ON))
-}
-
-fn set_record_new_meetings_in(store: &Store, enabled: bool) -> CommandResult<()> {
-    Ok(store.set_setting(RECORD_NEW_MEETINGS, enabled.then_some(ON))?)
-}
-
 /// Whether **New meeting** in the window also starts recording.
 #[tauri::command]
 pub async fn record_new_meetings(store: State<'_, Arc<Store>>) -> CommandResult<bool> {
     let store = Arc::clone(&store);
-    blocking(move || record_new_meetings_in(&store)).await
+    blocking(move || Ok(store.switch(RECORD_NEW_MEETINGS)?)).await
 }
 
 /// Turns starting a recording with each new meeting on or off.
@@ -216,7 +208,24 @@ pub async fn set_record_new_meetings(
     enabled: bool,
 ) -> CommandResult<()> {
     let store = Arc::clone(&store);
-    blocking(move || set_record_new_meetings_in(&store, enabled)).await
+    blocking(move || Ok(store.set_switch(RECORD_NEW_MEETINGS, enabled)?)).await
+}
+
+/// Whether stopping a recording summarizes the meeting.
+#[tauri::command]
+pub async fn summarize_on_stop(store: State<'_, Arc<Store>>) -> CommandResult<bool> {
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.switch(SUMMARIZE_ON_STOP)?)).await
+}
+
+/// Turns summarizing each meeting when its recording stops on or off.
+#[tauri::command]
+pub async fn set_summarize_on_stop(
+    store: State<'_, Arc<Store>>,
+    enabled: bool,
+) -> CommandResult<()> {
+    let store = Arc::clone(&store);
+    blocking(move || Ok(store.set_switch(SUMMARIZE_ON_STOP, enabled)?)).await
 }
 
 fn keep_model_loaded_in(store: &Store) -> CommandResult<KeepLoaded> {
@@ -388,19 +397,6 @@ mod tests {
             serde_json::to_value(pending).unwrap(),
             serde_json::json!({ "enabled": true, "needsApproval": true, "available": true })
         );
-    }
-
-    #[test]
-    fn records_new_meetings_only_after_you_turn_it_on() {
-        let store = Store::open_in_memory().unwrap();
-        assert!(!record_new_meetings_in(&store).unwrap());
-
-        set_record_new_meetings_in(&store, true).unwrap();
-        assert!(record_new_meetings_in(&store).unwrap());
-
-        set_record_new_meetings_in(&store, false).unwrap();
-        assert!(!record_new_meetings_in(&store).unwrap());
-        assert_eq!(store.setting(RECORD_NEW_MEETINGS).unwrap(), None);
     }
 
     #[test]

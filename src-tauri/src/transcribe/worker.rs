@@ -76,6 +76,8 @@ enum Message {
     Preload(Arc<PathBuf>),
     /// Free Whisper's memory: it's no longer the chosen model.
     UnloadWhisper,
+    /// Run this once every job queued before it is transcribed and handled.
+    AfterQueued(Box<dyn FnOnce() + Send>),
     /// Skip the queued jobs, free every model, confirm, and stop.
     Shutdown(Sender<()>),
 }
@@ -136,6 +138,13 @@ impl TranscriptionWorker {
                         }
                         Ok(Message::UnloadWhisper) => {
                             engines.unload_whisper();
+                            continue;
+                        }
+                        // Skipped once a shutdown is queued, like the jobs before it.
+                        Ok(Message::AfterQueued(then)) => {
+                            if !shutting_down.load(Ordering::Acquire) {
+                                then();
+                            }
                             continue;
                         }
                         Ok(Message::Shutdown(done)) => {
@@ -202,6 +211,15 @@ impl TranscriptionWorker {
             .map_err(|_| WorkerStopped)
     }
 
+    /// Runs `then` on the worker thread once every job submitted before it
+    /// has been transcribed and its result handled, such as the segments a
+    /// stopped recording flushes. It doesn't run if the app quits first.
+    pub fn after_queued(&self, then: impl FnOnce() + Send + 'static) -> Result<(), WorkerStopped> {
+        self.inbox
+            .send(Message::AfterQueued(Box::new(then)))
+            .map_err(|_| WorkerStopped)
+    }
+
     /// Loads `engine` now if it's Whisper, which takes a few seconds, so no
     /// recording waits for it; it then stays loaded, like Whistle. For
     /// Whistle, frees Whisper's memory instead.
@@ -237,7 +255,10 @@ impl Queue {
     fn job(message: Message) -> Option<Job> {
         match message {
             Message::Job(job) => Some(job),
-            Message::Preload(_) | Message::UnloadWhisper | Message::Shutdown(_) => None,
+            Message::Preload(_)
+            | Message::UnloadWhisper
+            | Message::AfterQueued(_)
+            | Message::Shutdown(_) => None,
         }
     }
 

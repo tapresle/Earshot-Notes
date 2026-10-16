@@ -798,6 +798,40 @@ describe("App", () => {
       expect(screen.getByLabelText("Meeting notes")).toHaveValue("draft idea");
     });
 
+    it("shows a summary that started when the recording stopped", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Sync")]);
+      backend.state.model = testModel();
+      const user = await openMeeting("Sync");
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+      expect(await screen.findByText(/No summary yet/)).toBeInTheDocument();
+
+      emit("summary:progress", { meetingId: 1, stage: "loading" });
+
+      expect(await screen.findByText("Loading the model…")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Summarizing…" })).toBeDisabled();
+      emit("summary:done", { meetingId: 1, summary: savedSummary(1, "## Decisions\n- Ship Friday") });
+      expect(await screen.findByText("Summary of the whole meeting")).toBeInTheDocument();
+    });
+
+    it("explains why a summary started when the recording stopped failed", async () => {
+      const backend = fakeBackend([seedMeeting(1, "Empty")]);
+      backend.state.model = testModel();
+      const user = await openMeeting("Empty");
+      await user.click(screen.getByRole("tab", { name: "Summary" }));
+      await screen.findByText(/No summary yet/);
+
+      emit("summary:failed", {
+        meetingId: 1,
+        message: "there's nothing to summarize yet. Record the meeting or write some notes first",
+        cancelled: false,
+      });
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Couldn't write the summary: there's nothing to summarize yet.",
+      );
+      expect(screen.getByRole("button", { name: "Summarize" })).toBeEnabled();
+    });
+
     it("resumes showing a summary that was already running", async () => {
       const backend = fakeBackend([seedMeeting(1, "Sync")]);
       backend.state.model = testModel();
@@ -1472,6 +1506,41 @@ describe("App", () => {
       expect(record).toBeChecked();
       await user.click(record);
       await waitFor(() => expect(backend.state.recordNewMeetings).toBe(false));
+    });
+
+    it("turns summarizing on stop on and off", async () => {
+      const backend = fakeBackend();
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+      const summarize = await screen.findByRole("checkbox", { name: "Summarize a meeting when I stop recording" });
+
+      expect(summarize).not.toBeChecked();
+      await user.click(summarize);
+      await waitFor(() => expect(backend.state.summarizeOnStop).toBe(true));
+      expect(summarize).toBeChecked();
+      expect(backend.state.recordNewMeetings).toBe(false);
+      await user.click(summarize);
+      await waitFor(() => expect(backend.state.summarizeOnStop).toBe(false));
+    });
+
+    it("explains a setting that couldn't be saved", async () => {
+      const backend = fakeBackend();
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+      const summarize = await screen.findByRole("checkbox", { name: "Summarize a meeting when I stop recording" });
+      const handle = backend.handle;
+      vi.mocked(invoke).mockImplementation((command, args) =>
+        command === "set_summarize_on_stop"
+          ? Promise.reject({ kind: "internal", message: "the settings couldn't be saved" })
+          : handle(command, args),
+      );
+
+      await user.click(summarize);
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("The app couldn't read or write your meetings.");
+      expect(summarize).not.toBeChecked();
     });
 
     describe("audio recordings", () => {

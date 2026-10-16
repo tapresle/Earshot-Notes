@@ -54,6 +54,7 @@ flowchart TB
 ```
 
 - **One job at a time.** A summary requested while a question runs, or the reverse, is refused with a message naming what's running.
+- **Summarizing when a recording stops (#142).** With **Summarize a meeting when I stop recording** on (`summarize_on_stop` in `settings`), `commands::recording::stop` asks the transcription worker to call `ModelWorker::summarize_stopped` once the segments the stop flushed are transcribed and saved (`TranscriptionWorker::after_queued`). That queues a `SummarizeStopped` message instead of being refused, so it waits behind a running question. When the thread reaches it, a meeting with any summary, partial or not, or with no model selected, is skipped; anything else that stops it, such as nothing to summarize, is reported as `summary:failed`, which the **Summary** tab shows. A request you made while it waited goes first. Quitting skips it: `ModelWorker::shutdown` sets `closing` before the thread reaches it, and quitting stops the recording without `commands::recording::stop`.
 - **Snapshots, not live reads.** `summarize` and `ask` read the meeting's notes, segments, vocabulary terms, and chat history on the caller's thread and pass them in the job. A job sees the meeting as it was when you asked.
 - **The `Generator` trait** separates the summary and chat logic from llama.cpp, so their tests use fakes.
 

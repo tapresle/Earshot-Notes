@@ -401,6 +401,9 @@ export const api = {
   /** Whether **New meeting** also starts recording the meeting. */
   recordNewMeetings: () => invoke<boolean>("record_new_meetings"),
   setRecordNewMeetings: (enabled: boolean) => invoke<void>("set_record_new_meetings", { enabled }),
+  /** Whether stopping a recording summarizes the meeting. */
+  summarizeOnStop: () => invoke<boolean>("summarize_on_stop"),
+  setSummarizeOnStop: (enabled: boolean) => invoke<void>("set_summarize_on_stop", { enabled }),
   /** The total size of the kept recordings, in bytes. */
   recordingsSize: () => invoke<number>("recordings_size"),
   /** Deletes every kept recording and resolves to the size left. Refused while recording. */
