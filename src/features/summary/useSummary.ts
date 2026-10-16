@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useState } from "react";
 import { api, errorMessage, type ModelRecord, type Summary, type SummaryStage } from "../../lib/api";
 
 export type SummaryRun =
@@ -19,14 +19,23 @@ export interface SummaryState {
   reload: () => void;
 }
 
-/** The meeting's latest summary, the selected model, and any summary in progress. */
-export function useSummary(meetingId: number): SummaryState {
+/**
+ * The meeting's latest summary, the selected model, and any summary in progress.
+ * `onStartedElsewhere` runs when a summary this view didn't start begins or
+ * fails, such as the one that starts when you stop recording.
+ */
+export function useSummary(meetingId: number, onStartedElsewhere: () => void): SummaryState {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [model, setModel] = useState<ModelRecord | null>(null);
   const [run, setRun] = useState<SummaryRun>({ kind: "idle" });
   const [attempt, setAttempt] = useState(0);
+  // Summarize marks its own run as running before the backend reports on it,
+  // so progress or a failure while idle comes from a run started elsewhere.
+  const noticeElsewhere = useEffectEvent(() => {
+    if (run.kind !== "running") onStartedElsewhere();
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +60,7 @@ export function useSummary(meetingId: number): SummaryState {
     const unlisteners: Promise<() => void>[] = [
       api.onSummaryProgress(({ meetingId: id, ...stage }) => {
         if (id !== meetingId) return;
+        noticeElsewhere();
         setRun((current) => ({ kind: "running", stage, text: current.kind === "running" ? current.text : "" }));
       }),
       api.onSummaryText(({ meetingId: id, text }) => {
@@ -64,6 +74,7 @@ export function useSummary(meetingId: number): SummaryState {
       }),
       api.onSummaryFailed(({ meetingId: id, message, cancelled }) => {
         if (id !== meetingId) return;
+        noticeElsewhere();
         setRun({ kind: "failed", message, cancelled });
       }),
     ];

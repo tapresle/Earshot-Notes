@@ -91,7 +91,7 @@ function LoadedMeeting({
   onDelete,
 }: Omit<MeetingViewProps, "meetingId"> & { meeting: MeetingDetail }) {
   const [tab, setTab] = useState<Tab>("notes");
-  const summary = useSummary(meeting.id);
+  const summary = useSummary(meeting.id, () => setTab("summary"));
   const chat = useChat(meeting.id);
   const notepad = useRef<NotepadHandle>(null);
 
