@@ -542,6 +542,12 @@ body {
   margin: 2px 0 0;
 }
 
+/* Text still being heard: it changes until a pause makes it final. */
+.transcript-segment.is-tentative p {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .speaker {
   font-size: 12px;
   font-weight: 600;

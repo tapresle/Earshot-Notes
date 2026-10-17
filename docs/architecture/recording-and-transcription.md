@@ -2,7 +2,7 @@
 
 [Architecture overview](README.md)
 
-A recording captures two sources at once: **Me** (the microphone) and **Them** (the Mac's system audio output, which carries the call). Each source gets its own capture thread and pipeline thread. Both feed one transcription worker, which saves segments and pushes them to the window.
+A recording captures two sources at once: **Me** (the microphone) and **Them** (the Mac's system audio output, which carries the call). Each source gets its own capture thread and pipeline thread. Both feed one transcription worker, which saves segments and pushes them to the window. While a segment is still open, the worker also previews it about once a second, so words show as they're spoken (#169).
 
 ## Data flow
 
@@ -39,7 +39,8 @@ flowchart LR
     resample -- "16 kHz stream" --> kept
 
     worker["transcribe::worker::TranscriptionWorker<br/>one thread, one queue"]
-    chunker -- "Job: meeting, source,<br/>start/end ms, 16 kHz clip,<br/>speech stats, keywords, engine" --> worker
+    chunker -- "Request::Segment(Job): meeting, source,<br/>start/end ms, 16 kHz clip,<br/>speech stats, keywords, engine" --> worker
+    chunker -. "Request::Preview of the open segment<br/>(about once a second, one at a time),<br/>Request::ClearPreview when it closes" .-> worker
 
     subgraph engines["Engines"]
         whistle["transcribe::whistle<br/>Whistle on needle<br/>keyword biasing"]
@@ -60,6 +61,8 @@ flowchart LR
     save --> db
     ui["Window"]
     save -- "transcript:segment<br/>transcript:removed" --> ui
+    phantom -. "previews: vocabulary only,<br/>never saved" .-> preview["lib.rs emits<br/>transcript:preview"]
+    preview -.-> ui
 ```
 
 ## Starting and stopping a recording
@@ -94,15 +97,17 @@ sequenceDiagram
 
     loop While recording
         Cap->>Pipe: audio::Buffer
-        Pipe->>TW: submit(Job) per finished segment
+        Pipe->>TW: Segment(Job) per finished segment
         TW->>Store: insert_transcribed_segment
         TW-->>UI: transcript:segment / transcript:removed
+        Pipe->>TW: Preview of the open segment, then ClearPreview when it closes
+        TW-->>UI: transcript:preview (empty text clears it)
     end
 
     UI->>Cmd: stop_recording
     Cmd->>Rec: stop
     Rec->>Cap: drop captures (streams stop)
-    Pipe->>TW: flush the last segment
+    Pipe->>TW: flush the last segment and clear its preview
     Rec->>Store: end_recording (sets ended_at)
     Cmd-->>UI: recording:changed
 ```
@@ -123,7 +128,9 @@ flowchart TB
     result --> callback["on_segment callback (lib.rs)<br/>saves and emits"]
 ```
 
-- needle holds one process-global, non-thread-safe model, so Whistle lives only on this thread.
+- Previews wait until no segment is queued, so a segment is never later than today by more than one preview pass. Each source keeps only its latest preview, and a preview is dropped when its segment closes first, including while it runs. Each pipeline sends one preview at a time, a second after the last, and none when the open segment hasn't grown.
+- A preview gets the same filler cleanup and phantom filter as a segment, and `lib.rs` applies the vocabulary before emitting `transcript:preview` (`{ meetingId, source, startMs, text }`). Previews are never saved, so they reach no export, summary, or chat. `TranscriptPanel` shows them after the final segments, outside the live region, until a `transcript:preview` with empty text clears them.
+- needle holds one process-global, non-thread-safe model, so Whistle lives only on this thread. needle's own streaming API keeps one global stream and ignores keywords, so it isn't used (#91).
 - Whistle and Whisper both receive 16 kHz mono clips of at most 28 seconds.
 - **Settings** > **Transcription** loads Whisper when chosen and frees it when you choose Whistle or remove the file.
 

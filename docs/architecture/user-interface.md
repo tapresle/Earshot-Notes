@@ -88,7 +88,7 @@ sequenceDiagram
 
 | Events | Sent by | Used by |
 |---|---|---|
-| `transcript:segment`, `transcript:removed` | the transcription callback in `lib.rs` | `TranscriptPanel` |
+| `transcript:segment`, `transcript:removed`, `transcript:preview` | the transcription callbacks in `lib.rs` | `TranscriptPanel` |
 | `recording:changed` | `commands::recording` | `App` |
 | `recording:issue` | `commands::recording`, from the capture threads | `RecordingControls` |
 | `summary:progress`, `summary:text`, `summary:done`, `summary:failed` | the model worker | `useSummary`; on `summary:done`, `App` and `MeetingView` also pick up a new title |
