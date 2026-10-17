@@ -241,6 +241,7 @@
   ],
   "forbid": [
     "503",
-    "Corvena"
+    "Corvena",
+    "Personal notes"
   ]
 }
