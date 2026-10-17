@@ -120,6 +120,8 @@ flowchart TB
 
 The passes that write the notes, `summary_messages` and `combine_messages`, send the instructions in use followed by `prompt::READING_RULES`. The instructions are `prompt::DEFAULT_INSTRUCTIONS` unless you replace them in **Settings** > **Summaries** (`summarize::instructions`, at most 6,000 characters). The reading rules, such as who "Me" is and never inventing facts, always follow, so custom instructions can't change how the meeting data is read. The condense and title prompts never change. Only your own text is stored, so without it summaries follow the default of the running version. A summary copies the instructions when it's queued.
 
+The notes come from one pass over the transcript or its condensed parts. A first pass that extracts facts or plans the notes was measured twice and made the notes worse; [`20261016-one-pass-summaries.md`](../decisions/20261016-one-pass-summaries.md) has the numbers.
+
 ## Chat
 
 ```mermaid
