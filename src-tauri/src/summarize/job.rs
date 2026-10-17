@@ -43,6 +43,9 @@ pub struct SummaryJob {
     pub notes_markdown: String,
     pub segments: Vec<TranscriptSegment>,
     pub terms: Vec<String>,
+    /// The instructions for writing the notes, read when the summary was
+    /// requested, so saving new ones doesn't change it.
+    pub instructions: String,
     pub upto_ms: i64,
     pub is_final: bool,
     pub cancel: Arc<AtomicBool>,
@@ -113,6 +116,7 @@ fn summarize_and_save(
         notes_markdown: &job.notes_markdown,
         segments: &job.segments,
         terms: &job.terms,
+        instructions: &job.instructions,
     };
     let body = summarize(
         &mut *generator,

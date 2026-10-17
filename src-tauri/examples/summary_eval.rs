@@ -37,7 +37,7 @@ use earshot_lib::llm::generator::{GenerateError, Generator};
 use earshot_lib::llm::llama::{LlamaGenerator, MAX_CONTEXT, Sampling};
 use earshot_lib::llm::template::Message;
 use earshot_lib::store::{DEFAULT_TITLE, Source, TranscriptSegment};
-use earshot_lib::summarize::prompt::{self, transcript_line};
+use earshot_lib::summarize::prompt::{self, DEFAULT_INSTRUCTIONS, transcript_line};
 use earshot_lib::summarize::run::{Progress, Request, summarize};
 use earshot_lib::summarize::title::suggest_title;
 use serde::{Deserialize, Serialize};
@@ -312,6 +312,7 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
     let title = meeting.title.as_deref().unwrap_or(DEFAULT_TITLE);
     let prompt_tokens = generator
         .prompt_tokens(&prompt::summary_messages(
+            DEFAULT_INSTRUCTIONS,
             title,
             &meeting.notes,
             terms,
@@ -331,6 +332,7 @@ fn evaluate(generator: &mut LlamaGenerator, path: &Path, options: &Options) -> O
             notes_markdown: &meeting.notes,
             segments: &segments,
             terms,
+            instructions: DEFAULT_INSTRUCTIONS,
         };
         let mut recorder = Recorder {
             inner: generator,
@@ -618,7 +620,8 @@ fn extract_then_write(
         .generate(&extract, 2048, cancel, &mut |_| {})
         .expect("extraction failed");
     let title = meeting.title.as_deref().unwrap_or(DEFAULT_TITLE);
-    let mut messages = prompt::summary_messages(title, &meeting.notes, &[], transcript);
+    let mut messages =
+        prompt::summary_messages(DEFAULT_INSTRUCTIONS, title, &meeting.notes, &[], transcript);
     messages[1].content.push_str(&format!(
         "\n\nFacts already extracted from the transcript. Make sure the notes keep each of them:\n<facts>\n{}\n</facts>",
         facts.trim()

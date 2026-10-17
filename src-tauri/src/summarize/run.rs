@@ -46,6 +46,8 @@ pub struct Request<'a> {
     pub segments: &'a [TranscriptSegment],
     /// The vocabulary's terms, spelled as the summary should spell them.
     pub terms: &'a [String],
+    /// The instructions for writing the notes: yours, or the default.
+    pub instructions: &'a str,
 }
 
 /// Summarizes a meeting. Only the final notes stream through `on_text`.
@@ -86,6 +88,7 @@ fn write_notes(
     let lines: Vec<String> = request.segments.iter().map(transcript_line).collect();
 
     let single = summary_messages(
+        request.instructions,
         request.title,
         request.notes_markdown,
         request.terms,
@@ -135,8 +138,13 @@ fn write_notes(
             parts.push(generator.generate(&messages, part_room, cancel, &mut |_| {})?);
         }
 
-        let combined =
-            combine_messages(request.title, request.notes_markdown, request.terms, &parts);
+        let combined = combine_messages(
+            request.instructions,
+            request.title,
+            request.notes_markdown,
+            request.terms,
+            &parts,
+        );
         if fits(generator, &combined, summary_room, context)? {
             on_progress(Progress::Writing);
             return Ok(generator.generate(&combined, summary_room, cancel, on_text)?);
@@ -158,6 +166,7 @@ fn fits(
 mod tests {
     use super::*;
     use crate::store::Source;
+    use crate::summarize::prompt::{DEFAULT_INSTRUCTIONS, READING_RULES};
     use std::sync::atomic::Ordering;
 
     #[test]
@@ -180,6 +189,7 @@ mod tests {
     struct FakeModel {
         context: usize,
         calls: Vec<String>,
+        systems: Vec<String>,
         notes: &'static str,
     }
 
@@ -188,6 +198,7 @@ mod tests {
             Self {
                 context,
                 calls: Vec::new(),
+                systems: Vec::new(),
                 notes: "## Notes\n- done",
             }
         }
@@ -226,6 +237,7 @@ mod tests {
                 self.notes.to_string()
             };
             self.calls.push(user.clone());
+            self.systems.push(messages[0].content.clone());
             for piece in reply.split_inclusive(' ') {
                 on_text(piece);
             }
@@ -252,6 +264,15 @@ mod tests {
         segments: &[TranscriptSegment],
         notes: &str,
     ) -> (Result<String, SummaryError>, Vec<Progress>, String) {
+        run_with(model, segments, notes, DEFAULT_INSTRUCTIONS)
+    }
+
+    fn run_with(
+        model: &mut FakeModel,
+        segments: &[TranscriptSegment],
+        notes: &str,
+        instructions: &str,
+    ) -> (Result<String, SummaryError>, Vec<Progress>, String) {
         let mut progress = Vec::new();
         let mut streamed = String::new();
         let request = Request {
@@ -259,6 +280,7 @@ mod tests {
             notes_markdown: notes,
             segments,
             terms: &[],
+            instructions,
         };
         let result = summarize(
             model,
@@ -318,6 +340,37 @@ mod tests {
     }
 
     #[test]
+    fn writes_the_notes_with_custom_instructions_in_one_pass() {
+        let mut model = FakeModel::new(8192);
+
+        run_with(&mut model, &segments(10, 10), "", "List decisions only.")
+            .0
+            .unwrap();
+
+        assert_eq!(
+            model.systems,
+            vec![format!("List decisions only.\n\n{READING_RULES}")]
+        );
+    }
+
+    #[test]
+    fn writes_the_combined_notes_with_custom_instructions_but_condenses_as_always() {
+        let mut model = FakeModel::new(4096);
+
+        run_with(&mut model, &segments(150, 30), "", "List decisions only.")
+            .0
+            .unwrap();
+
+        let (last, parts) = model.systems.split_last().unwrap();
+        assert_eq!(*last, format!("List decisions only.\n\n{READING_RULES}"));
+        assert_eq!(parts.len(), 2);
+        for part in parts {
+            assert!(!part.contains("List decisions only."), "{part}");
+            assert!(part.starts_with("You condense one part"), "{part}");
+        }
+    }
+
+    #[test]
     fn summarizes_notes_alone_when_there_is_no_transcript() {
         let mut model = FakeModel::new(8192);
 
@@ -358,6 +411,7 @@ mod tests {
             notes_markdown: "- x",
             segments: &segments(3, 5),
             terms: &[],
+            instructions: DEFAULT_INSTRUCTIONS,
         };
 
         let result = summarize(
