@@ -11,6 +11,7 @@ use std::sync::mpsc::{self, Sender};
 use std::thread;
 use std::time::Duration;
 
+use super::cleanup::clean;
 use super::phantom::is_phantom;
 use super::whisper::Whisper;
 use super::whistle::{Transcription, Whistle, WhistleError};
@@ -89,7 +90,8 @@ pub struct WorkerStopped;
 impl TranscriptionWorker {
     /// Loads the first candidate model that works, then starts the worker.
     /// `on_result` runs on the worker thread for every segment that contains
-    /// speech, except likely phantom phrases (see `phantom`).
+    /// speech, with fillers removed (see `cleanup`), except segments with only
+    /// fillers and likely phantom phrases (see `phantom`).
     pub fn spawn<F>(
         candidates: Vec<PathBuf>,
         on_result: F,
@@ -160,7 +162,8 @@ impl TranscriptionWorker {
                     if shutting_down.load(Ordering::Acquire) {
                         continue;
                     }
-                    match engines.transcribe(&mut job) {
+                    // Both engines' results go through the same cleanup.
+                    match engines.transcribe(&mut job).map(cleaned) {
                         Ok(t) if t.text.is_empty() => {}
                         // Never log the text itself.
                         Ok(t) if is_phantom(&t.text, job.speech) => log::debug!(
@@ -361,6 +364,13 @@ impl Engines {
         if self.whisper.take().is_some() {
             log::info!("unloaded Whisper");
         }
+    }
+}
+
+fn cleaned(transcription: Transcription) -> Transcription {
+    Transcription {
+        text: clean(&transcription.text),
+        ..transcription
     }
 }
 
