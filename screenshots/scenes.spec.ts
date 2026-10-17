@@ -119,6 +119,15 @@ test("recording", async ({ page }) => {
   await open(page, "recording");
   await openMeeting(page, "Customer call");
   await expect(page.getByText("Transcripts, mostly in Markdown.")).toBeVisible();
+  // What the other side is still saying, before a pause makes it final (#169).
+  await page.evaluate(() =>
+    (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> } })
+      .__TAURI_INTERNALS__.invoke("plugin:event|emit", {
+        event: "transcript:preview",
+        payload: { meetingId: 6, source: "them", startMs: 28_000, text: "We'd want the import to keep the speaker" },
+      }),
+  );
+  await expect(page.getByText("We'd want the import to keep the speaker")).toBeVisible();
   await expect(page).toHaveScreenshot("recording.png");
 });
 
