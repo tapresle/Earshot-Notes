@@ -39,6 +39,7 @@ Run all commands from the repository root unless noted.
 | Evaluate summaries on synthetic meetings with a real model (in `src-tauri/`; see **Summary tests**) | `cargo run --release --example summary_eval -- --model <gguf> tests/fixtures/meetings/*.json` |
 | Rebuild the website's images from the app icon and `docs/screenshots/` (after `npm run screenshots` or an icon change) | `./scripts/site-images.sh` |
 | Benchmark each summary model's memory, speed, and specifics kept (every GGUF in `src-tauri/tests/models/`; about 40 minutes on an M5 Max, longer on smaller Macs; see **Summary tests**) | `npm run benchmark` |
+| Make the highlight video from this checkout (needs ffmpeg; about 15 minutes; see `video/README.md`) | `node video/make.mjs` |
 
 Before you hand off work, run the lint, typecheck, test, format, and screenshot check commands. All of them must pass.
 

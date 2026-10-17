@@ -31,3 +31,7 @@ dist-ssr
 .claude/settings.local.json
 # A one-off audio probe for analyzing private recordings; never commit it.
 src-tauri/examples/local_audio_probe.rs
+
+# The highlight video's output and downloaded audio (video/README.md).
+/video/out/
+/video/.cache/
