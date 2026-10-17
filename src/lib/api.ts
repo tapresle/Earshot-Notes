@@ -91,6 +91,18 @@ export interface SavedVocabulary {
   updated: number;
 }
 
+/** The instructions summaries follow, and the rules always added after them. */
+export interface SummaryInstructions {
+  /** The built-in instructions of this version of the app. */
+  default: string;
+  /** How to read the meeting, added after the instructions in use. */
+  rules: string;
+  /** Your own instructions, which replace the default; null when you use the default. */
+  custom: string | null;
+  /** The most characters custom instructions can have. */
+  maxChars: number;
+}
+
 /** What checking GitHub for a newer release found. */
 export interface UpdateCheck {
   current: string;
@@ -420,6 +432,10 @@ export const api = {
   vocabulary: () => invoke<VocabularyTerm[]>("vocabulary"),
   /** Saves the vocabulary and corrects every stored transcript with it. */
   setVocabulary: (terms: VocabularyTerm[]) => invoke<SavedVocabulary>("set_vocabulary", { terms }),
+  summaryInstructions: () => invoke<SummaryInstructions>("summary_instructions"),
+  /** Saves custom summary instructions; null, empty text, or the default goes back to the default. */
+  setSummaryInstructions: (text: string | null) =>
+    invoke<SummaryInstructions>("set_summary_instructions", { text }),
   /** Contacts GitHub. Call only when the user asks. */
   checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
   openReleasePage: (version: string) => invoke<void>("open_release_page", { version }),

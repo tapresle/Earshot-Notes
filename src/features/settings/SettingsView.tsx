@@ -20,6 +20,7 @@ import { ModelOrigin } from "../models/ModelOrigin";
 import { Markdown } from "../summary/Markdown";
 import { ModelSetup } from "../models/ModelSetup";
 import { missingTerms, SOFTWARE_TERMS } from "./softwareTerms";
+import { SummariesSection } from "./SummariesSection";
 import { TranscriptionSection } from "./TranscriptionSection";
 
 export function SettingsView({ recording, onShowSetup }: { recording: boolean; onShowSetup: () => void }) {
@@ -45,6 +46,7 @@ export function SettingsView({ recording, onShowSetup }: { recording: boolean; o
       <VocabularySection />
       <AudioRecordingsSection recording={recording} />
       <LocalModelSection />
+      <SummariesSection />
       <UpdatesSection />
       <section className="settings-section" aria-labelledby="export-heading">
         <h2 id="export-heading">Export</h2>

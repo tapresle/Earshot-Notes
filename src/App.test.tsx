@@ -10,6 +10,8 @@ import type { MeetingDetail, TranscriptSegment } from "./lib/api";
 import {
   chatExchange,
   createFakeBackend,
+  FAKE_DEFAULT_INSTRUCTIONS,
+  FAKE_READING_RULES,
   savedSummary,
   seedMeeting,
   segment,
@@ -1624,6 +1626,107 @@ describe("App", () => {
         expect(await screen.findByRole("alert")).toHaveTextContent(
           'The mishearing "cor-vena" can only contain letters, numbers, and spaces.',
         );
+      });
+    });
+
+    describe("summary instructions", () => {
+      async function openWith(setup: (state: ReturnType<typeof fakeBackend>["state"]) => void = () => {}) {
+        const backend = fakeBackend([seedMeeting(1, "Sync")]);
+        setup(backend.state);
+        const user = userEvent.setup();
+        render(<App />);
+        await user.click(await within(sidebar()).findByRole("button", { name: "Settings" }));
+        const section = await screen.findByRole("region", { name: "Summaries" });
+        await within(section).findByText(/instructions are in use/);
+        return { backend, user, section: within(section) };
+      }
+
+      it("shows the default instructions read-only, with the rules added after them", async () => {
+        const { section } = await openWith();
+
+        expect(section.getByText("The default instructions are in use.")).toBeInTheDocument();
+        expect(section.getByLabelText("Default summary instructions")).toHaveTextContent("You write meeting notes");
+        expect(section.queryByRole("textbox")).not.toBeInTheDocument();
+        expect(section.getByLabelText("Rules always added to summary instructions").textContent).toBe(
+          FAKE_READING_RULES,
+        );
+      });
+
+      it("copies the default into an editor and saves your text", async () => {
+        const { backend, user, section } = await openWith();
+
+        await user.click(section.getByRole("button", { name: "Customize" }));
+        const editor = section.getByRole("textbox", { name: "Your summary instructions" });
+        expect(editor).toHaveValue(FAKE_DEFAULT_INSTRUCTIONS);
+        await user.clear(editor);
+        await user.type(editor, "List decisions only.");
+        await user.click(section.getByRole("button", { name: "Save" }));
+
+        expect(await section.findByRole("status")).toHaveTextContent("Saved. The next summary uses your instructions.");
+        expect(backend.state.customInstructions).toBe("List decisions only.");
+        expect(section.getByText("Your instructions are in use.")).toBeInTheDocument();
+        expect(section.getByRole("button", { name: "Reset to default" })).toBeInTheDocument();
+        expect(section.getByLabelText("Rules always added to summary instructions")).toBeInTheDocument();
+      });
+
+      it("shows saved instructions in the editor, and resets them to the default", async () => {
+        const { backend, user, section } = await openWith((state) => (state.customInstructions = "Keep it short."));
+
+        expect(section.getByRole("textbox", { name: "Your summary instructions" })).toHaveValue("Keep it short.");
+        await user.click(section.getByRole("button", { name: "Reset to default" }));
+
+        expect(await section.findByRole("status")).toHaveTextContent("Saved. Summaries use the default instructions.");
+        expect(backend.state.customInstructions).toBeNull();
+        expect(section.queryByRole("textbox")).not.toBeInTheDocument();
+        expect(section.getByText("The default instructions are in use.")).toBeInTheDocument();
+      });
+
+      it("keeps the default when you save it unchanged or empty", async () => {
+        const { backend, user, section } = await openWith();
+
+        await user.click(section.getByRole("button", { name: "Customize" }));
+        await user.click(section.getByRole("button", { name: "Save" }));
+        expect(await section.findByRole("status")).toHaveTextContent("Summaries use the default instructions.");
+        expect(backend.state.customInstructions).toBeNull();
+
+        await user.click(section.getByRole("button", { name: "Customize" }));
+        await user.clear(section.getByRole("textbox", { name: "Your summary instructions" }));
+        await user.click(section.getByRole("button", { name: "Save" }));
+        expect(await section.findByRole("status")).toHaveTextContent("Summaries use the default instructions.");
+        expect(backend.state.customInstructions).toBeNull();
+      });
+
+      it("cancels customizing without saving", async () => {
+        const { backend, user, section } = await openWith();
+
+        await user.click(section.getByRole("button", { name: "Customize" }));
+        await user.type(section.getByRole("textbox", { name: "Your summary instructions" }), " More.");
+        await user.click(section.getByRole("button", { name: "Cancel" }));
+
+        expect(section.queryByRole("textbox")).not.toBeInTheDocument();
+        expect(backend.state.customInstructions).toBeNull();
+      });
+
+      it("counts characters as you type and refuses text over the limit", async () => {
+        const { backend, user, section } = await openWith();
+
+        await user.click(section.getByRole("button", { name: "Customize" }));
+        const editor = section.getByRole("textbox", { name: "Your summary instructions" });
+        await user.clear(editor);
+        await user.type(editor, "Short.");
+        expect(section.getByText("6 / 6,000 characters")).toBeInTheDocument();
+
+        await user.clear(editor);
+        await user.click(editor);
+        await user.paste("x".repeat(6001));
+        expect(section.getByText("6,001 / 6,000 characters")).toHaveClass("over");
+        await user.click(section.getByRole("button", { name: "Save" }));
+
+        expect(await section.findByRole("alert")).toHaveTextContent(
+          "Summary instructions can be at most 6,000 characters.",
+        );
+        expect(backend.state.customInstructions).toBeNull();
+        expect(editor).toHaveValue("x".repeat(6001));
       });
     });
 
