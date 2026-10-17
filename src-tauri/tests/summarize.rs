@@ -12,6 +12,7 @@ use earshot_lib::llm::generator::{GenerateError, Generator};
 use earshot_lib::llm::llama::{LlamaGenerator, MAX_CONTEXT, Placement};
 use earshot_lib::llm::template::Message;
 use earshot_lib::store::{Source, TranscriptSegment};
+use earshot_lib::summarize::prompt::DEFAULT_INSTRUCTIONS;
 use earshot_lib::summarize::run::{Progress, Request, summarize};
 
 const MODEL: &str = "tests/models/smollm2-135m-instruct-q4_k_m.gguf";
@@ -128,6 +129,7 @@ fn summarizes_a_short_meeting_in_one_pass() {
             notes_markdown: "- budget",
             segments: &segments,
             terms: &[],
+            instructions: DEFAULT_INSTRUCTIONS,
         },
         &AtomicBool::new(false),
         &mut |p| progress.push(p),
@@ -153,6 +155,7 @@ fn condenses_in_parts_when_the_meeting_exceeds_the_context() {
             notes_markdown: "",
             segments: &segments,
             terms: &[],
+            instructions: DEFAULT_INSTRUCTIONS,
         },
         &AtomicBool::new(false),
         &mut |p| progress.push(p),

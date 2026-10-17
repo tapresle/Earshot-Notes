@@ -15,6 +15,7 @@ use super::resident::{KeepLoaded, ModelLoader, Resident};
 use crate::chat::job::{self as chat_job, ChatEvent, ChatJob, MAX_QUESTION_CHARS};
 use crate::store::settings::KEEP_MODEL_LOADED;
 use crate::store::{Store, StoreError};
+use crate::summarize::instructions;
 use crate::summarize::job::{self as summary_job, SummaryEvent, SummaryJob};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -314,6 +315,7 @@ fn summary_job(store: &Store, meeting_id: i64, is_final: bool) -> Result<Summary
         upto_ms: segments.iter().map(|s| s.end_ms).max().unwrap_or(0),
         segments,
         terms: terms(store)?,
+        instructions: instructions::in_use(store)?,
         is_final,
         cancel: Arc::new(AtomicBool::new(false)),
     })
@@ -487,6 +489,8 @@ mod tests {
     struct FakeModel {
         gate: Option<mpsc::Receiver<()>>,
         generations: Arc<AtomicUsize>,
+        /// The system prompt of each call to `generate`.
+        systems: Arc<Mutex<Vec<String>>>,
         title_reply: Result<&'static str, ()>,
         unloads: Arc<AtomicUsize>,
     }
@@ -509,11 +513,15 @@ mod tests {
         }
         fn generate(
             &mut self,
-            _: &[Message],
+            messages: &[Message],
             _: usize,
             cancel: &AtomicBool,
             on_text: &mut dyn FnMut(&str),
         ) -> Result<String, GenerateError> {
+            self.systems
+                .lock()
+                .unwrap()
+                .push(messages[0].content.clone());
             if self.generations.fetch_add(1, Ordering::Relaxed) > 0 {
                 return self
                     .title_reply
@@ -541,6 +549,7 @@ mod tests {
         /// Calls to `generate` across all jobs: the summary, then any title.
         generations: Arc<AtomicUsize>,
         loads: Arc<AtomicUsize>,
+        systems: Arc<Mutex<Vec<String>>>,
         unloads: Arc<AtomicUsize>,
     }
 
@@ -609,7 +618,13 @@ mod tests {
         let generations = Arc::new(AtomicUsize::new(0));
         let loads = Arc::new(AtomicUsize::new(0));
         let unloads = Arc::new(AtomicUsize::new(0));
-        let (counter, loaded, unloaded) = (generations.clone(), loads.clone(), unloads.clone());
+        let systems = Arc::new(Mutex::new(Vec::new()));
+        let (counter, loaded, unloaded, prompts) = (
+            generations.clone(),
+            loads.clone(),
+            unloads.clone(),
+            systems.clone(),
+        );
         let loader: ModelLoader = Box::new(move |model| {
             if model.id == "broken" {
                 return Err(GenerateError::Model("bad file".into()));
@@ -618,6 +633,7 @@ mod tests {
             Ok(Box::new(FakeModel {
                 gate: gate.lock().unwrap().take(),
                 generations: counter.clone(),
+                systems: prompts.clone(),
                 title_reply,
                 unloads: unloaded.clone(),
             }))
@@ -640,6 +656,7 @@ mod tests {
             meeting_id: meeting.id,
             generations,
             loads,
+            systems,
             unloads,
         }
     }
@@ -843,6 +860,33 @@ mod tests {
         release.send(()).unwrap();
         while !matches!(next(&h.events), SummaryEvent::Done { .. }) {}
         assert!(h.worker.when_idle(|| ()).is_ok());
+    }
+
+    #[test]
+    fn keeps_the_instructions_a_summary_started_with() {
+        let (release, gate) = mpsc::channel();
+        let h = harness(Some(gate), true);
+        instructions::save(&h.store, Some("List decisions only.")).unwrap();
+        h.worker.summarize(&h.store, h.meeting_id, false).unwrap();
+
+        instructions::save(&h.store, Some("List risks only.")).unwrap();
+        release.send(()).unwrap();
+        done(&h.events);
+        h.worker.summarize(&h.store, h.meeting_id, false).unwrap();
+        done(&h.events);
+
+        let systems = h.systems.lock().unwrap();
+        let notes: Vec<_> = systems
+            .iter()
+            .filter(|s| s.contains("Never invent"))
+            .collect();
+        assert_eq!(notes.len(), 2, "{systems:?}");
+        assert!(
+            notes[0].starts_with("List decisions only.\n- "),
+            "{}",
+            notes[0]
+        );
+        assert!(notes[1].starts_with("List risks only.\n- "), "{}", notes[1]);
     }
 
     #[test]

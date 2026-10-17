@@ -15,6 +15,8 @@ use crate::store::settings::{
     INPUT_DEVICE, KEEP_MODEL_LOADED, RECORD_NEW_MEETINGS, SUMMARIZE_ON_STOP, sensitivity_key,
 };
 use crate::store::{ModelRecord, Source, Store};
+use crate::summarize::instructions;
+use crate::summarize::prompt::{DEFAULT_INSTRUCTIONS, READING_RULES};
 use macos_audio::LoginItem;
 
 /// The microphones connected now. Listing can take a moment, so it runs off the main thread.
@@ -257,6 +259,63 @@ pub async fn set_keep_model_loaded(
     .await
 }
 
+/// The instructions summaries follow, and the rules always added after them.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryInstructions {
+    default: &'static str,
+    rules: &'static str,
+    /// Your own instructions; `None` when summaries follow the default.
+    custom: Option<String>,
+    max_chars: usize,
+}
+
+impl SummaryInstructions {
+    fn with(custom: Option<String>) -> Self {
+        Self {
+            default: DEFAULT_INSTRUCTIONS,
+            rules: READING_RULES,
+            custom,
+            max_chars: instructions::MAX_CHARS,
+        }
+    }
+}
+
+impl From<instructions::SaveError> for CommandError {
+    fn from(error: instructions::SaveError) -> Self {
+        match error {
+            instructions::SaveError::Store(store) => store.into(),
+            instructions::SaveError::TooLong => Self {
+                kind: ErrorKind::Invalid,
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn summary_instructions(
+    store: State<'_, Arc<Store>>,
+) -> CommandResult<SummaryInstructions> {
+    let store = Arc::clone(&store);
+    blocking(move || Ok(SummaryInstructions::with(instructions::custom(&store)?))).await
+}
+
+/// Saves your summary instructions for the next summary. Null, empty text, or
+/// the default goes back to the default.
+#[tauri::command]
+pub async fn set_summary_instructions(
+    store: State<'_, Arc<Store>>,
+    text: Option<String>,
+) -> CommandResult<SummaryInstructions> {
+    let store = Arc::clone(&store);
+    blocking(move || {
+        let saved = instructions::save(&store, text.as_deref())?;
+        Ok(SummaryInstructions::with(saved))
+    })
+    .await
+}
+
 impl From<RemoveError> for CommandError {
     fn from(error: RemoveError) -> Self {
         match error {
@@ -396,6 +455,31 @@ mod tests {
         assert_eq!(
             serde_json::to_value(pending).unwrap(),
             serde_json::json!({ "enabled": true, "needsApproval": true, "available": true })
+        );
+    }
+
+    #[test]
+    fn sends_the_summary_instructions_in_the_shape_the_ui_reads() {
+        let value = serde_json::to_value(SummaryInstructions::with(Some("Mine.".into()))).unwrap();
+
+        assert_eq!(value["default"], DEFAULT_INSTRUCTIONS);
+        assert_eq!(value["rules"], READING_RULES);
+        assert_eq!(value["custom"], "Mine.");
+        assert_eq!(value["maxChars"], 6000);
+        assert_eq!(
+            serde_json::to_value(SummaryInstructions::with(None)).unwrap()["custom"],
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn refuses_long_summary_instructions_as_invalid_input() {
+        let error = CommandError::from(instructions::SaveError::TooLong);
+
+        assert_eq!(error.kind, ErrorKind::Invalid);
+        assert_eq!(
+            error.message,
+            "summary instructions can be at most 6,000 characters"
         );
     }
 

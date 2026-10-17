@@ -3,7 +3,9 @@
 use crate::llm::template::Message;
 use crate::store::TranscriptSegment;
 
-const SYSTEM: &str = "You write meeting notes after a meeting ends, from its transcript and the note-taker's rough notes. Read the whole transcript before you write anything: the notes should reflect the meeting as a whole, so that someone who missed it could act on them.
+/// The built-in instructions for writing a summary. You can replace them in
+/// **Settings** (see `summarize::instructions`); `READING_RULES` always follows.
+pub const DEFAULT_INSTRUCTIONS: &str = "You write meeting notes after a meeting ends, from its transcript and the note-taker's rough notes. Read the whole transcript before you write anything: the notes should reflect the meeting as a whole, so that someone who missed it could act on them.
 
 Structure:
 - Group the notes by topic. Topics appear in the order each first came up. Give each topic a heading that names the specific thing discussed, such as a feature, system, customer, or ticket. Never use a generic heading like \"Discussion\" or \"Updates\".
@@ -24,8 +26,14 @@ Content:
 - State what happened or was found, not that it was discussed. Write \"The lunar rover's battery drains overnight\", not \"Discussed an issue with the rover\".
 - When something was suggested but not agreed, say so.
 - Include reasons, results, rejected options, open questions, and risks when the meeting covered them.
-- When a speaker corrects themselves, keep the corrected statement and drop the first one. A corrected number or code still belongs in the notes. Coming back to a topic later is not a correction: what was said each time stays, unless someone says the earlier point was wrong.
-- The transcript comes from speech recognition and misspells names. When the note-taker's notes or the meeting title spell a name differently from the transcript, such as \"Lindgren\" in the notes and \"Lindgrin\" in the transcript, always use the notes' spelling.
+- When a speaker corrects themselves, keep the corrected statement and drop the first one. A corrected number or code still belongs in the notes. Coming back to a topic later is not a correction: what was said each time stays, unless someone says the earlier point was wrong.";
+
+/// How to read the meeting data, added after the instructions in use, custom
+/// or default, so custom instructions can't change how the input is read.
+/// They continue the default's last list without a heading of their own:
+/// a separate "Reading the meeting" section made Qwen3.5 4B write only next
+/// steps for long, noisy meetings (#161).
+pub const READING_RULES: &str = "- The transcript comes from speech recognition and misspells names. When the note-taker's notes or the meeting title spell a name differently from the transcript, such as \"Lindgren\" in the notes and \"Lindgrin\" in the transcript, always use the notes' spelling.
 - Only state what the transcript or notes support. Never invent names, numbers, dates, or decisions.
 - \"Me\" is the note-taker. \"Meeting Participants\" is everyone else on the call; use their names when the transcript gives them.
 - Attribute each statement and task to whoever said or took it on. A task is yours only when a \"Me\" line takes it on; when a participant says \"I'll do it\", it's theirs.
@@ -93,15 +101,22 @@ fn notes_section(notes_markdown: &str) -> String {
     }
 }
 
+/// The system message that writes the notes: the instructions in use, then
+/// the reading rules.
+fn notes_system(instructions: &str) -> Message {
+    Message::system(format!("{}\n{READING_RULES}", instructions.trim()))
+}
+
 /// One pass over the whole transcript.
 pub fn summary_messages(
+    instructions: &str,
     title: &str,
     notes_markdown: &str,
     terms: &[String],
     transcript: &str,
 ) -> Vec<Message> {
     vec![
-        Message::system(SYSTEM),
+        notes_system(instructions),
         Message::user(format!(
             "Meeting: {title}\n\n{}{}\n\nTranscript:\n<transcript>\n{transcript}\n</transcript>",
             terms_section(terms),
@@ -135,6 +150,7 @@ pub fn part_messages(
 
 /// The final pass when the transcript was condensed in parts.
 pub fn combine_messages(
+    instructions: &str,
     title: &str,
     notes_markdown: &str,
     terms: &[String],
@@ -147,7 +163,7 @@ pub fn combine_messages(
         .collect::<Vec<_>>()
         .join("\n\n");
     vec![
-        Message::system(SYSTEM),
+        notes_system(instructions),
         Message::user(format!(
             "Meeting: {title}\n\n{}{}\n\nThe transcript was long, so here it is condensed in order:\n<transcript>\n{condensed}\n</transcript>",
             terms_section(terms),
@@ -222,7 +238,13 @@ mod tests {
 
     #[test]
     fn includes_notes_title_and_transcript() {
-        let messages = summary_messages("Design sync", "- dark mode first", &[], "[0:01] Me: Hi");
+        let messages = summary_messages(
+            DEFAULT_INSTRUCTIONS,
+            "Design sync",
+            "- dark mode first",
+            &[],
+            "[0:01] Me: Hi",
+        );
 
         assert_eq!(messages[0].role, "system");
         let user = &messages[1].content;
@@ -236,10 +258,13 @@ mod tests {
         // Invented names only.
         let terms = ["Bluefin Ledger".to_owned(), "Corvina".to_owned()];
 
-        let with_terms = &summary_messages("Sync", "", &terms, "[0:01] Me: Hi")[1].content;
+        let with_terms =
+            &summary_messages(DEFAULT_INSTRUCTIONS, "Sync", "", &terms, "[0:01] Me: Hi")[1].content;
         let part = &part_messages(1, 2, "", &terms, "[0:01] Me: Hi")[1].content;
-        let combined = &combine_messages("Sync", "", &terms, &["- a".into()])[1].content;
-        let without = &summary_messages("Sync", "", &[], "[0:01] Me: Hi")[1].content;
+        let combined =
+            &combine_messages(DEFAULT_INSTRUCTIONS, "Sync", "", &terms, &["- a".into()])[1].content;
+        let without =
+            &summary_messages(DEFAULT_INSTRUCTIONS, "Sync", "", &[], "[0:01] Me: Hi")[1].content;
 
         for content in [with_terms, part, combined] {
             assert!(content.contains("exactly as written here"), "{content}");
@@ -250,15 +275,64 @@ mod tests {
 
     #[test]
     fn keeps_small_talk_at_every_stage() {
-        for prompt in [SYSTEM, PART_SYSTEM] {
+        for prompt in [DEFAULT_INSTRUCTIONS, PART_SYSTEM] {
             assert!(prompt.contains("outside work"), "{prompt}");
             assert!(!prompt.to_lowercase().contains("small talk"), "{prompt}");
         }
     }
 
     #[test]
+    fn adds_the_reading_rules_after_custom_or_default_instructions() {
+        let custom = "  List decisions only.\n";
+        let messages = [
+            summary_messages(custom, "Sync", "", &[], "[0:01] Me: Hi"),
+            combine_messages(custom, "Sync", "", &[], &["- a".into()]),
+        ];
+        for messages in &messages {
+            assert_eq!(
+                messages[0].content,
+                format!("List decisions only.\n{READING_RULES}")
+            );
+        }
+
+        let default = &summary_messages(DEFAULT_INSTRUCTIONS, "Sync", "", &[], "")[0].content;
+        assert_eq!(*default, format!("{DEFAULT_INSTRUCTIONS}\n{READING_RULES}"));
+    }
+
+    #[test]
+    fn continues_the_default_list_with_the_rules_instead_of_a_new_section() {
+        let system = &summary_messages(DEFAULT_INSTRUCTIONS, "Sync", "", &[], "")[0].content;
+
+        assert!(
+            system.contains(
+                "unless someone says the earlier point was wrong.\n- The transcript comes from speech recognition"
+            ),
+            "{system}"
+        );
+        assert!(DEFAULT_INSTRUCTIONS.ends_with('.'));
+        assert!(READING_RULES.starts_with("- "));
+    }
+
+    #[test]
+    fn keeps_the_input_rules_out_of_the_replaceable_instructions() {
+        for rule in [
+            "\"Me\" is the note-taker",
+            "Meeting Participants",
+            "always use the notes' spelling",
+            "Never invent",
+            "A task is yours only when",
+            "plain Markdown",
+            "no preamble",
+        ] {
+            assert!(READING_RULES.contains(rule), "{rule}");
+            assert!(!DEFAULT_INSTRUCTIONS.contains(rule), "{rule}");
+        }
+    }
+
+    #[test]
     fn says_when_there_are_no_notes() {
-        let user = &summary_messages("Sync", "  \n", &[], "[0:01] Me: Hi")[1].content;
+        let user = &summary_messages(DEFAULT_INSTRUCTIONS, "Sync", "  \n", &[], "[0:01] Me: Hi")[1]
+            .content;
 
         assert!(user.contains("didn't write any notes"));
         assert!(!user.contains("<notes>"));
@@ -266,7 +340,14 @@ mod tests {
 
     #[test]
     fn combines_condensed_parts_in_order() {
-        let user = &combine_messages("Sync", "", &[], &["- a".into(), "- b".into()])[1].content;
+        let user = &combine_messages(
+            DEFAULT_INSTRUCTIONS,
+            "Sync",
+            "",
+            &[],
+            &["- a".into(), "- b".into()],
+        )[1]
+        .content;
 
         assert!(user.contains("Part 1:\n- a\n\nPart 2:\n- b"));
     }

@@ -48,6 +48,7 @@ flowchart LR
         s4["Vocabulary, software terms"]
         s5["Audio recordings (keep, size, delete)"]
         s6["Local AI model, Keep loaded,<br/>ModelSetup"]
+        s6b["Summaries (custom instructions)"]
         s7["Updates, export all"]
     end
     settings --> sv

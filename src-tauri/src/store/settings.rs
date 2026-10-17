@@ -20,6 +20,9 @@ pub const MIC_SENSITIVITY: &str = "mic_speech_sensitivity";
 pub const SYSTEM_SENSITIVITY: &str = "system_speech_sensitivity";
 /// The vocabulary's terms as JSON (`vocabulary::Term`).
 pub const VOCABULARY: &str = "vocabulary";
+/// Your own summary instructions (`summarize::instructions`); absent means the
+/// default.
+pub const SUMMARY_INSTRUCTIONS: &str = "summary_instructions";
 /// The transcription model for new recordings, by id; absent means Whistle.
 pub const TRANSCRIPTION_MODEL: &str = "transcription_model";
 /// How long the summary model stays loaded after a request

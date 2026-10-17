@@ -1072,6 +1072,65 @@ body {
   color: var(--text-muted);
 }
 
+.instructions-in-use,
+.instructions-rules-label {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.instructions-rules-label {
+  margin-top: 16px;
+  color: var(--text-secondary);
+}
+
+/* Read-only prompt text, and the editor that replaces it. */
+.instructions-text,
+.instructions-editor {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.instructions-text {
+  max-height: 12rem;
+  overflow-y: auto;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+}
+
+.instructions-editor {
+  min-height: 16rem;
+  resize: vertical;
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.instructions-text:focus-visible,
+.instructions-editor:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.instructions-count {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.instructions-count.over {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .model-choices {
   margin: 0 0 12px;
   padding: 0;

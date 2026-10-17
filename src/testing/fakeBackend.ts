@@ -4,6 +4,7 @@ import type {
   MeetingDetail,
   ModelRecord,
   Summary,
+  SummaryInstructions,
   TranscriptSegment,
   UpdateCheck,
   VocabularyTerm,
@@ -13,6 +14,18 @@ type Args = Record<string, unknown>;
 
 const WHISPER_ID = "whisper-large-v3-turbo-q5_0";
 const WHISPER_BYTES = 574_041_195;
+
+// Stand-ins for `DEFAULT_INSTRUCTIONS` and `READING_RULES` in `summarize/prompt.rs`.
+export const FAKE_DEFAULT_INSTRUCTIONS = `You write meeting notes after a meeting ends, from its transcript and the note-taker's rough notes.
+
+Structure:
+- Group the notes by topic. Topics appear in the order each first came up.
+- Under each heading, write bullet points.
+- End with "## Next steps" as a bulleted list: each task, then the owner's name in parentheses.`;
+export const FAKE_READING_RULES = `- Only state what the transcript or notes support. Never invent names, numbers, dates, or decisions.
+- "Me" is the note-taker. "Meeting Participants" is everyone else on the call.
+- Reply with the notes only, no preamble.`;
+const MAX_INSTRUCTION_CHARS = 6000;
 
 /**
  * An in-memory stand-in for the Rust commands, shared by the tests and the
@@ -78,11 +91,19 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
     vocabulary: [] as VocabularyTerm[],
     vocabularyUpdated: 0,
     vocabularyError: null as unknown,
+    customInstructions: null as string | null,
     updateChecks: 0,
     updateCheck: { current: "0.1.6", latest: "0.1.6", newer: false, notes: "" } as UpdateCheck,
     updateCheckError: null as unknown,
     openedReleasePage: null as string | null,
   };
+
+  const instructions = (): SummaryInstructions => ({
+    default: FAKE_DEFAULT_INSTRUCTIONS,
+    rules: FAKE_READING_RULES,
+    custom: state.customInstructions,
+    maxChars: MAX_INSTRUCTION_CHARS,
+  });
 
   const handlers: Record<string, (args: Args) => unknown> = {
     list_meetings: ({ query, after, limit }) => {
@@ -265,6 +286,16 @@ export function createFakeBackend(seed: MeetingDetail[] = [], segments: Transcri
         heardAs: t.heardAs.map((h) => h.trim()).filter(Boolean),
       }));
       return { terms: state.vocabulary, updated: state.vocabularyUpdated };
+    },
+    summary_instructions: () => instructions(),
+    set_summary_instructions: ({ text }) => {
+      // Mirrors `summarize::instructions::save`.
+      const trimmed = ((text as string | null) ?? "").trim();
+      if ([...trimmed].length > MAX_INSTRUCTION_CHARS) {
+        throw { kind: "invalid", message: "summary instructions can be at most 6,000 characters" };
+      }
+      state.customInstructions = trimmed && trimmed !== FAKE_DEFAULT_INSTRUCTIONS ? trimmed : null;
+      return instructions();
     },
     check_for_update: () => {
       state.updateChecks++;

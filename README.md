@@ -35,7 +35,7 @@ Your meetings stay on your Mac.
 
 - **Both sides of the call:** a live transcript of your microphone and the other participants, labeled **Me** and **Meeting Participants**.
 - **A notepad during the meeting:** type rough notes as you go. They become the outline of the summary.
-- **Summaries on request:** during or after the meeting, notes grouped by topic, with the specifics kept, personal news people shared, and next steps with their owners.
+- **Summaries on request:** during or after the meeting, notes grouped by topic, with the specifics kept, personal news people shared, and next steps with their owners. To fit summaries to your own meetings, replace their instructions in **Settings**.
 - **Ask about a meeting:** in the **Chat** tab, ask a question such as "What did we decide about the launch date?" The local model answers from the meeting's transcript and your notes, and each answer links to the lines it came from.
 - **Your vocabulary:** list the names your meetings use, and what transcription mishears them as, so transcripts and summaries spell them right.
 - **Find and export:** search titles, notes, and transcripts, and export any meeting to Markdown. Untitled meetings are named from their summaries.

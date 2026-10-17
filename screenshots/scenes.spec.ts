@@ -130,6 +130,16 @@ test("settings", async ({ page }) => {
   await expect(page).toHaveScreenshot("settings.png");
 });
 
+test("summary instructions", async ({ page }) => {
+  await open(page, "settings");
+  await sidebar(page).getByRole("button", { name: "Settings" }).click();
+  const section = page.getByRole("region", { name: "Summaries" });
+  await section.getByRole("button", { name: "Customize" }).click();
+  await expect(section.getByRole("textbox", { name: "Your summary instructions" })).toBeVisible();
+  await section.getByRole("heading", { name: "Summaries" }).evaluate((heading) => heading.scrollIntoView());
+  await expect(page).toHaveScreenshot("summary-instructions.png");
+});
+
 test("settings scroll inside their pane, not the window", async ({ page }) => {
   await open(page, "settings");
   await sidebar(page).getByRole("button", { name: "Settings" }).click();
