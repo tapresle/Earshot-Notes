@@ -14,7 +14,7 @@ macOS (Apple Silicon) is the first target. Windows and Linux follow.
 - **Summaries and chat:** the local AI model runs through llama.cpp, embedded with `llama-cpp-2` and Metal, in `src-tauri/src/llm/`. Prompts are rendered with each model's own chat template through `minijinja`. Summaries are in `src-tauri/src/summarize/`, and chat in `src-tauri/src/chat/`. Model files are managed in `src-tauri/src/models/`.
 - **Storage:** SQLite through `rusqlite`, in `src-tauri/src/store/`. The database lives in the app data directory as `earshot.db`.
 
-The decision records in `docs/decisions/` explain why each piece was chosen.
+The decision records in `docs/decisions/` explain why each piece was chosen, and `docs/decisions/log.md` keeps short decisions.
 
 ## Commands
 
