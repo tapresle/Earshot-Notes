@@ -166,6 +166,19 @@ impl Chunker {
         done
     }
 
+    /// The segment in progress, once it holds enough speech to be kept, for a
+    /// live preview. Like a closed segment, it keeps at most
+    /// `TRAILING_SILENCE_FRAMES` of a pause.
+    pub fn open(&self) -> Option<OpenSegment<'_>> {
+        let current = self.current.as_ref()?;
+        let speech = current.speech()?;
+        Some(OpenSegment {
+            start_sample: current.start_sample,
+            samples: &current.samples[..current.kept_len()],
+            speech,
+        })
+    }
+
     /// Ends the stream and returns the segment in progress, if it holds speech.
     pub fn finish(mut self) -> Option<Segment> {
         if let Some(current) = self.current.as_mut() {
@@ -244,19 +257,52 @@ impl Chunker {
     }
 }
 
-fn into_segment(mut current: Current) -> Option<Segment> {
-    // Keep at most TRAILING_SILENCE_FRAMES of the pause after the last speech.
-    if current.silence_run > TRAILING_SILENCE_FRAMES {
-        let keep = (current.frames - current.silence_run + TRAILING_SILENCE_FRAMES) * FRAME;
-        current.samples.truncate(keep);
+/// The segment in progress, borrowed from the chunker.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OpenSegment<'a> {
+    /// Offset of the first sample from the start of the stream.
+    pub start_sample: u64,
+    pub samples: &'a [f32],
+    pub speech: Speech,
+}
+
+impl OpenSegment<'_> {
+    pub fn start_ms(&self) -> u64 {
+        self.start_sample * 1000 / SAMPLE_RATE as u64
     }
-    (current.speech_frames >= MIN_SPEECH_FRAMES).then(|| Segment {
+
+    pub fn end_ms(&self) -> u64 {
+        (self.start_sample + self.samples.len() as u64) * 1000 / SAMPLE_RATE as u64
+    }
+}
+
+impl Current {
+    /// Samples to keep: at most TRAILING_SILENCE_FRAMES of the pause after the
+    /// last speech.
+    fn kept_len(&self) -> usize {
+        if self.silence_run > TRAILING_SILENCE_FRAMES {
+            (self.frames - self.silence_run + TRAILING_SILENCE_FRAMES) * FRAME
+        } else {
+            self.samples.len()
+        }
+    }
+
+    /// The speech so far, or `None` while it's too little to keep.
+    fn speech(&self) -> Option<Speech> {
+        (self.speech_frames >= MIN_SPEECH_FRAMES).then(|| Speech {
+            ms: (self.speech_frames * FRAME) as u64 * 1000 / SAMPLE_RATE as u64,
+            margin: self.margin_sum / self.speech_frames as f32,
+        })
+    }
+}
+
+fn into_segment(mut current: Current) -> Option<Segment> {
+    let speech = current.speech()?;
+    current.samples.truncate(current.kept_len());
+    Some(Segment {
         start_sample: current.start_sample,
         samples: current.samples,
-        speech: Speech {
-            ms: (current.speech_frames * FRAME) as u64 * 1000 / SAMPLE_RATE as u64,
-            margin: current.margin_sum / current.speech_frames as f32,
-        },
+        speech,
     })
 }
 
@@ -513,6 +559,39 @@ mod tests {
 
         assert_eq!(segments.len(), 1);
         assert!(segments[0].start_ms() >= 2500);
+    }
+
+    #[test]
+    fn has_no_open_segment_in_silence_or_a_click() {
+        let mut chunker = Chunker::new(MIC_MIN_SPEECH_RMS);
+
+        chunker.push(&silence(1000));
+        assert_eq!(chunker.open(), None);
+        // 60 ms of tone is under the 100 ms a segment needs to be kept.
+        chunker.push(&tone(60));
+        assert_eq!(chunker.open(), None);
+    }
+
+    #[test]
+    fn shows_the_open_segment_as_its_closed_form_will_start() {
+        let mut chunker = Chunker::new(MIC_MIN_SPEECH_RMS);
+        chunker.push(&concat(&[silence(1000), tone(1500)]));
+
+        let open = chunker.open().expect("an open segment");
+        assert_eq!(open.start_ms(), 800); // 200 ms of pre-roll, as when closed
+        assert_eq!(open.end_ms(), 2500);
+        chunker.push(&silence(2500));
+        assert_eq!(chunker.open(), None, "the pause closes it");
+    }
+
+    #[test]
+    fn trims_a_long_pause_from_the_open_segment() {
+        let mut chunker = Chunker::new(MIC_MIN_SPEECH_RMS);
+        chunker.push(&concat(&[tone(1000), silence(1500)]));
+
+        let open = chunker.open().expect("still open within the 2 s pause");
+        // The last syllable's gap starts at 960 ms, so speech ends there.
+        assert_eq!(open.end_ms(), 1460);
     }
 
     #[test]

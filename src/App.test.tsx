@@ -682,6 +682,60 @@ describe("App", () => {
     expect(within(transcript).queryByText(/we moved the invoices/)).not.toBeInTheDocument();
   });
 
+  it("shows what each side is saying until its segment replaces it", async () => {
+    fakeBackend([seedMeeting(1, "Open"), seedMeeting(2, "Other")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Open/ }));
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+    const transcript = screen.getByRole("complementary", { name: "Transcript" });
+    await within(transcript).findByText(/Listening/);
+
+    emit("transcript:preview", { meetingId: 2, source: "them", startMs: 0, text: "Not for this meeting" });
+    emit("transcript:preview", { meetingId: 1, source: "them", startMs: 4000, text: "We moved the" });
+    emit("transcript:preview", { meetingId: 1, source: "them", startMs: 4000, text: "We moved the invoices" });
+    emit("transcript:preview", { meetingId: 1, source: "me", startMs: 2000, text: "Sounds" });
+
+    const items = await within(transcript).findAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "Me 0:02Sounds (still listening)",
+      "Meeting Participants 0:04We moved the invoices (still listening)",
+    ]);
+    expect(items[1]).toHaveClass("is-tentative");
+    // Outside the live region, so a screen reader isn't read every revision.
+    expect(items[1].closest("[aria-live]")).toBeNull();
+    expect(within(transcript).queryByText(/Listening/)).not.toBeInTheDocument();
+    expect(within(transcript).queryByText(/Not for this meeting/)).not.toBeInTheDocument();
+
+    emit("transcript:segment", segment(40, 1, "them", 4000, "We moved the invoices yesterday."));
+    emit("transcript:preview", { meetingId: 1, source: "them", startMs: 4000, text: "" });
+
+    await waitFor(() => expect(within(transcript).queryByText(/We moved the invoices \(/)).not.toBeInTheDocument());
+    const final = within(transcript).getByText("We moved the invoices yesterday.").closest("li");
+    expect(final).not.toHaveClass("is-tentative");
+    expect(final?.closest("[aria-live]")).not.toBeNull();
+    expect(within(transcript).getByText(/Sounds/)).toBeInTheDocument();
+  });
+
+  it("keeps the last words shown after stopping until their segment arrives", async () => {
+    fakeBackend([seedMeeting(1, "Open")]);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await within(sidebar()).findByRole("button", { name: /Open/ }));
+    await user.click(await screen.findByRole("button", { name: "Start recording" }));
+    const transcript = screen.getByRole("complementary", { name: "Transcript" });
+    emit("transcript:preview", { meetingId: 1, source: "me", startMs: 1000, text: "That's all from" });
+    await within(transcript).findByText(/That's all from/);
+
+    await user.click(screen.getByRole("button", { name: "Stop recording" }));
+    expect(within(transcript).getByText(/That's all from/)).toBeInTheDocument();
+    emit("transcript:segment", segment(50, 1, "me", 1000, "That's all from me."));
+    emit("transcript:preview", { meetingId: 1, source: "me", startMs: 1000, text: "" });
+
+    await waitFor(() => expect(within(transcript).queryByText(/That's all from \(/)).not.toBeInTheDocument());
+    expect(within(transcript).getByText("That's all from me.")).toBeInTheDocument();
+  });
+
   it("shows transcript empty states", async () => {
     fakeBackend([seedMeeting(1, "Quiet")]);
     const user = userEvent.setup();

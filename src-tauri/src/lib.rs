@@ -214,46 +214,64 @@ pub fn run() {
 }
 
 /// Starts the transcription worker. Saved segments are pushed to the UI as
-/// `transcript:segment` events. On failure, recording is disabled but the rest
-/// of the app keeps working.
+/// `transcript:segment` events, and previews of open segments as
+/// `transcript:preview` events, which are never saved. On failure, recording
+/// is disabled but the rest of the app keeps working.
 fn spawn_transcription(
     app: &App,
     store: Arc<Store>,
     candidates: Vec<PathBuf>,
 ) -> Result<TranscriptionWorker, String> {
     let handle = app.handle().clone();
-    TranscriptionWorker::spawn(candidates, move |job, transcription| {
-        // Corrected with the vocabulary, and without echo, as it's saved.
-        let meeting_id = job.meeting_id;
-        let saved = store.insert_transcribed_segment(NewSegment {
-            meeting_id,
-            source: job.source,
-            start_ms: job.start_ms,
-            end_ms: job.end_ms,
-            text: transcription.text,
-            language: transcription.language,
-        });
-        match saved {
-            Ok(saved) => {
-                // An updated segment goes out again under its ID, replacing the shown one.
-                for segment in saved.segment.iter().chain(&saved.updated) {
-                    if let Err(error) = handle.emit("transcript:segment", segment) {
-                        log::warn!("couldn't send a transcript segment to the UI: {error}");
+    let preview_handle = handle.clone();
+    let preview_store = store.clone();
+    TranscriptionWorker::spawn(
+        candidates,
+        move |job, transcription| {
+            // Corrected with the vocabulary, and without echo, as it's saved.
+            let meeting_id = job.meeting_id;
+            let saved = store.insert_transcribed_segment(NewSegment {
+                meeting_id,
+                source: job.source,
+                start_ms: job.start_ms,
+                end_ms: job.end_ms,
+                text: transcription.text,
+                language: transcription.language,
+            });
+            match saved {
+                Ok(saved) => {
+                    // An updated segment goes out again under its ID, replacing the shown one.
+                    for segment in saved.segment.iter().chain(&saved.updated) {
+                        if let Err(error) = handle.emit("transcript:segment", segment) {
+                            log::warn!("couldn't send a transcript segment to the UI: {error}");
+                        }
+                    }
+                    if !saved.removed.is_empty() {
+                        let removed =
+                            serde_json::json!({ "meetingId": meeting_id, "ids": saved.removed });
+                        if let Err(error) = handle.emit("transcript:removed", removed) {
+                            log::warn!("couldn't tell the UI about removed echoes: {error}");
+                        }
                     }
                 }
-                if !saved.removed.is_empty() {
-                    let removed =
-                        serde_json::json!({ "meetingId": meeting_id, "ids": saved.removed });
-                    if let Err(error) = handle.emit("transcript:removed", removed) {
-                        log::warn!("couldn't tell the UI about removed echoes: {error}");
-                    }
+                Err(error) => {
+                    log::error!(
+                        "couldn't save a transcript segment for meeting {meeting_id}: {error}"
+                    )
                 }
             }
-            Err(error) => {
-                log::error!("couldn't save a transcript segment for meeting {meeting_id}: {error}")
+        },
+        move |mut preview| {
+            // Corrected with the vocabulary, as the segment will be when it's saved.
+            match preview_store.vocabulary() {
+                Ok(vocabulary) => preview.text = vocabulary.apply(&preview.text).into_owned(),
+                Err(error) => log::warn!("couldn't read the vocabulary for a preview: {error}"),
             }
-        }
-    })
+            if let Err(error) = preview_handle.emit("transcript:preview", preview) {
+                log::warn!("couldn't send a transcript preview to the UI: {error}");
+            }
+        },
+    )
     .map(|(worker, loaded)| {
         log::info!("loaded Whistle from {}", loaded.path.display());
         worker

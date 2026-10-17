@@ -44,6 +44,15 @@ export interface TranscriptSegment {
 
 export type Source = TranscriptSegment["source"];
 
+/** Tentative text for a source's open segment while recording. Never saved. Empty text clears it. */
+export interface TranscriptPreview {
+  meetingId: number;
+  source: Source;
+  /** Milliseconds from the start of the meeting. */
+  startMs: number;
+  text: string;
+}
+
 /** How readily quiet audio counts as speech. Changes apply to the next recording. */
 export type Sensitivity = "low" | "normal" | "high";
 
@@ -347,6 +356,9 @@ export const api = {
   listTranscript: (meetingId: number) => invoke<TranscriptSegment[]>("list_transcript", { meetingId }),
   onTranscriptSegment: (handler: (segment: TranscriptSegment) => void): Promise<UnlistenFn> =>
     listen<TranscriptSegment>("transcript:segment", (event) => handler(event.payload)),
+  /** What each source is saying now, replaced by its segment once a pause ends it. */
+  onTranscriptPreview: (handler: (preview: TranscriptPreview) => void): Promise<UnlistenFn> =>
+    listen<TranscriptPreview>("transcript:preview", (event) => handler(event.payload)),
   /** Segments removed after they were shown, such as echo found once its source arrived. */
   onTranscriptRemoved: (handler: (removed: TranscriptRemoved) => void): Promise<UnlistenFn> =>
     listen<TranscriptRemoved>("transcript:removed", (event) => handler(event.payload)),

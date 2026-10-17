@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, errorMessage, type TranscriptSegment } from "../../lib/api";
+import { api, errorMessage, type Source, type TranscriptPreview, type TranscriptSegment } from "../../lib/api";
 import { formatOffset } from "./formatOffset";
 import { segmentElementId } from "./showSegment";
 
@@ -15,6 +15,16 @@ interface TranscriptPanelProps {
 }
 
 type LoadState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready" };
+
+type Previews = Partial<Record<Source, TranscriptPreview>>;
+
+/** Sets or, for empty text, clears a source's preview. */
+function withPreview(current: Previews, preview: TranscriptPreview): Previews {
+  const next = { ...current };
+  if (preview.text) next[preview.source] = preview;
+  else delete next[preview.source];
+  return next;
+}
 
 /** Merges segments by id, leaves out removed ones, and keeps them in timeline order. */
 function merge(
@@ -44,6 +54,7 @@ export function TranscriptPanel({ meetingId, recording }: TranscriptPanelProps) 
 
 function MeetingTranscript({ meetingId, recording }: { meetingId: number; recording: boolean }) {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
+  const [previews, setPreviews] = useState<Previews>({});
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [systemAudioAllowed, setSystemAudioAllowed] = useState(false);
@@ -60,6 +71,9 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
     Promise.all([
       api.onTranscriptSegment((segment) => {
         if (!cancelled && segment.meetingId === meetingId) setSegments((s) => merge(s, [segment], removed));
+      }),
+      api.onTranscriptPreview((preview) => {
+        if (!cancelled && preview.meetingId === meetingId) setPreviews((p) => withPreview(p, preview));
       }),
       api.onTranscriptRemoved((event) => {
         if (cancelled || event.meetingId !== meetingId) return;
@@ -89,9 +103,15 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
       .catch(() => setSystemAudioAllowed(false));
   }, [recording]);
 
+  // A source's preview stays until the worker clears it, after the segment
+  // that replaces it, including the last ones after recording stops.
+  const tentative = Object.values(previews).sort((a, b) => a.startMs - b.startMs);
+  const tentativeText = tentative.map((p) => p.text).join("\n");
+  const heardThem = segments.some((s) => s.source === "them") || previews.them !== undefined;
+
   useEffect(() => {
     if (recording) endRef.current?.scrollIntoView?.({ block: "end" });
-  }, [segments.length, recording]);
+  }, [segments.length, tentativeText, recording]);
 
   if (state.kind === "loading") return <p className="empty-hint">Loading transcript…</p>;
   if (state.kind === "error") {
@@ -114,10 +134,10 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
 
   return (
     <>
-      {segments.length === 0 && (
+      {segments.length === 0 && tentative.length === 0 && (
         <p className="empty-hint">
           {recording
-            ? "Listening. Speech appears here a few seconds after it's spoken."
+            ? "Listening. Speech appears here as it's spoken."
             : "No transcript yet. Start recording to transcribe this meeting."}
         </p>
       )}
@@ -139,7 +159,23 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
           </li>
         ))}
       </ol>
-      {recording && !systemAudioAllowed && !segments.some((s) => s.source === "them") && (
+      {/* Outside the live region: this text changes every second until its segment is final. */}
+      {tentative.length > 0 && (
+        <ol className="transcript">
+          {tentative.map((preview) => (
+            <li key={preview.source} className="transcript-segment is-tentative">
+              <span className={`speaker speaker-${preview.source}`}>
+                {speakerLabel[preview.source]} <time className="segment-time">{formatOffset(preview.startMs)}</time>
+              </span>
+              <p>
+                {preview.text}
+                <span className="sr-only"> (still listening)</span>
+              </p>
+            </li>
+          ))}
+        </ol>
+      )}
+      {recording && !systemAudioAllowed && !heardThem && (
         <p className="empty-hint transcript-hint">
           Not seeing the other side? macOS may be blocking system audio. Allow Earshot Notes in System Settings &gt;
           Privacy &amp; Security &gt; Screen &amp; System Audio Recording.

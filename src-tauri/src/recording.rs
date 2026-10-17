@@ -2,6 +2,7 @@
 //! segments to the transcription worker.
 
 use std::ffi::CString;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
@@ -10,15 +11,18 @@ use serde::Serialize;
 
 use crate::audio::resample::{ResampleError, To16k};
 use crate::audio::{Buffer, Capture, CaptureError, CaptureFormat, ErrorSink, downmix};
-use crate::chunker::{Chunker, Sensitivity};
+use crate::chunker::{Chunker, Segment, Sensitivity};
 use crate::recordings::{KeptAudio, Recordings};
 use crate::store::settings::{KEEP_AUDIO, ON, sensitivity_key};
 use crate::store::{Source, Store, StoreError};
-use crate::transcribe::worker::{Engine, Job, TranscriptionWorker};
+use crate::transcribe::whistle::SAMPLE_RATE;
+use crate::transcribe::worker::{Engine, Job, Request, TranscriptionWorker};
 
 /// Interleaved buffers the pipeline may fall behind by before capture drops audio
 /// (about 2.5 s at typical 10 ms device buffers).
 const CAPTURE_BACKLOG: usize = 256;
+/// How much audio passes between previews of the open segment (#169).
+const PREVIEW_INTERVAL_SAMPLES: usize = SAMPLE_RATE as usize;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RecordingError {
@@ -183,8 +187,10 @@ pub fn start_recording(
         let pipeline = thread::Builder::new()
             .name(format!("audio-pipeline-{source:?}"))
             .spawn(move || {
-                run_pipeline(frames, format, resampler, config, kept, |job| {
-                    if worker.submit(job).is_err() {
+                run_pipeline(frames, format, resampler, config, kept, |request| {
+                    // Previews and clears matter only while the worker runs.
+                    let segment = matches!(request, Request::Segment(_));
+                    if worker.send(request).is_err() && segment {
                         log::warn!(
                             "dropped a segment for meeting {meeting_id}: the transcription worker stopped"
                         );
@@ -286,6 +292,8 @@ impl Pipeline {
 
 /// Converts captured buffers into transcription jobs until the capture closes,
 /// handing the 16 kHz audio to `kept` first when the recording keeps its audio.
+/// While a segment is open, it also asks for a preview of it about once a
+/// second, one at a time, and clears the preview once the segment closes.
 /// `resampler` starts at the capture's initial rate. When a buffer arrives at
 /// another rate, the pipeline replaces it, first flushing the old one so later
 /// segments keep their timing.
@@ -295,7 +303,7 @@ pub fn run_pipeline(
     resampler: To16k,
     pipeline: Pipeline,
     mut kept: Option<KeptAudio>,
-    mut submit: impl FnMut(Job),
+    mut submit: impl FnMut(Request),
 ) {
     let Pipeline {
         source,
@@ -306,24 +314,51 @@ pub fn run_pipeline(
         engine,
     } = pipeline;
     let mut chunker = Chunker::new(min_speech_rms);
-    let mut emit = |segment: crate::chunker::Segment| {
-        submit(Job {
-            meeting_id,
-            source,
-            start_ms: offset_ms + segment.start_ms() as i64,
-            end_ms: offset_ms + segment.end_ms() as i64,
-            samples: segment.samples,
-            speech: segment.speech,
-            keywords: keywords.clone(),
-            engine: engine.clone(),
-        });
+    let job = |start_ms: u64, end_ms: u64, samples: Vec<f32>, speech| Job {
+        meeting_id,
+        source,
+        start_ms: offset_ms + start_ms as i64,
+        end_ms: offset_ms + end_ms as i64,
+        samples,
+        speech,
+        keywords: keywords.clone(),
+        engine: engine.clone(),
     };
+    let segment_request = |segment: Segment| {
+        let (start, end) = (segment.start_ms(), segment.end_ms());
+        Request::Segment(job(start, end, segment.samples, segment.speech))
+    };
+    let clear_request = |start_ms: u64| Request::ClearPreview {
+        meeting_id,
+        source,
+        start_ms: offset_ms + start_ms as i64,
+    };
+    let mut previews = Previews::default();
     let mut push = |samples: &[f32]| {
         if let Some(kept) = kept.as_mut() {
             kept.push(samples);
         }
         for segment in chunker.push(samples) {
-            emit(segment);
+            submit(segment_request(segment));
+        }
+        let open = chunker.open();
+        previews.heard(samples.len(), open.is_some());
+        if let Some(start_ms) = previews.closed(open.map(|o| o.start_ms())) {
+            submit(clear_request(start_ms));
+        }
+        if let Some(open) = open
+            && let Some(pending) = previews.due(open.start_ms(), open.samples.len())
+        {
+            let preview = job(
+                open.start_ms(),
+                open.end_ms(),
+                open.samples.to_vec(),
+                open.speech,
+            );
+            submit(Request::Preview {
+                job: preview,
+                pending,
+            });
         }
     };
     let mut rate = resampler.input_rate();
@@ -352,10 +387,64 @@ pub fn run_pipeline(
         push(&resampler.process(&mono));
     }
     if let Some(segment) = chunker.finish() {
-        emit(segment);
+        submit(segment_request(segment));
+    }
+    if let Some(start_ms) = previews.closed(None) {
+        submit(clear_request(start_ms));
     }
     if let Some(kept) = kept {
         kept.finish();
+    }
+}
+
+/// When a pipeline asks for previews of its open segment.
+#[derive(Default)]
+struct Previews {
+    /// Open-segment audio since the last preview was sent.
+    since_last: usize,
+    /// The start of the open segment that has a preview to clear, in ms
+    /// from the start of the recording.
+    shown: Option<u64>,
+    /// How many samples the last preview held.
+    last_len: usize,
+    /// Set while the worker still holds this pipeline's last preview.
+    pending: Arc<AtomicBool>,
+}
+
+impl Previews {
+    /// Counts audio toward the next preview while a segment is open, so the
+    /// first preview comes a second after speech starts.
+    fn heard(&mut self, samples: usize, open: bool) {
+        self.since_last = if open { self.since_last + samples } else { 0 };
+    }
+
+    /// The start of a previewed segment that is no longer the open one, so
+    /// its preview should be cleared. `open` is the open segment's start.
+    fn closed(&mut self, open: Option<u64>) -> Option<u64> {
+        let shown = self.shown?;
+        if open == Some(shown) {
+            return None;
+        }
+        self.shown = None;
+        Some(shown)
+    }
+
+    /// Whether to send a preview of the open segment starting at `start`,
+    /// now `len` samples long: a second after the last one, once the worker
+    /// has finished it, and only if it heard more (a pause adds nothing, as
+    /// it's trimmed). Returns the flag to send with it.
+    fn due(&mut self, start: u64, len: usize) -> Option<Arc<AtomicBool>> {
+        if self.since_last < PREVIEW_INTERVAL_SAMPLES
+            || self.pending.load(Ordering::Acquire)
+            || (self.shown == Some(start) && self.last_len == len)
+        {
+            return None;
+        }
+        self.since_last = 0;
+        self.shown = Some(start);
+        self.last_len = len;
+        self.pending.store(true, Ordering::Release);
+        Some(self.pending.clone())
     }
 }
 
@@ -474,12 +563,31 @@ mod tests {
         rate: u32,
         buffers: Vec<Buffer>,
     ) -> Vec<Job> {
+        run_requests(source, sensitivity, rate, buffers, true)
+            .into_iter()
+            .filter_map(|request| match request {
+                Request::Segment(job) => Some(job),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Like `run_buffers_at`, collecting every request: segments, previews,
+    /// and clears. With `finish_previews`, each preview is finished as soon
+    /// as it's sent, as by a worker with nothing else to do.
+    fn run_requests(
+        source: Source,
+        sensitivity: Sensitivity,
+        rate: u32,
+        buffers: Vec<Buffer>,
+        finish_previews: bool,
+    ) -> Vec<Request> {
         let (tx, rx) = sync_channel(buffers.len().max(1));
         for buffer in buffers {
             tx.send(buffer).unwrap();
         }
         drop(tx);
-        let mut jobs = Vec::new();
+        let mut requests = Vec::new();
 
         run_pipeline(
             rx,
@@ -490,9 +598,16 @@ mod tests {
             To16k::new(rate).unwrap(),
             Pipeline::new(source, 7, 60_000, sensitivity),
             None,
-            |job| jobs.push(job),
+            |request| {
+                if let Request::Preview { pending, .. } = &request
+                    && finish_previews
+                {
+                    pending.store(false, Ordering::Release);
+                }
+                requests.push(request);
+            },
         );
-        jobs
+        requests
     }
 
     /// Runs mono audio through the pipeline as 48 kHz stereo and collects its jobs.
@@ -501,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn passes_the_vocabulary_keywords_to_every_job() {
+    fn passes_the_vocabulary_keywords_to_every_job_and_preview() {
         let audio = [
             silence(1000),
             tone(1500),
@@ -529,7 +644,10 @@ mod tests {
             Pipeline::new(Source::Them, 7, 0, Sensitivity::Normal)
                 .with_keywords(Some(keywords.clone())),
             None,
-            |job| jobs.push(job),
+            |request| match request {
+                Request::Segment(job) | Request::Preview { job, .. } => jobs.push(job),
+                Request::ClearPreview { .. } => {}
+            },
         );
 
         assert!(!jobs.is_empty());
@@ -537,6 +655,91 @@ mod tests {
             jobs.iter()
                 .all(|job| job.keywords.as_ref() == Some(&keywords))
         );
+    }
+
+    /// Each request as "segment <start>", "preview <start> <ms of audio>", or
+    /// "clear <start>".
+    fn describe_requests(audio: &[f32], finish_previews: bool) -> Vec<String> {
+        let buffers = stereo_buffers(audio);
+        run_requests(
+            Source::Me,
+            Sensitivity::Normal,
+            RATE,
+            buffers,
+            finish_previews,
+        )
+        .into_iter()
+        .map(|request| match request {
+            Request::Segment(job) => format!("segment {}", job.start_ms),
+            Request::Preview { job, .. } => {
+                format!("preview {} {}", job.start_ms, job.samples.len() / 16)
+            }
+            Request::ClearPreview { start_ms, .. } => format!("clear {start_ms}"),
+        })
+        .collect()
+    }
+
+    #[test]
+    fn previews_an_open_segment_each_second_then_clears_it() {
+        let audio = [silence(1000), tone(3500), silence(2500)].concat();
+
+        let requests = describe_requests(&audio, true);
+
+        // Speech opens a segment at 800 ms (with pre-roll) in a meeting
+        // that started this recording at 60 s. Previews follow a second after
+        // it opens, each with more audio, then the segment, then the clear.
+        let (last, previews) = requests.split_last().unwrap();
+        let (segment, previews) = previews.split_last().unwrap();
+        assert_eq!(segment, "segment 60800", "{requests:?}");
+        assert_eq!(last, "clear 60800", "{requests:?}");
+        assert!(previews.len() >= 3, "{requests:?}");
+        let lengths: Vec<usize> = previews
+            .iter()
+            .map(|p| {
+                let mut words = p.split(' ');
+                assert_eq!(words.nth(1), Some("60800"), "{requests:?}");
+                words.next().unwrap().parse().unwrap()
+            })
+            .collect();
+        // A pause adds no audio, so it adds no preview.
+        assert!(lengths.windows(2).all(|w| w[0] < w[1]), "{requests:?}");
+        assert!((1000..=1400).contains(&lengths[0]), "{requests:?}");
+    }
+
+    #[test]
+    fn sends_no_previews_in_silence_or_a_click() {
+        let audio = [silence(3000), tone(60), silence(3000)].concat();
+
+        assert!(describe_requests(&audio, true).is_empty());
+    }
+
+    #[test]
+    fn sends_one_preview_at_a_time() {
+        let audio = [silence(1000), tone(5000), silence(2500)].concat();
+
+        // The worker never finishes the first preview.
+        let previews = describe_requests(&audio, false)
+            .into_iter()
+            .filter(|r| r.starts_with("preview"))
+            .count();
+
+        assert_eq!(previews, 1);
+    }
+
+    #[test]
+    fn clears_the_preview_when_the_capture_ends_mid_speech() {
+        let audio = [silence(1000), tone(2500)].concat();
+
+        let requests = describe_requests(&audio, true);
+
+        let tail: Vec<&str> = requests
+            .iter()
+            .rev()
+            .take(2)
+            .rev()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(tail, ["segment 60800", "clear 60800"], "{requests:?}");
     }
 
     #[test]
@@ -1138,7 +1341,11 @@ mod tests {
                 To16k::new(RATE).unwrap(),
                 Pipeline::new(Source::Me, 1, 0, Sensitivity::Normal),
                 Some(kept),
-                |job| jobs_tx.send(job).unwrap(),
+                |request| {
+                    if let Request::Segment(job) = request {
+                        jobs_tx.send(job).unwrap();
+                    }
+                },
             )
         });
 
