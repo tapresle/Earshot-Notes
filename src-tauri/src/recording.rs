@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::audio::resample::{ResampleError, To16k};
 use crate::audio::{Buffer, Capture, CaptureError, CaptureFormat, ErrorSink, downmix};
-use crate::chunker::{Chunker, Sensitivity};
+use crate::chunker::{Chunker, Segment, Sensitivity};
 use crate::recordings::{KeptAudio, Recordings};
 use crate::store::settings::{KEEP_AUDIO, ON, sensitivity_key};
 use crate::store::{Source, Store, StoreError};
@@ -188,7 +188,9 @@ pub fn start_recording(
             .name(format!("audio-pipeline-{source:?}"))
             .spawn(move || {
                 run_pipeline(frames, format, resampler, config, kept, |request| {
-                    if worker.send(request).is_err() {
+                    // Previews and clears matter only while the worker runs.
+                    let segment = matches!(request, Request::Segment(_));
+                    if worker.send(request).is_err() && segment {
                         log::warn!(
                             "dropped a segment for meeting {meeting_id}: the transcription worker stopped"
                         );
@@ -322,28 +324,27 @@ pub fn run_pipeline(
         keywords: keywords.clone(),
         engine: engine.clone(),
     };
+    let segment_request = |segment: Segment| {
+        let (start, end) = (segment.start_ms(), segment.end_ms());
+        Request::Segment(job(start, end, segment.samples, segment.speech))
+    };
+    let clear_request = |start_ms: u64| Request::ClearPreview {
+        meeting_id,
+        source,
+        start_ms: offset_ms + start_ms as i64,
+    };
     let mut previews = Previews::default();
     let mut push = |samples: &[f32]| {
         if let Some(kept) = kept.as_mut() {
             kept.push(samples);
         }
         for segment in chunker.push(samples) {
-            let (start, end) = (segment.start_ms(), segment.end_ms());
-            submit(Request::Segment(job(
-                start,
-                end,
-                segment.samples,
-                segment.speech,
-            )));
+            submit(segment_request(segment));
         }
         let open = chunker.open();
         previews.heard(samples.len(), open.is_some());
         if let Some(start_ms) = previews.closed(open.map(|o| o.start_ms())) {
-            submit(Request::ClearPreview {
-                meeting_id,
-                source,
-                start_ms: offset_ms + start_ms as i64,
-            });
+            submit(clear_request(start_ms));
         }
         if let Some(open) = open
             && let Some(pending) = previews.due(open.start_ms(), open.samples.len())
@@ -386,20 +387,10 @@ pub fn run_pipeline(
         push(&resampler.process(&mono));
     }
     if let Some(segment) = chunker.finish() {
-        let (start, end) = (segment.start_ms(), segment.end_ms());
-        submit(Request::Segment(job(
-            start,
-            end,
-            segment.samples,
-            segment.speech,
-        )));
+        submit(segment_request(segment));
     }
     if let Some(start_ms) = previews.closed(None) {
-        submit(Request::ClearPreview {
-            meeting_id,
-            source,
-            start_ms: offset_ms + start_ms as i64,
-        });
+        submit(clear_request(start_ms));
     }
     if let Some(kept) = kept {
         kept.finish();

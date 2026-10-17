@@ -215,8 +215,8 @@ pub fn run() {
 
 /// Starts the transcription worker. Saved segments are pushed to the UI as
 /// `transcript:segment` events, and previews of open segments as
-/// `transcript:preview` events, which are never saved. On failure, recording is disabled but the rest
-/// of the app keeps working.
+/// `transcript:preview` events, which are never saved. On failure, recording
+/// is disabled but the rest of the app keeps working.
 fn spawn_transcription(
     app: &App,
     store: Arc<Store>,

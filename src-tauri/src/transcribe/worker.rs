@@ -291,6 +291,7 @@ impl TranscriptionWorker {
         self.send(Request::Segment(job))
     }
 
+    /// Queues a segment, a preview, or a clear from an audio pipeline.
     pub fn send(&self, request: Request) -> Result<(), WorkerStopped> {
         self.inbox
             .send(Message::Request(request))
