@@ -48,9 +48,11 @@ flowchart LR
     worker --> whistle
     worker --> whisperEng
 
+    cleanup["transcribe::cleanup<br/>removes fillers such as 'um',<br/>drops results left empty"]
+    whistle --> cleanup
+    whisperEng --> cleanup
     phantom["transcribe::phantom<br/>drops 'Thank you.' and similar<br/>from weak clips"]
-    whistle --> phantom
-    whisperEng --> phantom
+    cleanup --> phantom
 
     save["Store::insert_transcribed_segment<br/>vocabulary corrections,<br/>echo removal"]
     phantom --> save
@@ -177,5 +179,5 @@ Without headphones, participants' words come back through the microphone as **Me
 | Resampling to 16 kHz | `src-tauri/src/audio/resample.rs` |
 | Speech segmentation and sensitivity | `src-tauri/src/chunker.rs` |
 | Kept audio | `src-tauri/src/recordings.rs` |
-| Worker, engines, phantom filter, echo | `src-tauri/src/transcribe/` |
+| Worker, engines, filler cleanup, phantom filter, echo | `src-tauri/src/transcribe/` |
 | Vocabulary terms and corrections | `src-tauri/src/vocabulary.rs`, `src-tauri/src/store/transcribed.rs` |
