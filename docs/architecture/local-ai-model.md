@@ -95,12 +95,12 @@ stateDiagram-v2
 flowchart TB
     start["summarize::job::run"]
     load["Resident::get<br/>(Stage::Loading if a load is needed)"]
-    single["summary_messages:<br/>title, notes as the outline,<br/>vocabulary terms, every transcript line"]
+    single["summary_messages:<br/>instructions + reading rules,<br/>title, notes as the outline,<br/>vocabulary terms, every transcript line"]
     fits{"Prompt + notes room<br/>fit the context?"}
     write["generate the notes<br/>(Stage::Writing, streams summary:text)"]
     windows["prompt::windows: split the lines<br/>into parts that fit"]
     parts["part_messages per part<br/>(Stage::Reading part i of n):<br/>specifics first, routine updates last,<br/>the notes mark what matters"]
-    combined["combine_messages:<br/>title, notes, the condensed parts"]
+    combined["combine_messages:<br/>instructions + reading rules,<br/>title, notes, the condensed parts"]
     fits2{"Combined prompt fits?"}
     again["Condense the parts again"]
     tooSmall["GenerateError::ContextTooSmall<br/>when condensing can't shrink further"]
@@ -117,6 +117,8 @@ flowchart TB
     windows -. "no progress" .-> tooSmall
     write --> me --> save --> title --> done
 ```
+
+The passes that write the notes, `summary_messages` and `combine_messages`, send the instructions in use followed by `prompt::READING_RULES`. The instructions are `prompt::DEFAULT_INSTRUCTIONS` unless you replace them in **Settings** > **Summaries** (`summarize::instructions`, at most 6,000 characters). The reading rules, such as who "Me" is and never inventing facts, always follow, so custom instructions can't change how the meeting data is read. The condense and title prompts never change. Only your own text is stored, so without it summaries follow the default of the running version. A summary copies the instructions when it's queued.
 
 ## Chat
 

@@ -116,6 +116,7 @@ Key and value rows in `settings`, read and written through `Store::setting` and 
 | `input_device_id` | the chosen microphone | recording start |
 | `mic_speech_sensitivity`, `system_speech_sensitivity` | `chunker::Sensitivity` per source | recording start |
 | `vocabulary` | terms and mishearings, as JSON | recording start, each saved segment, prompts |
+| `summary_instructions` | your own summary instructions; absent means the default | each summary, when requested |
 | `keep_audio_recordings` | `on` to keep WAV files | recording start |
 | `setup_complete` | whether the setup checklist finished | when the window loads |
 
