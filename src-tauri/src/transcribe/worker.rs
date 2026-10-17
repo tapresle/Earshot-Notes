@@ -1,15 +1,18 @@
 //! A dedicated thread that owns the transcription models and transcribes
-//! segments in order.
+//! segments in order, with previews of open segments when nothing else waits.
 
+use std::collections::VecDeque;
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(test)]
 use std::sync::mpsc::RecvTimeoutError;
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
+
+use serde::Serialize;
 
 use super::cleanup::clean;
 use super::phantom::is_phantom;
@@ -33,6 +36,49 @@ pub struct Job {
     pub keywords: Option<Arc<CString>>,
     /// The model to transcribe with. After transcription, the model that did.
     pub engine: Engine,
+}
+
+/// What an audio pipeline asks of the worker.
+#[derive(Debug)]
+pub enum Request {
+    /// Transcribe a closed segment.
+    Segment(Job),
+    /// Show tentative text for the open segment in `job` (#169). Runs only
+    /// when no segment is waiting, and is dropped if its segment closes first.
+    /// The worker clears `pending` once it has shown or dropped the preview,
+    /// so a pipeline sends one at a time.
+    Preview { job: Job, pending: Arc<AtomicBool> },
+    /// The open segment that started at `start_ms` has closed or was
+    /// discarded, so its tentative text goes.
+    ClearPreview {
+        meeting_id: i64,
+        source: Source,
+        start_ms: i64,
+    },
+}
+
+impl Request {
+    /// Whether this request ends `source`'s open segment, so a preview of it
+    /// is stale.
+    fn closes(&self, source: Source) -> bool {
+        match self {
+            Request::Segment(job) => job.source == source,
+            Request::ClearPreview { source: s, .. } => *s == source,
+            Request::Preview { .. } => false,
+        }
+    }
+}
+
+/// Tentative text for a source's open segment. Never saved. Empty text
+/// clears what's shown.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Preview {
+    pub meeting_id: i64,
+    pub source: Source,
+    /// Where the open segment starts, from the start of the meeting.
+    pub start_ms: i64,
+    pub text: String,
 }
 
 /// Which model transcribes a segment.
@@ -71,7 +117,7 @@ pub struct TranscriptionWorker {
 }
 
 enum Message {
-    Job(Job),
+    Request(Request),
     /// Load this Whisper model now, before its first job arrives, retrying
     /// one that failed to load before.
     Preload(Arc<PathBuf>),
@@ -91,25 +137,30 @@ impl TranscriptionWorker {
     /// Loads the first candidate model that works, then starts the worker.
     /// `on_result` runs on the worker thread for every segment that contains
     /// speech, with fillers removed (see `cleanup`), except segments with only
-    /// fillers and likely phantom phrases (see `phantom`).
-    pub fn spawn<F>(
+    /// fillers and likely phantom phrases (see `phantom`). `on_preview` runs
+    /// for every preview shown or cleared, cleaned the same way.
+    pub fn spawn<F, P>(
         candidates: Vec<PathBuf>,
         on_result: F,
+        on_preview: P,
     ) -> Result<(Self, LoadedModel), WhistleError>
     where
         F: FnMut(Job, Transcription) + Send + 'static,
+        P: FnMut(Preview) + Send + 'static,
     {
-        Self::spawn_with(candidates, WorkerOptions::default(), on_result)
+        Self::spawn_with(candidates, WorkerOptions::default(), on_result, on_preview)
     }
 
     /// Like [`TranscriptionWorker::spawn`], with `options`.
-    pub fn spawn_with<F>(
+    pub fn spawn_with<F, P>(
         candidates: Vec<PathBuf>,
         options: WorkerOptions,
         mut on_result: F,
+        mut on_preview: P,
     ) -> Result<(Self, LoadedModel), WhistleError>
     where
         F: FnMut(Job, Transcription) + Send + 'static,
+        P: FnMut(Preview) + Send + 'static,
     {
         let (sender, inbox) = mpsc::channel::<Message>();
         let (ready_tx, ready_rx) = mpsc::channel();
@@ -130,38 +181,66 @@ impl TranscriptionWorker {
                     }
                 };
                 let mut engines = Engines::new(whistle, options);
+                let mut queue = Inbox::new(inbox);
                 loop {
-                    let mut job = match inbox.recv() {
-                        Ok(Message::Job(job)) => job,
-                        Ok(Message::Preload(model)) => {
+                    let request = match queue.next(&shutting_down) {
+                        Next::Message(Message::Request(request)) => request,
+                        Next::Message(Message::Preload(model)) => {
                             engines.failed = None;
                             engines.whisper(&model);
                             continue;
                         }
-                        Ok(Message::UnloadWhisper) => {
+                        Next::Message(Message::UnloadWhisper) => {
                             engines.unload_whisper();
                             continue;
                         }
                         // Skipped once a shutdown is queued, like the jobs before it.
-                        Ok(Message::AfterQueued(then)) => {
+                        Next::Message(Message::AfterQueued(then)) => {
                             if !shutting_down.load(Ordering::Acquire) {
                                 then();
                             }
                             continue;
                         }
-                        Ok(Message::Shutdown(done)) => {
+                        Next::Message(Message::Shutdown(done)) => {
                             drop(engines);
-                            drop(inbox);
+                            drop(queue);
                             let _ = done.send(());
                             return;
                         }
-                        Err(_) => return,
+                        Next::Preview(job, pending) => {
+                            if let Some(preview) = engines.preview(job) {
+                                // A segment that closed meanwhile replaces it.
+                                if !queue.closes(preview.source) {
+                                    on_preview(preview);
+                                }
+                            }
+                            pending.store(false, Ordering::Release);
+                            continue;
+                        }
+                        Next::Stopped => return,
                     };
                     // Once a shutdown is queued, the jobs before it are skipped,
                     // as they would be if the app exited with them waiting.
                     if shutting_down.load(Ordering::Acquire) {
                         continue;
                     }
+                    let mut job = match request {
+                        Request::Segment(job) => job,
+                        Request::ClearPreview {
+                            meeting_id,
+                            source,
+                            start_ms,
+                        } => {
+                            on_preview(Preview {
+                                meeting_id,
+                                source,
+                                start_ms,
+                                text: String::new(),
+                            });
+                            continue;
+                        }
+                        Request::Preview { .. } => unreachable!("the inbox holds previews back"),
+                    };
                     // Both engines' results go through the same cleanup.
                     match engines.transcribe(&mut job).map(cleaned) {
                         Ok(t) if t.text.is_empty() => {}
@@ -209,8 +288,12 @@ impl TranscriptionWorker {
     }
 
     pub fn submit(&self, job: Job) -> Result<(), WorkerStopped> {
+        self.send(Request::Segment(job))
+    }
+
+    pub fn send(&self, request: Request) -> Result<(), WorkerStopped> {
         self.inbox
-            .send(Message::Job(job))
+            .send(Message::Request(request))
             .map_err(|_| WorkerStopped)
     }
 
@@ -257,8 +340,9 @@ pub(crate) struct Queue(mpsc::Receiver<Message>);
 impl Queue {
     fn job(message: Message) -> Option<Job> {
         match message {
-            Message::Job(job) => Some(job),
-            Message::Preload(_)
+            Message::Request(Request::Segment(job)) => Some(job),
+            Message::Request(_)
+            | Message::Preload(_)
             | Message::UnloadWhisper
             | Message::AfterQueued(_)
             | Message::Shutdown(_) => None,
@@ -283,6 +367,92 @@ impl Queue {
 
     pub fn try_iter(&self) -> impl Iterator<Item = Job> + '_ {
         self.0.try_iter().filter_map(Self::job)
+    }
+}
+
+enum Next {
+    Message(Message),
+    /// Nothing else is waiting, so this preview can run.
+    Preview(Job, Arc<AtomicBool>),
+    /// Every sender is gone.
+    Stopped,
+}
+
+/// The worker's messages in order, except previews, which wait until nothing
+/// else is queued. Each source keeps only its latest preview, and a preview
+/// is dropped when its source's segment closes first.
+struct Inbox {
+    receiver: Receiver<Message>,
+    /// Messages read ahead while looking for a closed segment.
+    backlog: VecDeque<Message>,
+    previews: VecDeque<(Job, Arc<AtomicBool>)>,
+}
+
+impl Inbox {
+    fn new(receiver: Receiver<Message>) -> Self {
+        Self {
+            receiver,
+            backlog: VecDeque::new(),
+            previews: VecDeque::new(),
+        }
+    }
+
+    fn next(&mut self, shutting_down: &AtomicBool) -> Next {
+        loop {
+            let message = match self.backlog.pop_front() {
+                Some(message) => message,
+                None => match self.receiver.try_recv() {
+                    Ok(message) => message,
+                    Err(mpsc::TryRecvError::Empty) => {
+                        if let Some((job, pending)) = self.previews.pop_front() {
+                            if shutting_down.load(Ordering::Acquire) {
+                                pending.store(false, Ordering::Release);
+                                continue;
+                            }
+                            return Next::Preview(job, pending);
+                        }
+                        match self.receiver.recv() {
+                            Ok(message) => message,
+                            Err(_) => return Next::Stopped,
+                        }
+                    }
+                    Err(mpsc::TryRecvError::Disconnected) => return Next::Stopped,
+                },
+            };
+            match message {
+                Message::Request(Request::Preview { job, pending }) => {
+                    self.drop_preview(job.source);
+                    self.previews.push_back((job, pending));
+                }
+                Message::Request(request) => {
+                    for source in [Source::Me, Source::Them] {
+                        if request.closes(source) {
+                            self.drop_preview(source);
+                        }
+                    }
+                    return Next::Message(Message::Request(request));
+                }
+                other => return Next::Message(other),
+            }
+        }
+    }
+
+    /// Whether a message waiting now ends `source`'s open segment.
+    fn closes(&mut self, source: Source) -> bool {
+        self.backlog.extend(self.receiver.try_iter());
+        self.backlog
+            .iter()
+            .any(|message| matches!(message, Message::Request(r) if r.closes(source)))
+    }
+
+    fn drop_preview(&mut self, source: Source) {
+        self.previews.retain(|(job, pending)| {
+            let keep = job.source != source;
+            if !keep {
+                pending.store(false, Ordering::Release);
+            }
+            keep
+        });
     }
 }
 
@@ -329,6 +499,29 @@ impl Engines {
         self.whistle
             .transcribe_with_keywords(&samples, job.keywords.as_deref().map(CString::as_c_str))
             .map_err(|error| error.to_string())
+    }
+
+    /// Tentative text for an open segment, or `None` when transcription
+    /// failed. A likely phantom phrase gives empty text, like silence.
+    fn preview(&mut self, mut job: Job) -> Option<Preview> {
+        let text = match self.transcribe(&mut job).map(cleaned) {
+            Ok(t) if is_phantom(&t.text, job.speech) => String::new(),
+            Ok(t) => t.text,
+            Err(error) => {
+                log::debug!(
+                    "a preview failed for meeting {} at {} ms: {error}",
+                    job.meeting_id,
+                    job.start_ms
+                );
+                return None;
+            }
+        };
+        Some(Preview {
+            meeting_id: job.meeting_id,
+            source: job.source,
+            start_ms: job.start_ms,
+            text,
+        })
     }
 
     /// The loaded Whisper model at `model`, loading it first if needed.

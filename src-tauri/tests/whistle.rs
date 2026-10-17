@@ -222,10 +222,11 @@ mod worker {
     use earshot_lib::chunker::Speech;
     use earshot_lib::store::Source;
     use earshot_lib::transcribe::worker::{
-        Engine, Job, TranscriptionWorker, WorkerOptions, load_first,
+        Engine, Job, Preview, Request, TranscriptionWorker, WorkerOptions, load_first,
     };
     use std::path::PathBuf;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -258,11 +259,14 @@ mod worker {
     fn transcribes_jobs_in_order_and_skips_silence() {
         let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
         let (results_tx, results) = mpsc::channel();
-        let (worker, loaded) =
-            TranscriptionWorker::spawn(vec![PathBuf::from(MODEL)], move |job, t| {
+        let (worker, loaded) = TranscriptionWorker::spawn(
+            vec![PathBuf::from(MODEL)],
+            move |job, t| {
                 results_tx.send((job.start_ms, t.text)).unwrap();
-            })
-            .unwrap();
+            },
+            |_| {},
+        )
+        .unwrap();
         assert_eq!(loaded.path, PathBuf::from(MODEL));
         let job = |start_ms, samples| Job {
             meeting_id: 1,
@@ -293,11 +297,15 @@ mod worker {
         let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
         let (events_tx, events) = mpsc::channel();
         let results_tx = events_tx.clone();
-        let (worker, _) = TranscriptionWorker::spawn(vec![PathBuf::from(MODEL)], move |job, _| {
-            results_tx
-                .send(format!("segment at {}", job.start_ms))
-                .unwrap();
-        })
+        let (worker, _) = TranscriptionWorker::spawn(
+            vec![PathBuf::from(MODEL)],
+            move |job, _| {
+                results_tx
+                    .send(format!("segment at {}", job.start_ms))
+                    .unwrap();
+            },
+            |_| {},
+        )
         .unwrap();
         let job = Job {
             meeting_id: 1,
@@ -329,7 +337,7 @@ mod worker {
     fn skips_a_queued_callback_when_shutting_down() {
         let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
         let (worker, _) =
-            TranscriptionWorker::spawn(vec![PathBuf::from(MODEL)], |_, _| {}).unwrap();
+            TranscriptionWorker::spawn(vec![PathBuf::from(MODEL)], |_, _| {}, |_| {}).unwrap();
         let (ran_tx, ran) = mpsc::channel::<()>();
         // Speech takes far longer to transcribe than the calls below take, so
         // the callback is still queued when the shutdown starts.
@@ -359,6 +367,149 @@ mod worker {
         assert!(ran.recv_timeout(Duration::from_millis(200)).is_err());
     }
 
+    /// A worker whose saved segments and previews arrive, in order, as
+    /// "segment <source> <start>" and "preview <source> <start>: <text>".
+    fn worker_with_events() -> (TranscriptionWorker, mpsc::Receiver<String>) {
+        let (events_tx, events) = mpsc::channel();
+        let previews_tx = events_tx.clone();
+        let (worker, _) = TranscriptionWorker::spawn(
+            vec![PathBuf::from(MODEL)],
+            move |job, _| {
+                events_tx
+                    .send(format!("segment {:?} {}", job.source, job.start_ms))
+                    .unwrap();
+            },
+            move |preview: Preview| {
+                previews_tx
+                    .send(format!(
+                        "preview {:?} {}: {}",
+                        preview.source,
+                        preview.start_ms,
+                        normalize(&preview.text)
+                    ))
+                    .unwrap();
+            },
+        )
+        .unwrap();
+        (worker, events)
+    }
+
+    fn speech_job(source: Source, start_ms: i64) -> Job {
+        Job {
+            meeting_id: 1,
+            source,
+            start_ms,
+            end_ms: start_ms + 5000,
+            samples: speech_fixture(),
+            speech: Speech {
+                ms: 4000,
+                margin: 10.0,
+            },
+            keywords: None,
+            engine: Engine::Whistle,
+        }
+    }
+
+    fn preview(job: Job) -> (Request, Arc<AtomicBool>) {
+        let pending = Arc::new(AtomicBool::new(true));
+        let request = Request::Preview {
+            job,
+            pending: pending.clone(),
+        };
+        (request, pending)
+    }
+
+    /// Every event until the worker has been idle for a second.
+    fn drain(events: &mpsc::Receiver<String>) -> Vec<String> {
+        std::iter::from_fn(|| events.recv_timeout(Duration::from_secs(1)).ok()).collect()
+    }
+
+    #[test]
+    fn previews_an_open_segment_without_saving_it_then_clears_it() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let (worker, events) = worker_with_events();
+        let (request, pending) = preview(speech_job(Source::Them, 3000));
+
+        worker.send(request).unwrap();
+        let shown = events.recv_timeout(Duration::from_secs(10)).unwrap();
+        let pending_after = pending.load(Ordering::Acquire);
+        worker
+            .send(Request::ClearPreview {
+                meeting_id: 1,
+                source: Source::Them,
+                start_ms: 3000,
+            })
+            .unwrap();
+
+        assert_eq!(
+            shown,
+            "preview Them 3000: the quarterly planning meeting starts at 10 please bring the budget report"
+        );
+        assert!(!pending_after, "the pipeline may send the next one");
+        // Cleared, and never saved as a segment.
+        assert_eq!(drain(&events), ["preview Them 3000: "]);
+        worker.shutdown(Duration::from_secs(10));
+    }
+
+    #[test]
+    fn runs_queued_segments_before_a_preview() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let (worker, events) = worker_with_events();
+        let (request, _) = preview(speech_job(Source::Me, 20_000));
+
+        // The preview arrives between two segments, while the first is running.
+        worker.submit(speech_job(Source::Them, 0)).unwrap();
+        worker.send(request).unwrap();
+        worker.submit(speech_job(Source::Them, 10_000)).unwrap();
+
+        let order: Vec<String> = drain(&events)
+            .into_iter()
+            .map(|event| event.split(':').next().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            order,
+            ["segment Them 0", "segment Them 10000", "preview Me 20000"]
+        );
+        worker.shutdown(Duration::from_secs(10));
+    }
+
+    #[test]
+    fn drops_a_preview_whose_segment_closed_first() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let (worker, events) = worker_with_events();
+        let (request, pending) = preview(speech_job(Source::Me, 10_000));
+
+        worker.submit(speech_job(Source::Them, 0)).unwrap();
+        worker.send(request).unwrap();
+        // The open segment closed and was queued before the preview could run.
+        worker.submit(speech_job(Source::Me, 10_000)).unwrap();
+
+        assert_eq!(drain(&events), ["segment Them 0", "segment Me 10000"]);
+        assert!(!pending.load(Ordering::Acquire));
+        worker.shutdown(Duration::from_secs(10));
+    }
+
+    #[test]
+    fn keeps_only_the_latest_preview_of_each_source() {
+        let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let (worker, events) = worker_with_events();
+        let (older, older_pending) = preview(speech_job(Source::Me, 10_000));
+        let (newer, _) = preview(speech_job(Source::Me, 10_000));
+        let mut silence = speech_job(Source::Me, 10_000);
+        silence.samples = vec![0.0; 16_000];
+        let (silent, _) = preview(silence);
+
+        worker.submit(speech_job(Source::Them, 0)).unwrap();
+        worker.send(older).unwrap();
+        worker.send(newer).unwrap();
+        worker.send(silent).unwrap();
+
+        // Only the last one runs, and silence shows no text.
+        assert_eq!(drain(&events), ["segment Them 0", "preview Me 10000: "]);
+        assert!(!older_pending.load(Ordering::Acquire));
+        worker.shutdown(Duration::from_secs(10));
+    }
+
     const WHISPER_MODEL: &str = "tests/models/ggml-tiny.en-q5_1.bin";
 
     /// Runs one speech job on `engine` and returns the engine that transcribed
@@ -376,11 +527,15 @@ mod worker {
         let options = WorkerOptions {
             use_gpu: std::env::var("EARSHOT_TEST_CPU").as_deref() != Ok("1"),
         };
-        let (worker, _) =
-            TranscriptionWorker::spawn_with(vec![PathBuf::from(MODEL)], options, move |job, t| {
+        let (worker, _) = TranscriptionWorker::spawn_with(
+            vec![PathBuf::from(MODEL)],
+            options,
+            move |job, t| {
                 results_tx.send(Some((job.engine, t.text))).unwrap();
-            })
-            .unwrap();
+            },
+            |_| {},
+        )
+        .unwrap();
         // As a recording does when it starts.
         worker.preload(&engine);
         worker
@@ -457,7 +612,7 @@ mod worker {
     fn stops_taking_jobs_after_shutting_down() {
         let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
         let (worker, _) =
-            TranscriptionWorker::spawn(vec![PathBuf::from(MODEL)], |_, _| {}).unwrap();
+            TranscriptionWorker::spawn(vec![PathBuf::from(MODEL)], |_, _| {}, |_| {}).unwrap();
 
         worker.shutdown(Duration::from_secs(10));
 
@@ -484,11 +639,15 @@ mod worker {
         let options = WorkerOptions {
             use_gpu: std::env::var("EARSHOT_TEST_CPU").as_deref() != Ok("1"),
         };
-        let (worker, _) =
-            TranscriptionWorker::spawn_with(vec![PathBuf::from(MODEL)], options, move |job, t| {
+        let (worker, _) = TranscriptionWorker::spawn_with(
+            vec![PathBuf::from(MODEL)],
+            options,
+            move |job, t| {
                 results_tx.send((job.engine, t.text)).unwrap();
-            })
-            .unwrap();
+            },
+            |_| {},
+        )
+        .unwrap();
         let whisper = Engine::Whisper(Arc::new(PathBuf::from(WHISPER_MODEL)));
 
         // Chosen at startup, then Whistle chosen (freeing it), then Whisper again.
@@ -535,6 +694,7 @@ mod pipeline {
     use earshot_lib::chunker::Sensitivity;
     use earshot_lib::recording::{Pipeline, run_pipeline};
     use earshot_lib::store::Source;
+    use earshot_lib::transcribe::worker::Request;
     use std::sync::mpsc::sync_channel;
 
     /// Linear interpolation to stereo at a device rate above 16 kHz.
@@ -593,7 +753,11 @@ mod pipeline {
             To16k::new(48_000).unwrap(),
             pipeline(Source::Me),
             None,
-            |job| jobs.push(job),
+            |request| {
+                if let Request::Segment(job) = request {
+                    jobs.push(job);
+                }
+            },
         );
 
         let mut whistle = Whistle::load(Path::new(MODEL)).unwrap();
@@ -637,7 +801,11 @@ mod pipeline {
             To16k::new(48_000).unwrap(),
             pipeline(Source::Them),
             None,
-            |job| jobs.push(job),
+            |request| {
+                if let Request::Segment(job) = request {
+                    jobs.push(job);
+                }
+            },
         );
 
         let mut whistle = Whistle::load(Path::new(MODEL)).unwrap();
@@ -694,7 +862,11 @@ mod pipeline {
             To16k::new(48_000).unwrap(),
             pipeline(Source::Me),
             None,
-            |job| jobs.push(job),
+            |request| {
+                if let Request::Segment(job) = request {
+                    jobs.push(job);
+                }
+            },
         );
 
         let mut whistle = Whistle::load(Path::new(MODEL)).unwrap();
