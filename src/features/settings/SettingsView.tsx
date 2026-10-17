@@ -751,7 +751,7 @@ function UpdatesSection() {
       <p className="settings-help">
         Checks GitHub for a newer release. Earshot Notes contacts GitHub only when you press the button.
       </p>
-      <button type="button" className="button subtle" onClick={() => void check()} disabled={checking}>
+      <button type="button" className="button" onClick={() => void check()} disabled={checking}>
         {checking ? "Checking…" : "Check for updates"}
       </button>
       {found && !found.newer && <p role="status">You have the latest version, {found.current}.</p>}
