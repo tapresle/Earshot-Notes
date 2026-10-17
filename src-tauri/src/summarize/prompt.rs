@@ -55,6 +55,17 @@ Rules:
 - Only state what the transcript supports.
 - Reply with bullet points only.";
 
+const NEXT_STEPS_SYSTEM: &str = "You list the tasks in finished meeting notes, checking each owner against the meeting.
+
+Rules:
+- List every task someone took on in the notes, as one bullet each: the task, starting with its verb, then the owner's name in parentheses, or (you) for the note-taker.
+- Take each owner from the transcript: the person who said they'd do it. A task is the note-taker's only when a \"Me\" line takes it on; when a participant says \"I'll do it\", it's theirs. Use the name the transcript gives them.
+- \"Me\" and \"you\" are the note-taker. \"Meeting Participants\" is everyone else on the call.
+- Include plans that depend on an outcome, with their condition.
+- A decision, or a status update on work already under way, is not a task.
+- Only list tasks the notes state. Never invent tasks, names, dates, or numbers.
+- Reply with the bullets only, no heading. When the notes have no tasks, reply with nothing.";
+
 const TITLE_SYSTEM: &str = "You name meetings from their notes.
 
 Rules:
@@ -156,18 +167,46 @@ pub fn combine_messages(
     terms: &[String],
     parts: &[String],
 ) -> Vec<Message> {
-    let condensed = parts
-        .iter()
-        .enumerate()
-        .map(|(i, part)| format!("Part {}:\n{}", i + 1, part.trim()))
-        .collect::<Vec<_>>()
-        .join("\n\n");
+    let condensed = condensed(parts);
     vec![
         notes_system(instructions),
         Message::user(format!(
             "Meeting: {title}\n\n{}{}\n\nThe transcript was long, so here it is condensed in order:\n<transcript>\n{condensed}\n</transcript>",
             terms_section(terms),
             notes_section(notes_markdown)
+        )),
+    ]
+}
+
+/// Condensed parts in order, as the final pass reads them.
+pub fn condensed(parts: &[String]) -> String {
+    parts
+        .iter()
+        .enumerate()
+        .map(|(i, part)| format!("Part {}:\n{}", i + 1, part.trim()))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// Asks for the tasks in finished notes that left out their Next steps,
+/// with the transcript the notes came from, or its condensed parts, so the
+/// owners can be checked.
+pub fn next_steps_messages(
+    summary_markdown: &str,
+    transcript: &str,
+    was_condensed: bool,
+) -> Vec<Message> {
+    let label = if was_condensed {
+        "The transcript was long, so here it is condensed in order:"
+    } else {
+        "Transcript:"
+    };
+    vec![
+        Message::system(NEXT_STEPS_SYSTEM),
+        Message::user(format!(
+            "Meeting notes:\n<notes>\n{}\n</notes>\n\n{label}\n<transcript>\n{}\n</transcript>",
+            summary_markdown.trim(),
+            transcript.trim()
         )),
     ]
 }
@@ -350,6 +389,25 @@ mod tests {
         .content;
 
         assert!(user.contains("Part 1:\n- a\n\nPart 2:\n- b"));
+    }
+
+    #[test]
+    fn asks_for_next_steps_with_the_notes_and_what_they_came_from() {
+        let single = next_steps_messages("  ## Notes\n- a\n", "[0:01] Me: Hi", false);
+        let condensed = next_steps_messages("## Notes\n- a", &condensed(&["- b".into()]), true);
+
+        assert!(single[0].content.starts_with("You list the tasks"));
+        assert_eq!(
+            single[1].content,
+            "Meeting notes:\n<notes>\n## Notes\n- a\n</notes>\n\nTranscript:\n<transcript>\n[0:01] Me: Hi\n</transcript>"
+        );
+        assert!(
+            condensed[1]
+                .content
+                .ends_with("condensed in order:\n<transcript>\nPart 1:\n- b\n</transcript>"),
+            "{}",
+            condensed[1].content
+        );
     }
 
     #[test]
