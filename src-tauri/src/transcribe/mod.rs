@@ -1,5 +1,6 @@
 //! Speech-to-text engines.
 
+pub mod cleanup;
 pub mod echo;
 pub mod phantom;
 pub mod whisper;

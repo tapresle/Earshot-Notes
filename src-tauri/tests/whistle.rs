@@ -364,14 +364,21 @@ mod worker {
     /// Runs one speech job on `engine` and returns the engine that transcribed
     /// it, with its text.
     fn transcribe_on(engine: Engine) -> (Engine, String) {
+        transcribe_samples_on(engine, speech_fixture()).expect("a transcript segment")
+    }
+
+    /// Runs one job with `samples` on `engine` and returns the engine that
+    /// transcribed it, with its text, or `None` when the worker kept nothing.
+    fn transcribe_samples_on(engine: Engine, samples: Vec<f32>) -> Option<(Engine, String)> {
         let _lock = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
         let (results_tx, results) = mpsc::channel();
+        let done_tx = results_tx.clone();
         let options = WorkerOptions {
             use_gpu: std::env::var("EARSHOT_TEST_CPU").as_deref() != Ok("1"),
         };
         let (worker, _) =
             TranscriptionWorker::spawn_with(vec![PathBuf::from(MODEL)], options, move |job, t| {
-                results_tx.send((job.engine, t.text)).unwrap();
+                results_tx.send(Some((job.engine, t.text))).unwrap();
             })
             .unwrap();
         // As a recording does when it starts.
@@ -382,7 +389,7 @@ mod worker {
                 source: Source::Them,
                 start_ms: 0,
                 end_ms: 5000,
-                samples: speech_fixture(),
+                samples,
                 speech: Speech {
                     ms: 5000,
                     margin: 10.0,
@@ -391,10 +398,49 @@ mod worker {
                 engine,
             })
             .unwrap();
+        // Sends `None` once the job is handled, if it produced no result.
+        worker
+            .after_queued(move || done_tx.send(None).unwrap())
+            .unwrap();
         let result = results.recv_timeout(Duration::from_secs(30)).unwrap();
         // Frees Whisper before the test process exits.
         worker.shutdown(Duration::from_secs(10));
         result
+    }
+
+    /// The fixtures say fillers, generated with
+    /// `say -v Samantha -o tests/fixtures/speech-fillers.wav --data-format=LEI16@16000 "Um, so,
+    /// uh, the deploy went out on Friday."` and
+    /// `say -v Samantha -o tests/fixtures/speech-only-fillers.wav --data-format=LEI16@16000
+    /// "Um. Uh. Hmm."`. Both engines write the fillers out ("Um, so, ah, ...").
+    fn assert_removes_fillers(engine: Engine) {
+        let (_, text) = transcribe_samples_on(
+            engine.clone(),
+            read_fixture("tests/fixtures/speech-fillers.wav"),
+        )
+        .expect("the sentence without its fillers");
+        let only_fillers = transcribe_samples_on(
+            engine,
+            read_fixture("tests/fixtures/speech-only-fillers.wav"),
+        );
+
+        assert_eq!(
+            normalize(&text),
+            "so the deploy went out on friday",
+            "{text}"
+        );
+        assert!(text.starts_with("So"), "{text}");
+        assert_eq!(only_fillers, None);
+    }
+
+    #[test]
+    fn removes_fillers_from_whistle_results() {
+        assert_removes_fillers(Engine::Whistle);
+    }
+
+    #[test]
+    fn removes_fillers_from_whisper_results() {
+        assert_removes_fillers(Engine::Whisper(Arc::new(PathBuf::from(WHISPER_MODEL))));
     }
 
     #[test]
