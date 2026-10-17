@@ -30,8 +30,10 @@ Content:
 
 /// How to read the meeting data, added after the instructions in use, custom
 /// or default, so custom instructions can't change how the input is read.
-pub const READING_RULES: &str = "Reading the meeting:
-- The transcript comes from speech recognition and misspells names. When the note-taker's notes or the meeting title spell a name differently from the transcript, such as \"Lindgren\" in the notes and \"Lindgrin\" in the transcript, always use the notes' spelling.
+/// They continue the default's last list without a heading of their own:
+/// a separate "Reading the meeting" section made Qwen3.5 4B write only next
+/// steps for long, noisy meetings (#161).
+pub const READING_RULES: &str = "- The transcript comes from speech recognition and misspells names. When the note-taker's notes or the meeting title spell a name differently from the transcript, such as \"Lindgren\" in the notes and \"Lindgrin\" in the transcript, always use the notes' spelling.
 - Only state what the transcript or notes support. Never invent names, numbers, dates, or decisions.
 - \"Me\" is the note-taker. \"Meeting Participants\" is everyone else on the call; use their names when the transcript gives them.
 - Attribute each statement and task to whoever said or took it on. A task is yours only when a \"Me\" line takes it on; when a participant says \"I'll do it\", it's theirs.
@@ -102,7 +104,7 @@ fn notes_section(notes_markdown: &str) -> String {
 /// The system message that writes the notes: the instructions in use, then
 /// the reading rules.
 fn notes_system(instructions: &str) -> Message {
-    Message::system(format!("{}\n\n{READING_RULES}", instructions.trim()))
+    Message::system(format!("{}\n{READING_RULES}", instructions.trim()))
 }
 
 /// One pass over the whole transcript.
@@ -289,15 +291,26 @@ mod tests {
         for messages in &messages {
             assert_eq!(
                 messages[0].content,
-                format!("List decisions only.\n\n{READING_RULES}")
+                format!("List decisions only.\n{READING_RULES}")
             );
         }
 
         let default = &summary_messages(DEFAULT_INSTRUCTIONS, "Sync", "", &[], "")[0].content;
-        assert_eq!(
-            *default,
-            format!("{DEFAULT_INSTRUCTIONS}\n\n{READING_RULES}")
+        assert_eq!(*default, format!("{DEFAULT_INSTRUCTIONS}\n{READING_RULES}"));
+    }
+
+    #[test]
+    fn continues_the_default_list_with_the_rules_instead_of_a_new_section() {
+        let system = &summary_messages(DEFAULT_INSTRUCTIONS, "Sync", "", &[], "")[0].content;
+
+        assert!(
+            system.contains(
+                "unless someone says the earlier point was wrong.\n- The transcript comes from speech recognition"
+            ),
+            "{system}"
         );
+        assert!(DEFAULT_INSTRUCTIONS.ends_with('.'));
+        assert!(READING_RULES.starts_with("- "));
     }
 
     #[test]

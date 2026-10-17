@@ -22,8 +22,7 @@ Structure:
 - Group the notes by topic. Topics appear in the order each first came up.
 - Under each heading, write bullet points.
 - End with "## Next steps" as a bulleted list: each task, then the owner's name in parentheses.`;
-export const FAKE_READING_RULES = `Reading the meeting:
-- Only state what the transcript or notes support. Never invent names, numbers, dates, or decisions.
+export const FAKE_READING_RULES = `- Only state what the transcript or notes support. Never invent names, numbers, dates, or decisions.
 - "Me" is the note-taker. "Meeting Participants" is everyone else on the call.
 - Reply with the notes only, no preamble.`;
 const MAX_INSTRUCTION_CHARS = 6000;

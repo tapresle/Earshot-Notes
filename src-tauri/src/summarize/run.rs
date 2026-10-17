@@ -349,7 +349,7 @@ mod tests {
 
         assert_eq!(
             model.systems,
-            vec![format!("List decisions only.\n\n{READING_RULES}")]
+            vec![format!("List decisions only.\n{READING_RULES}")]
         );
     }
 
@@ -362,7 +362,7 @@ mod tests {
             .unwrap();
 
         let (last, parts) = model.systems.split_last().unwrap();
-        assert_eq!(*last, format!("List decisions only.\n\n{READING_RULES}"));
+        assert_eq!(*last, format!("List decisions only.\n{READING_RULES}"));
         assert_eq!(parts.len(), 2);
         for part in parts {
             assert!(!part.contains("List decisions only."), "{part}");

@@ -878,15 +878,15 @@ mod tests {
         let systems = h.systems.lock().unwrap();
         let notes: Vec<_> = systems
             .iter()
-            .filter(|s| s.contains("Reading the meeting:"))
+            .filter(|s| s.contains("Never invent"))
             .collect();
         assert_eq!(notes.len(), 2, "{systems:?}");
         assert!(
-            notes[0].starts_with("List decisions only.\n\n"),
+            notes[0].starts_with("List decisions only.\n- "),
             "{}",
             notes[0]
         );
-        assert!(notes[1].starts_with("List risks only.\n\n"), "{}", notes[1]);
+        assert!(notes[1].starts_with("List risks only.\n- "), "{}", notes[1]);
     }
 
     #[test]
