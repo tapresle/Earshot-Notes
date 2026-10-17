@@ -485,7 +485,8 @@ mod tests {
     use std::time::Duration;
 
     /// Streams two pieces for the summary, optionally waiting for permission
-    /// between them, then replies to the title request with `title_reply`.
+    /// between them, finds no tasks for its Next steps, then replies to the
+    /// title request with `title_reply`.
     struct FakeModel {
         gate: Option<mpsc::Receiver<()>>,
         generations: Arc<AtomicUsize>,
@@ -518,6 +519,11 @@ mod tests {
             cancel: &AtomicBool,
             on_text: &mut dyn FnMut(&str),
         ) -> Result<String, GenerateError> {
+            // The notes have no Next steps, so the summary asks for their
+            // tasks; there are none.
+            if messages[0].content.starts_with("You list the tasks") {
+                return Ok(String::new());
+            }
             self.systems
                 .lock()
                 .unwrap()

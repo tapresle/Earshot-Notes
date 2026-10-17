@@ -3,7 +3,9 @@
 use std::sync::atomic::AtomicBool;
 
 use super::note_taker::{NoteTaker, you_for_me};
-use super::prompt::{self, combine_messages, part_messages, summary_messages, transcript_line};
+use super::prompt::{
+    self, combine_messages, next_steps_messages, part_messages, summary_messages, transcript_line,
+};
 use crate::llm::generator::{GenerateError, Generator};
 use crate::llm::template::Message;
 use crate::store::TranscriptSegment;
@@ -23,6 +25,11 @@ pub fn part_tokens(context: usize) -> usize {
 
 /// Slack for tokenizer differences between counting and generating.
 const MARGIN_TOKENS: usize = 64;
+
+/// Room for a task list written after notes that left theirs out.
+const NEXT_STEPS_TOKENS: usize = 512;
+
+const NEXT_STEPS_HEADING: &str = "## Next steps";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SummaryError {
@@ -50,8 +57,9 @@ pub struct Request<'a> {
     pub instructions: &'a str,
 }
 
-/// Summarizes a meeting. Only the final notes stream through `on_text`.
-/// The notes call the note-taker "you" (see `note_taker`).
+/// Summarizes a meeting. Only the final notes stream through `on_text`,
+/// followed by a Next steps section when one had to be added (see
+/// `missing_next_steps`). The notes call the note-taker "you" (see `note_taker`).
 pub fn summarize(
     generator: &mut dyn Generator,
     request: &Request,
@@ -60,7 +68,7 @@ pub fn summarize(
     on_text: &mut dyn FnMut(&str),
 ) -> Result<String, SummaryError> {
     let mut note_taker = NoteTaker::default();
-    let notes = write_notes(generator, request, cancel, on_progress, &mut |text| {
+    let (notes, input) = write_notes(generator, request, cancel, on_progress, &mut |text| {
         let shown = note_taker.push(text);
         if !shown.is_empty() {
             on_text(&shown);
@@ -70,7 +78,75 @@ pub fn summarize(
     if !rest.is_empty() {
         on_text(&rest);
     }
-    Ok(you_for_me(&notes))
+    let section = missing_next_steps(generator, request, &notes, &input, cancel)?;
+    if !section.is_empty() {
+        on_text(&you_for_me(&section));
+    }
+    Ok(you_for_me(&format!("{notes}{section}")))
+}
+
+/// Writes the Next steps section when the instructions ask for one and the
+/// notes left it out, from the notes and what they were written from:
+/// Qwen3.5 4B often stops after the last topic. Empty when nothing needs adding.
+fn missing_next_steps(
+    generator: &mut dyn Generator,
+    request: &Request,
+    notes: &str,
+    input: &Input,
+    cancel: &AtomicBool,
+) -> Result<String, SummaryError> {
+    if !request.instructions.contains(NEXT_STEPS_HEADING) || has_next_steps(notes) {
+        return Ok(String::new());
+    }
+    let messages = next_steps_messages(notes, &input.text, input.condensed);
+    let context = generator.context_size();
+    if !fits(generator, &messages, NEXT_STEPS_TOKENS, context)? {
+        return Ok(String::new());
+    }
+    let reply = generator.generate(&messages, NEXT_STEPS_TOKENS, cancel, &mut |_| {})?;
+    let tasks = task_bullets(&reply);
+    if tasks.is_empty() {
+        return Ok(String::new());
+    }
+    let gap = match notes.len() - notes.trim_end_matches('\n').len() {
+        0 => "\n\n",
+        1 => "\n",
+        _ => "",
+    };
+    Ok(format!("{gap}{NEXT_STEPS_HEADING}\n{}", tasks.join("\n")))
+}
+
+fn has_next_steps(notes: &str) -> bool {
+    notes.lines().any(|line| {
+        line.starts_with('#')
+            && line
+                .trim_start_matches('#')
+                .trim()
+                .eq_ignore_ascii_case("next steps")
+    })
+}
+
+/// The reply's bullets as `- task` lines, without a heading or a "none" line.
+fn task_bullets(reply: &str) -> Vec<String> {
+    reply
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            line.strip_prefix("- ").or_else(|| line.strip_prefix("* "))
+        })
+        .map(str::trim)
+        .filter(|task| {
+            let bare = task.trim_end_matches('.').to_lowercase();
+            !task.is_empty() && bare != "none" && bare != "no tasks"
+        })
+        .map(|task| format!("- {task}"))
+        .collect()
+}
+
+/// What the notes were written from: the transcript, or its condensed parts.
+struct Input {
+    text: String,
+    condensed: bool,
 }
 
 fn write_notes(
@@ -79,7 +155,7 @@ fn write_notes(
     cancel: &AtomicBool,
     on_progress: &mut dyn FnMut(Progress),
     on_text: &mut dyn FnMut(&str),
-) -> Result<String, SummaryError> {
+) -> Result<(String, Input), SummaryError> {
     if request.segments.is_empty() && request.notes_markdown.trim().is_empty() {
         return Err(SummaryError::NothingToSummarize);
     }
@@ -87,16 +163,22 @@ fn write_notes(
     let (summary_room, part_room) = (summary_tokens(context), part_tokens(context));
     let lines: Vec<String> = request.segments.iter().map(transcript_line).collect();
 
+    let transcript = lines.join("\n");
     let single = summary_messages(
         request.instructions,
         request.title,
         request.notes_markdown,
         request.terms,
-        &lines.join("\n"),
+        &transcript,
     );
     if fits(generator, &single, summary_room, context)? {
         on_progress(Progress::Writing);
-        return Ok(generator.generate(&single, summary_room, cancel, on_text)?);
+        let notes = generator.generate(&single, summary_room, cancel, on_text)?;
+        let input = Input {
+            text: transcript,
+            condensed: false,
+        };
+        return Ok((notes, input));
     }
 
     // Too long for one pass: condense in parts until the parts fit together.
@@ -147,7 +229,12 @@ fn write_notes(
         );
         if fits(generator, &combined, summary_room, context)? {
             on_progress(Progress::Writing);
-            return Ok(generator.generate(&combined, summary_room, cancel, on_text)?);
+            let notes = generator.generate(&combined, summary_room, cancel, on_text)?;
+            let input = Input {
+                text: prompt::condensed(&parts),
+                condensed: true,
+            };
+            return Ok((notes, input));
         }
         pieces = parts;
     }
@@ -185,12 +272,17 @@ mod tests {
         assert_eq!((summary_tokens(2_048), part_tokens(2_048)), (512, 256));
     }
 
+    /// Notes that end with their Next steps, so no task call follows.
+    const NOTES: &str = "## Notes\n- done\n\n## Next steps\n- Ship it (Priya)";
+
     /// Counts one token per word and replies with canned text.
     struct FakeModel {
         context: usize,
         calls: Vec<String>,
         systems: Vec<String>,
         notes: &'static str,
+        /// The reply when asked for the tasks in notes without Next steps.
+        tasks: &'static str,
     }
 
     impl FakeModel {
@@ -199,7 +291,8 @@ mod tests {
                 context,
                 calls: Vec::new(),
                 systems: Vec::new(),
-                notes: "## Notes\n- done",
+                notes: NOTES,
+                tasks: "",
             }
         }
     }
@@ -233,6 +326,8 @@ mod tests {
             let user = &messages[1].content;
             let reply = if user.contains(" of the transcript:\n<transcript>") {
                 format!("- condensed part {}", self.calls.len() + 1)
+            } else if messages[0].content.starts_with("You list the tasks") {
+                self.tasks.to_string()
             } else {
                 self.notes.to_string()
             };
@@ -298,9 +393,9 @@ mod tests {
 
         let (result, progress, streamed) = run(&mut model, &segments(10, 10), "- agenda");
 
-        assert_eq!(result.unwrap(), "## Notes\n- done");
+        assert_eq!(result.unwrap(), NOTES);
         assert_eq!(progress, vec![Progress::Writing]);
-        assert_eq!(streamed, "## Notes\n- done");
+        assert_eq!(streamed, NOTES);
         assert_eq!(model.calls.len(), 1);
     }
 
@@ -324,19 +419,140 @@ mod tests {
 
         let (result, progress, streamed) = run(&mut model, &segments(150, 30), "- agenda");
 
-        assert_eq!(result.unwrap(), "## Notes\n- done");
+        assert_eq!(result.unwrap(), NOTES);
         let parts = progress.len() - 1;
         assert_eq!(parts, 2, "{progress:?}");
         assert_eq!(progress[0], Progress::Reading { part: 1, parts });
         assert_eq!(progress[parts], Progress::Writing);
         // Only the final notes stream to the UI, not the condensed parts.
-        assert_eq!(streamed, "## Notes\n- done");
+        assert_eq!(streamed, NOTES);
         let last = model.calls.last().unwrap();
         assert!(last.contains("Part 1:\n- condensed part 1"), "{last}");
         assert!(last.contains("<notes>\n- agenda\n</notes>"), "{last}");
         // Each part sees the notes too, so it knows what matters.
         let first = &model.calls[0];
         assert!(first.contains("<notes>\n- agenda\n</notes>"), "{first}");
+    }
+
+    #[test]
+    fn adds_next_steps_from_the_transcript_when_the_notes_leave_them_out() {
+        let mut model = FakeModel::new(8192);
+        model.notes = "## Notes\n- done";
+        model.tasks = "- Write the alert (Me)\n- Book the room (Priya)";
+
+        let (result, progress, streamed) = run(&mut model, &segments(10, 10), "");
+
+        let expected =
+            "## Notes\n- done\n\n## Next steps\n- Write the alert (you)\n- Book the room (Priya)";
+        assert_eq!(result.unwrap(), expected);
+        assert_eq!(streamed, expected);
+        assert_eq!(progress, vec![Progress::Writing]);
+        assert_eq!(model.calls.len(), 2);
+        let tasks = &model.calls[1];
+        assert!(
+            tasks.contains("<notes>\n## Notes\n- done\n</notes>"),
+            "{tasks}"
+        );
+        assert!(
+            tasks.contains("Transcript:\n<transcript>\n[0:00] Me: word"),
+            "{tasks}"
+        );
+    }
+
+    #[test]
+    fn checks_next_steps_against_the_condensed_parts_of_a_long_meeting() {
+        let mut model = FakeModel::new(4096);
+        model.notes = "## Notes\n- done";
+        model.tasks = "- Book the room (Priya)";
+
+        let (result, _, _) = run(&mut model, &segments(150, 30), "");
+
+        assert_eq!(
+            result.unwrap(),
+            "## Notes\n- done\n\n## Next steps\n- Book the room (Priya)"
+        );
+        let tasks = model.calls.last().unwrap();
+        assert!(
+            tasks.contains("condensed in order:\n<transcript>\nPart 1:\n- condensed part 1"),
+            "{tasks}"
+        );
+        assert!(!tasks.contains("Me: word"), "{tasks}");
+    }
+
+    #[test]
+    fn puts_one_blank_line_before_added_next_steps() {
+        for notes in [
+            "## Notes\n- done",
+            "## Notes\n- done\n",
+            "## Notes\n- done\n\n",
+        ] {
+            let mut model = FakeModel::new(8192);
+            model.notes = notes;
+            model.tasks = "- Book the room (Priya)";
+
+            let (result, _, streamed) = run(&mut model, &segments(10, 10), "");
+
+            let expected = "## Notes\n- done\n\n## Next steps\n- Book the room (Priya)";
+            assert_eq!(result.unwrap(), expected, "{notes:?}");
+            assert_eq!(streamed, expected, "{notes:?}");
+        }
+    }
+
+    #[test]
+    fn leaves_the_notes_alone_when_the_model_finds_no_tasks() {
+        let mut model = FakeModel::new(8192);
+        model.notes = "## Notes\n- done";
+        model.tasks = "None.";
+
+        let (result, _, streamed) = run(&mut model, &segments(10, 10), "");
+
+        assert_eq!(result.unwrap(), "## Notes\n- done");
+        assert_eq!(streamed, "## Notes\n- done");
+        assert_eq!(model.calls.len(), 2);
+    }
+
+    #[test]
+    fn asks_for_next_steps_only_when_the_instructions_do() {
+        let mut model = FakeModel::new(8192);
+        model.notes = "## Notes\n- done";
+        model.tasks = "- Book the room (Priya)";
+
+        let (result, _, _) = run_with(&mut model, &segments(10, 10), "", "List decisions only.");
+
+        assert_eq!(result.unwrap(), "## Notes\n- done");
+        assert_eq!(model.calls.len(), 1);
+
+        let mut model = FakeModel::new(8192);
+        model.notes = "## Notes\n- done";
+        model.tasks = "- Book the room (Priya)";
+        let custom = "List decisions, then end with \"## Next steps\".";
+
+        let (result, _, _) = run_with(&mut model, &segments(10, 10), "", custom);
+
+        assert!(
+            result
+                .unwrap()
+                .ends_with("## Next steps\n- Book the room (Priya)")
+        );
+        assert_eq!(model.calls.len(), 2);
+    }
+
+    #[test]
+    fn finds_a_next_steps_heading_at_any_level_or_case() {
+        assert!(has_next_steps("## Notes\n- a\n\n### Next Steps\n- b"));
+        assert!(has_next_steps("# next steps"));
+        assert!(!has_next_steps("## Notes\n- Next steps are unclear"));
+        assert!(!has_next_steps("## Next steps for the rollout"));
+    }
+
+    #[test]
+    fn keeps_only_the_task_bullets_from_the_reply() {
+        let reply = "## Next steps\n*   Write the alert (you)\n- None\n\nHere are the tasks.\n  - Book the room (Priya).\n- ";
+
+        assert_eq!(
+            task_bullets(reply),
+            vec!["- Write the alert (you)", "- Book the room (Priya)."]
+        );
     }
 
     #[test]
