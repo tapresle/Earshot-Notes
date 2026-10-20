@@ -97,20 +97,21 @@ Two more jobs keep the pins current (see **Updating pinned versions**). `.github
 Earshot pins exact versions, and nothing moves a pin without a pull request:
 
 - **needle and Whistle:** revisions and checksums in `scripts/fetch-native.sh`.
-- **whisper.cpp:** the tag and commit in `scripts/build-whisper.sh`. The upstream workflow doesn't check it yet.
+- **whisper.cpp:** the tag and commit in `scripts/build-whisper.sh`.
 - **Local AI models and Whisper large-v3-turbo:** repository, revision, and SHA-256 in `src-tauri/src/models/mod.rs`. Each revision is the last commit that changed the pinned file, which its Hugging Face page shows, not the head of the repository. Find it with the `paths-info` API and `expand: true`, and name its short form in the `version` string.
 - **llama.cpp:** `llama-cpp-2` pinned with `=` in `src-tauri/Cargo.toml`, matching `RUNTIME_VERSION`.
 - **Everything else:** `Cargo.lock`, `package-lock.json`, and the action SHAs.
 
-The upstream workflow reports the first three; it counts a Hugging Face pin as outdated only when the pinned file itself changed, so README edits don't show up. Dependabot covers the rest and skips `llama-cpp-2` and `llama-cpp-sys-2`. A release takes an update when:
+The upstream workflow reports the first four; it counts a Hugging Face pin as outdated only when the pinned file itself changed, so README edits don't show up, and whisper.cpp only when GitHub's latest release (never a prerelease) is newer than the pinned tag. Dependabot covers the rest and skips `llama-cpp-2` and `llama-cpp-sys-2`. A release takes an update when:
 
 - **It fixes a security problem:** in the next release.
 - **llama.cpp:** a model you want needs it, or it fixes a problem Earshot has. Run the summary tests and the summary benchmark (`npm run benchmark`) on the new version, then update `RUNTIME_VERSION` and each model's `min_runtime` with the pin.
 - **needle and Whistle:** it improves accuracy or speed. Run the transcription tests and listen through recordings kept with **Keep audio recordings**. Move them together: each Whistle version has to match its engine.
+- **whisper.cpp:** it improves accuracy or speed, or fixes a problem Earshot has. Run the Whisper tests and listen through recordings kept with **Keep audio recordings** transcribed with Whisper large-v3-turbo.
 - **A summary model's file changed:** compare the new file with the old one in the summary benchmark (`npm run benchmark`) before moving the pin. Earlier releases are unaffected: they download from the revision they pin and check its SHA-256.
 - **Dependabot's grouped updates:** when CI passes. Read the changelogs of major version bumps first.
 
-To decline an update, add it to `scripts/upstream/reviewed.json`, with the upstream file's SHA-256 or the crate version, a reason, and the date. The weekly check stops reporting that version and reports the next one. Record the measurements behind the decision in the tracking issue.
+To decline an update, add it to `scripts/upstream/reviewed.json`, with the upstream file's SHA-256, the crate version, or the release tag, a reason, and the date. The weekly check stops reporting that version and reports the next one. Record the measurements behind the decision in the tracking issue.
 
 Every pin change gets a line in the next release notes.
 

@@ -5,13 +5,17 @@ import {
   checkAll,
   checkCrate,
   checkFile,
+  checkRelease,
+  NOTHING_REVIEWED,
   compareVersions,
   readCratePin,
   readModelPins,
   readNativePins,
+  readReleasePin,
   renderReport,
   type FetchJson,
   type FilePin,
+  type ReleasePin,
   type Reviewed,
 } from "./check";
 
@@ -44,6 +48,13 @@ const QWEN_UNCHANGED = [
     },
   },
 ];
+// Shaped like GitHub's latest release response for whisper.cpp on 2026-10-20,
+// trimmed to the fields the check reads.
+const release = (tag: string) => ({
+  tag_name: tag,
+  html_url: `https://github.com/ggml-org/whisper.cpp/releases/tag/${tag}`,
+  published_at: "2026-10-06T17:39:17Z",
+});
 const crate = (version: string) => ({
   crate: { max_stable_version: version, newest_version: version, repository: "https://github.com/utilityai/llama-cpp-rs" },
 });
@@ -71,6 +82,13 @@ const QWEN_3_5_9B: FilePin = {
   sha256: "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
 };
 
+const WHISPER: ReleasePin = {
+  name: "whisper.cpp",
+  repo: "ggml-org/whisper.cpp",
+  tag: "v1.9.5",
+  commit: "d1be6fde11ac6e0407606b4e42fe72d34add8037",
+};
+
 /** Answers each URL with a recorded response, and records the requests. */
 function recorded(responses: Record<string, unknown>) {
   const requests: { url: string; body?: unknown }[] = [];
@@ -84,6 +102,7 @@ function recorded(responses: Record<string, unknown>) {
 
 const paths = (repo: string) => `https://huggingface.co/api/models/${repo}/paths-info/main`;
 const CRATE_URL = "https://crates.io/api/v1/crates/llama-cpp-2";
+const RELEASE_URL = "https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest";
 
 describe("reading pins", () => {
   it("reads the shipped native pins and skips the test model", () => {
@@ -113,6 +132,26 @@ describe("reading pins", () => {
     expect(pins).toContainEqual(QWEN_3_5_9B);
   });
 
+  it("reads the shipped whisper.cpp tag and commit", () => {
+    const pin = readReleasePin(repoFile("scripts/build-whisper.sh"));
+
+    expect(pin.name).toBe("whisper.cpp");
+    expect(pin.repo).toBe("ggml-org/whisper.cpp");
+    expect(pin.tag).toMatch(/^v\d+\.\d+\.\d+$/);
+    expect(pin.commit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it("refuses a whisper.cpp pin it can't read", () => {
+    const script = (repo: string, tag: string, commit: string) =>
+      [`WHISPER_REPO="${repo}"`, `WHISPER_TAG="${tag}"`, `WHISPER_COMMIT="${commit}"`].join("\n");
+    const good = ["https://github.com/ggml-org/whisper.cpp.git", "v1.9.5", WHISPER.commit] as const;
+
+    expect(readReleasePin(script(...good))).toEqual(WHISPER);
+    expect(() => readReleasePin(script("https://gitlab.com/ggml-org/whisper.cpp.git", good[1], good[2]))).toThrow(/WHISPER_REPO/);
+    expect(() => readReleasePin(script(good[0], "master", good[2]))).toThrow(/WHISPER_TAG/);
+    expect(() => readReleasePin(script(good[0], good[1], "d1be6fde"))).toThrow(/WHISPER_COMMIT/);
+  });
+
   it("reads the locked llama-cpp-2 version", () => {
     expect(readCratePin(repoFile("src-tauri/Cargo.lock"), "llama-cpp-2").version).toMatch(/^\d+\.\d+\.\d+$/);
   });
@@ -120,6 +159,7 @@ describe("reading pins", () => {
   it("fails loudly when a file's format changes", () => {
     expect(() => readNativePins("")).toThrow();
     expect(() => readModelPins("")).toThrow();
+    expect(() => readReleasePin("")).toThrow(/WHISPER_REPO/);
     expect(() => readCratePin("", "llama-cpp-2")).toThrow();
   });
 });
@@ -174,10 +214,30 @@ describe("checking crates", () => {
   });
 });
 
+describe("checking GitHub releases", () => {
+  it("reports a newer release, linking the pinned commit and the release", async () => {
+    const { fetchJson, requests } = recorded({ [RELEASE_URL]: release("v1.10.0") });
+
+    const update = await checkRelease(WHISPER, fetchJson);
+
+    expect(requests).toEqual([{ url: RELEASE_URL, body: undefined }]);
+    expect(update?.name).toBe("whisper.cpp");
+    expect(update?.pinned).toContain("https://github.com/ggml-org/whisper.cpp/tree/d1be6fde11ac6e0407606b4e42fe72d34add8037");
+    expect(update?.upstream).toContain("https://github.com/ggml-org/whisper.cpp/releases/tag/v1.10.0");
+    expect(update?.upstream).toContain("2026-10-06");
+  });
+
+  it("reports nothing when the pinned tag is the latest release, or newer", async () => {
+    expect(await checkRelease(WHISPER, recorded({ [RELEASE_URL]: release("v1.9.5") }).fetchJson)).toBeNull();
+    expect(await checkRelease(WHISPER, recorded({ [RELEASE_URL]: release("v1.9.4") }).fetchJson)).toBeNull();
+  });
+});
+
 describe("reviewed versions", () => {
   const declined = (sha256: string, version: string): Reviewed => ({
     files: [{ repo: NEEDLE.repo, path: NEEDLE.path, sha256, reason: "no gain on the fixtures", date: "2026-10-08" }],
     crates: [{ name: "llama-cpp-2", version, reason: "waiting for a model that needs it", date: "2026-10-08" }],
+    releases: [],
   });
 
   it("doesn't report a file version that was reviewed and declined", async () => {
@@ -201,10 +261,21 @@ describe("reviewed versions", () => {
     expect(await checkCrate(pin, fetchJson, declined("0".repeat(64), "0.1.159"))).not.toBeNull();
   });
 
+  it("doesn't report a declined release, but reports a newer one", async () => {
+    const { fetchJson } = recorded({ [RELEASE_URL]: release("v1.10.0") });
+    const declinedRelease = (tag: string): Reviewed => ({
+      ...NOTHING_REVIEWED,
+      releases: [{ repo: WHISPER.repo, tag, reason: "no accuracy gain", date: "2026-10-20" }],
+    });
+
+    expect(await checkRelease(WHISPER, fetchJson, declinedRelease("v1.10.0"))).toBeNull();
+    expect(await checkRelease(WHISPER, fetchJson, declinedRelease("v1.9.6"))).not.toBeNull();
+  });
+
   it("reads the committed reviewed list", () => {
     const reviewed = JSON.parse(repoFile("scripts/upstream/reviewed.json")) as Reviewed;
 
-    expect(Array.isArray(reviewed.files) && Array.isArray(reviewed.crates)).toBe(true);
+    expect([reviewed.files, reviewed.crates, reviewed.releases].every(Array.isArray)).toBe(true);
   });
 });
 
@@ -212,7 +283,7 @@ describe("the report", () => {
   it("is empty when everything is current", async () => {
     const { fetchJson } = recorded({ [paths(QWEN.repo)]: QWEN_UNCHANGED, [CRATE_URL]: crate("0.1.158") });
 
-    const updates = await checkAll([QWEN], [{ name: "llama-cpp-2", version: "0.1.158" }], fetchJson);
+    const updates = await checkAll([QWEN], [], [{ name: "llama-cpp-2", version: "0.1.158" }], fetchJson);
 
     expect(renderReport(updates)).toBe("");
   });
@@ -221,17 +292,19 @@ describe("the report", () => {
     const { fetchJson } = recorded({
       [paths(NEEDLE.repo)]: NEEDLE_CHANGED,
       [paths(QWEN.repo)]: QWEN_UNCHANGED,
+      [RELEASE_URL]: release("v1.10.0"),
       [CRATE_URL]: crate("0.1.160"),
     });
 
     const report = renderReport(
-      await checkAll([NEEDLE, QWEN], [{ name: "llama-cpp-2", version: "0.1.158" }], fetchJson),
+      await checkAll([NEEDLE, QWEN], [WHISPER], [{ name: "llama-cpp-2", version: "0.1.158" }], fetchJson),
     );
 
     const rows = report.split("\n").filter((line) => line.startsWith("| ") && !line.startsWith("| Pin") && !line.startsWith("| ---"));
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows[0]).toMatch(/^\| needle engine \|/);
-    expect(rows[1]).toMatch(/^\| `llama-cpp-2` \|/);
+    expect(rows[1]).toMatch(/^\| whisper\.cpp \|/);
+    expect(rows[2]).toMatch(/^\| `llama-cpp-2` \|/);
   });
 
   it("keeps a commit title from breaking the table", () => {
