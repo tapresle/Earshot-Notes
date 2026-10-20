@@ -1,7 +1,8 @@
 // Reports newer versions of what Earshot pins: the needle engine and Whistle
 // (scripts/fetch-native.sh), the summary models (src-tauri/src/models/mod.rs),
-// and llama-cpp-2 (src-tauri/Cargo.lock). Prints a Markdown report, or nothing
-// when everything is current. Run weekly by .github/workflows/upstream.yml:
+// whisper.cpp (scripts/build-whisper.sh), and llama-cpp-2 (src-tauri/Cargo.lock).
+// Prints a Markdown report, or nothing when everything is current. Run weekly
+// by .github/workflows/upstream.yml:
 //
 //   node scripts/upstream/check.ts
 //
@@ -28,6 +29,15 @@ export interface CratePin {
   version: string;
 }
 
+/** A GitHub repository pinned to a release tag and its commit. */
+export interface ReleasePin {
+  name: string;
+  /** `owner/name` on GitHub. */
+  repo: string;
+  tag: string;
+  commit: string;
+}
+
 /** One row of the report. */
 export interface Update {
   name: string;
@@ -40,9 +50,10 @@ export interface Reviewed {
   /** Each with the upstream file's SHA-256. */
   files: { repo: string; path: string; sha256: string; reason: string; date: string }[];
   crates: { name: string; version: string; reason: string; date: string }[];
+  releases: { repo: string; tag: string; reason: string; date: string }[];
 }
 
-export const NOTHING_REVIEWED: Reviewed = { files: [], crates: [] };
+export const NOTHING_REVIEWED: Reviewed = { files: [], crates: [], releases: [] };
 
 /** Fetches JSON from a URL, as a POST when there's a body. Throws on any failure. */
 export type FetchJson = (url: string, body?: unknown) => Promise<unknown>;
@@ -100,6 +111,22 @@ export function readCratePin(lock: string, name: string): CratePin {
   const match = lock.match(new RegExp(`^name = "${name}"\\nversion = "([^"]+)"`, "m"));
   if (!match) throw new Error(`Cargo.lock has no ${name}`);
   return { name, version: match[1] };
+}
+
+export function readReleasePin(script: string): ReleasePin {
+  const variable = (name: string) => {
+    const match = script.match(new RegExp(`^${name}="([^"$]*)"`, "m"));
+    if (!match) throw new Error(`build-whisper.sh doesn't set ${name}; has its format changed?`);
+    return match[1];
+  };
+  const url = variable("WHISPER_REPO");
+  const repo = url.match(/^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?$/)?.[1];
+  if (!repo) throw new Error(`build-whisper.sh's WHISPER_REPO isn't a GitHub repository: ${url}`);
+  const tag = variable("WHISPER_TAG");
+  if (!/^v\d+(\.\d+)*$/.test(tag)) throw new Error(`build-whisper.sh's WHISPER_TAG isn't a version tag: ${tag}`);
+  const commit = variable("WHISPER_COMMIT");
+  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`build-whisper.sh's WHISPER_COMMIT isn't a full commit: ${commit}`);
+  return { name: "whisper.cpp", repo, tag, commit };
 }
 
 interface PathInfo {
@@ -160,6 +187,29 @@ export async function checkCrate(
   };
 }
 
+interface Release {
+  tag_name: string;
+  html_url: string;
+  published_at: string;
+}
+
+/** Reports a repository whose latest release is newer than the pinned tag. GitHub never picks a prerelease as latest. */
+export async function checkRelease(
+  pin: ReleasePin,
+  fetchJson: FetchJson,
+  reviewed: Reviewed = NOTHING_REVIEWED,
+): Promise<Update | null> {
+  const release = (await fetchJson(`https://api.github.com/repos/${pin.repo}/releases/latest`)) as Release;
+  const version = (tag: string) => tag.replace(/^v/, "");
+  if (compareVersions(version(release.tag_name), version(pin.tag)) <= 0) return null;
+  if (reviewed.releases.some((r) => r.repo === pin.repo && r.tag === release.tag_name)) return null;
+  return {
+    name: pin.name,
+    pinned: `[\`${pin.tag}\`](https://github.com/${pin.repo}/tree/${pin.commit}) (\`${short(pin.commit)}\`)`,
+    upstream: `[\`${release.tag_name}\`](${release.html_url}), released on ${release.published_at.slice(0, 10)}`,
+  };
+}
+
 export function compareVersions(a: string, b: string): number {
   const parts = (v: string) => v.split(".").map(Number);
   const [x, y] = [parts(a), parts(b)];
@@ -187,6 +237,7 @@ export function renderReport(updates: Update[]): string {
 /** Checks every pin, one request at a time; there are only a handful. */
 export async function checkAll(
   files: FilePin[],
+  releases: ReleasePin[],
   crates: CratePin[],
   fetchJson: FetchJson,
   reviewed: Reviewed = NOTHING_REVIEWED,
@@ -194,6 +245,10 @@ export async function checkAll(
   const updates: Update[] = [];
   for (const pin of files) {
     const update = await checkFile(pin, fetchJson, reviewed);
+    if (update) updates.push(update);
+  }
+  for (const pin of releases) {
+    const update = await checkRelease(pin, fetchJson, reviewed);
     if (update) updates.push(update);
   }
   for (const pin of crates) {
@@ -216,7 +271,7 @@ function short(revision: string): string {
 const fetchJson: FetchJson = async (url, body) => {
   const response = await fetch(url, {
     method: body === undefined ? "GET" : "POST",
-    // crates.io refuses requests without a user agent.
+    // crates.io and GitHub refuse requests without a user agent.
     headers: { "User-Agent": "Earshot upstream check (github.com/tapresle/Earshot-Notes)", "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -231,9 +286,10 @@ async function main() {
     ...readNativePins(await read("scripts/fetch-native.sh")),
     ...readModelPins(await read("src-tauri/src/models/mod.rs")),
   ];
+  const releases = [readReleasePin(await read("scripts/build-whisper.sh"))];
   const crates = [readCratePin(await read("src-tauri/Cargo.lock"), "llama-cpp-2")];
   const reviewed = JSON.parse(await read("scripts/upstream/reviewed.json")) as Reviewed;
-  process.stdout.write(renderReport(await checkAll(files, crates, fetchJson, reviewed)));
+  process.stdout.write(renderReport(await checkAll(files, releases, crates, fetchJson, reviewed)));
 }
 
 if (import.meta.main) {
