@@ -1,5 +1,20 @@
 {
-  "files": [],
-  "crates": [],
+  "files": [
+    {
+      "repo": "Cactus-Compute/needle3",
+      "path": "macos-arm64/libneedle.a",
+      "sha256": "7d1368a4a42a745aba055f310913c3ed6d929dee98a89dcb955b9032b2335700",
+      "reason": "Production build of 2026-10-19: identical text and phantoms on the fixtures and noise clips, speed within noise. It also errors on a small output buffer instead of truncating, which the Whistle wrapper must handle before any later update. Measurements in #64.",
+      "date": "2026-10-20"
+    }
+  ],
+  "crates": [
+    {
+      "name": "llama-cpp-2",
+      "version": "0.1.160",
+      "reason": "Brings 0.1.159's wrapper API changes and llama.cpp v0.6.0. No model in the registry needs it and it fixes no problem Earshot has, so per the update policy it waits until one does; taking it means the summary benchmark and moving RUNTIME_VERSION and each min_runtime.",
+      "date": "2026-10-20"
+    }
+  ],
   "releases": []
 }
