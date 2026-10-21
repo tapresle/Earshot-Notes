@@ -1,5 +1,13 @@
 {
-  "files": [],
+  "files": [
+    {
+      "repo": "Cactus-Compute/needle3",
+      "path": "macos-arm64/libneedle.a",
+      "sha256": "7d1368a4a42a745aba055f310913c3ed6d929dee98a89dcb955b9032b2335700",
+      "reason": "Production build of 2026-10-19: identical text and phantoms on the fixtures and noise clips, speed within noise. It also errors on a small output buffer instead of truncating, which the Whistle wrapper must handle before any later update. Measurements in #64.",
+      "date": "2026-10-20"
+    }
+  ],
   "crates": [],
   "releases": []
 }
