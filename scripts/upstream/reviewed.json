@@ -8,6 +8,13 @@
       "date": "2026-10-20"
     }
   ],
-  "crates": [],
+  "crates": [
+    {
+      "name": "llama-cpp-2",
+      "version": "0.1.160",
+      "reason": "Brings 0.1.159's wrapper API changes and llama.cpp v0.6.0. No model in the registry needs it and it fixes no problem Earshot has, so per the update policy it waits until one does; taking it means the summary benchmark and moving RUNTIME_VERSION and each min_runtime.",
+      "date": "2026-10-20"
+    }
+  ],
   "releases": []
 }
