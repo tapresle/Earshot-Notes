@@ -9209,7 +9209,7 @@ JavaScript packages
 ===================
 
 --------------------------------------------------------------------------------
-@tauri-apps/api 2.12.3 (Apache-2.0 OR MIT)
+@tauri-apps/api 2.12.4 (Apache-2.0 OR MIT)
 git+https://github.com/tauri-apps/tauri.git
 
 
@@ -9413,7 +9413,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------------------------------------------------
-@tauri-apps/plugin-dialog 2.8.2 (MIT OR Apache-2.0)
+@tauri-apps/plugin-dialog 2.8.3 (MIT OR Apache-2.0)
 https://github.com/tauri-apps/plugins-workspace
 
 
@@ -9617,7 +9617,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------------------------------------------------
-react 19.3.0 (MIT)
+react 19.3.1 (MIT)
 https://github.com/react/react.git
 
 MIT License
@@ -9643,7 +9643,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------------------------------------------------
-react-dom 19.3.0 (MIT)
+react-dom 19.3.1 (MIT)
 https://github.com/react/react.git
 
 MIT License
