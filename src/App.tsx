@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, errorMessage } from "./lib/api";
 import { MeetingList } from "./features/meetings/MeetingList";
 import { LoadMore } from "./features/meetings/LoadMore";
@@ -65,29 +65,75 @@ export default function App() {
       .catch(() => setRecordingMeetingId(null));
   }, []);
 
+  // What the window shows, for the menu bar's event listeners. They register
+  // once and read this instead of re-registering on every change, which
+  // would drop an event that arrives between two registrations.
+  const meetings = list.kind === "ready" ? list.meetings : [];
+  const shown = useRef({ view, selectedId, meetings });
+  useLayoutEffect(() => {
+    shown.current = { view, selectedId, meetings };
+  });
+  // Bumped on every openMeeting, so only the latest one opens its meeting.
+  const openRequest = useRef(0);
+
+  // Opens a meeting in the meetings view: selects it, lists it in the sidebar,
+  // and switches away from Settings or the setup checklist. If you open
+  // something else while the meeting loads, what you picked stays.
+  const openMeeting = useCallback(
+    (meetingId: number) => {
+      const request = ++openRequest.current;
+      const before = shown.current;
+      api
+        .getMeeting(meetingId)
+        .then((meeting) => {
+          const now = shown.current;
+          if (request !== openRequest.current || now.view !== before.view || now.selectedId !== before.selectedId) {
+            return;
+          }
+          // A search that hides the meeting is cleared, so the sidebar lists it.
+          if (!now.meetings.some((m) => m.id === meeting.id)) {
+            updateMeetings((all) => (all.some((m) => m.id === meeting.id) ? all : [meeting, ...all]));
+            setSearch("");
+          }
+          setSelectedId(meeting.id);
+          setSelection({ ids: [meeting.id], anchor: meeting.id });
+          setView("meetings");
+        })
+        .catch((error) => console.error("couldn't open the meeting from the menu bar", meetingId, error));
+    },
+    [updateMeetings],
+  );
+
   // Recordings can also start and stop from the menu bar. One started there
   // records a new meeting, which opens here so the window shows it. A
   // recording of the open meeting started from this window needs nothing more.
   useEffect(() => {
     const unlisten = api.onRecordingChanged(({ meetingId }) => {
       setRecordingMeetingId(meetingId);
-      if (meetingId === null || meetingId === selectedId) return;
-      api
-        .getMeeting(meetingId)
-        .then((meeting) => {
-          updateMeetings((all) => (all.some((m) => m.id === meeting.id) ? all : [meeting, ...all]));
-          // A new meeting matches no search, so show the full list it belongs to.
-          setSearch("");
-          setSelectedId(meeting.id);
-          setSelection({ ids: [meeting.id], anchor: meeting.id });
-          setView("meetings");
-        })
-        .catch((error) => console.error("couldn't open the meeting recording from the menu bar", error));
+      if (meetingId === null || meetingId === shown.current.selectedId) return;
+      openMeeting(meetingId);
     });
     return () => {
       unlisten.then((stop) => stop()).catch(() => {});
     };
-  }, [selectedId, updateMeetings]);
+  }, [openMeeting]);
+
+  // A stop from the menu bar opens the meeting that stopped (#184), so the
+  // transcript and summary you just finished are in front of you. The
+  // window's own stop stays where it is, and a meeting already on screen and
+  // in the sidebar needs nothing more, which keeps a multi-selection.
+  useEffect(() => {
+    const unlisten = api.onMeetingOpen(({ meetingId }) => {
+      const now = shown.current;
+      if (now.view === "meetings" && now.selectedId === meetingId && now.meetings.some((m) => m.id === meetingId)) {
+        return;
+      }
+      openMeeting(meetingId);
+    });
+    return () => {
+      unlisten.then((stop) => stop()).catch(() => {});
+    };
+  }, [openMeeting]);
 
   async function createMeeting() {
     setCreating(true);
@@ -115,8 +161,6 @@ export default function App() {
       setCreating(false);
     }
   }
-
-  const meetings = list.kind === "ready" ? list.meetings : [];
 
   function removeMeeting(id: number) {
     updateMeetings((all) => all.filter((m) => m.id !== id));

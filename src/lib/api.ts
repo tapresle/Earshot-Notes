@@ -88,6 +88,11 @@ export interface RecordingChanged {
   meetingId: number | null;
 }
 
+/** A meeting to open in the meetings view, such as the one a menu bar stop just ended. */
+export interface MeetingOpen {
+  meetingId: number;
+}
+
 /** A name to spell correctly, and what transcription tends to hear instead. */
 export interface VocabularyTerm {
   term: string;
@@ -366,6 +371,9 @@ export const api = {
     listen<RecordingIssue>("recording:issue", (event) => handler(event.payload)),
   onRecordingChanged: (handler: (change: RecordingChanged) => void): Promise<UnlistenFn> =>
     listen<RecordingChanged>("recording:changed", (event) => handler(event.payload)),
+  /** The meeting the menu bar wants open, such as the one a menu bar stop just ended. */
+  onMeetingOpen: (handler: (open: MeetingOpen) => void): Promise<UnlistenFn> =>
+    listen<MeetingOpen>("meeting:open", (event) => handler(event.payload)),
   launchAtLogin: () => invoke<LaunchAtLogin>("launch_at_login"),
   setLaunchAtLogin: (enabled: boolean) => invoke<LaunchAtLogin>("set_launch_at_login", { enabled }),
 

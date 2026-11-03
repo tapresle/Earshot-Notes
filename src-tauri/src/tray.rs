@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
-use tauri::{App, AppHandle, Manager, Wry};
+use tauri::{App, AppHandle, Emitter, Manager, Wry};
 
 use crate::commands::recording;
 use crate::recording::{Recorder, SourceProblem};
@@ -199,19 +199,40 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     }
 }
 
+/// A stop from the menu bar opens the meeting that stopped.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeetingOpen {
+    meeting_id: i64,
+}
+
 fn toggle_recording(app: &AppHandle) {
     if app.state::<Arc<Recorder>>().active_meeting().is_some() {
-        if let Err(error) = recording::stop(app) {
-            log::error!(
+        match recording::stop(app) {
+            Ok(stopped) => open_stopped_meeting(app, stopped),
+            Err(error) => log::error!(
                 "couldn't stop recording from the menu bar: {}",
                 error.message
-            );
+            ),
         }
         return;
     }
     if let Err(message) = record_new_meeting(app) {
         log::error!("couldn't start recording from the menu bar: {message}");
         show_status(app, Status::Failed(message));
+    }
+}
+
+/// A stop from the menu bar shows the window and opens the meeting that
+/// stopped, so its transcript and summary are right there (#184). A failed
+/// stop leaves the window alone; the failure surfaces as before.
+fn open_stopped_meeting(app: &AppHandle, stopped: Option<i64>) {
+    let Some(meeting_id) = stopped else {
+        return;
+    };
+    window::show(app);
+    if let Err(error) = app.emit("meeting:open", MeetingOpen { meeting_id }) {
+        log::warn!("couldn't tell the UI to open meeting {meeting_id}: {error}");
     }
 }
 
@@ -239,6 +260,13 @@ mod tests {
             source,
             message: message.into(),
         }
+    }
+
+    #[test]
+    fn sends_the_meeting_to_open_in_the_shape_the_window_reads() {
+        // `api.onMeetingOpen` in `src/lib/api.ts` reads `{ meetingId }`.
+        let payload = serde_json::to_value(MeetingOpen { meeting_id: 7 }).unwrap();
+        assert_eq!(payload, serde_json::json!({ "meetingId": 7 }));
     }
 
     #[test]
