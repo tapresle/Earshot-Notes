@@ -263,6 +263,13 @@ mod tests {
     }
 
     #[test]
+    fn sends_the_meeting_to_open_in_the_shape_the_window_reads() {
+        // `api.onMeetingOpen` in `src/lib/api.ts` reads `{ meetingId }`.
+        let payload = serde_json::to_value(MeetingOpen { meeting_id: 7 }).unwrap();
+        assert_eq!(payload, serde_json::json!({ "meetingId": 7 }));
+    }
+
+    #[test]
     fn offers_to_start_when_idle() {
         assert_eq!(
             view(&Status::Idle),
