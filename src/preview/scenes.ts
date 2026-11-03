@@ -67,6 +67,22 @@ const CALL_TRANSCRIPT: [number, "me" | "them", string][] = [
   [24_000, "them", "Transcripts, mostly in Markdown."],
 ];
 
+/** A longer call, so the transcript pane overflows and can be scrolled. */
+const LONG_CALL_TRANSCRIPT: [number, "me" | "them", string][] = [
+  ...CALL_TRANSCRIPT,
+  [29_500, "me", "Then we can skip the audio step and start from your notes."],
+  [35_000, "them", "That would save us a weekend. How are the timestamps handled?"],
+  [41_500, "me", "Each line keeps its offset from the start of the call."],
+  [48_000, "them", "Good. What happens when two people talk at once?"],
+  [55_500, "me", "We show both sides, so you can tell who said what."],
+  [62_000, "them", "And the speaker labels stay with the line after import?"],
+  [70_000, "me", "They do. The labels match what the summary uses."],
+  [78_000, "them", "One more: can we bring in our glossary of product names?"],
+  [86_500, "me", "Yes. List the term and what it's usually misheard as."],
+  [94_000, "them", "That's exactly what we need for the rollout."],
+  [102_000, "me", "Let's make that the first import to try next week."],
+];
+
 function transcript(meetingId: number, lines: [number, "me" | "them", string][], firstId: number): TranscriptSegment[] {
   return lines.map(([startMs, source, text], i) => segment(firstId + i, meetingId, source, startMs, text));
 }
@@ -150,6 +166,14 @@ export const scenes: Record<string, () => FakeBackend> = {
   recording: () => {
     const call = meeting(6, "Customer call", 4, null, "- Import from Markdown transcripts\n- ");
     const backend = withHistory([call], transcript(6, CALL_TRANSCRIPT, 100));
+    backend.state.recording = 6;
+    return backend;
+  },
+
+  /** A longer call in progress, so the transcript overflows its pane and the user can have scrolled up (#183). */
+  "recording-scrolled": () => {
+    const call = meeting(6, "Customer call", 4, null, "- Import from Markdown transcripts\n- ");
+    const backend = withHistory([call], transcript(6, LONG_CALL_TRANSCRIPT, 100));
     backend.state.recording = 6;
     return backend;
   },

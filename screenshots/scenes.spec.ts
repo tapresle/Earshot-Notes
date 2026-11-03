@@ -131,6 +131,18 @@ test("recording", async ({ page }) => {
   await expect(page).toHaveScreenshot("recording.png");
 });
 
+test("recording-scrolled", async ({ page }) => {
+  await open(page, "recording-scrolled");
+  await openMeeting(page, "Customer call");
+  await expect(page.getByText("Let's make that the first import to try next week.")).toBeVisible();
+
+  // The user scrolled up to reread; the pane waits for them instead of
+  // following the new text (#183).
+  await page.locator(".transcript-panel").evaluate((pane) => pane.scrollTo(0, 0));
+  await expect(page.getByRole("button", { name: "Jump to latest" })).toBeVisible();
+  await expect(page).toHaveScreenshot("recording-scrolled.png");
+});
+
 test("settings", async ({ page }) => {
   await open(page, "settings");
   await sidebar(page).getByRole("button", { name: "Settings" }).click();

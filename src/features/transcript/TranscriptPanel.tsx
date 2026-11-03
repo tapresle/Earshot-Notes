@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { api, errorMessage, type Source, type TranscriptPreview, type TranscriptSegment } from "../../lib/api";
 import { formatOffset } from "./formatOffset";
+import { isNearBottom } from "./nearBottom";
 import { segmentElementId } from "./showSegment";
 
 /** Speaker labels, matching the labels in exports and summary prompts. */
@@ -40,24 +41,38 @@ function merge(
 }
 
 export function TranscriptPanel({ meetingId, recording }: TranscriptPanelProps) {
+  // The pane itself scrolls; MeetingTranscript watches it to tell whether
+  // the user is following the latest text.
+  const panelRef = useRef<HTMLElement>(null);
   return (
-    <aside className="transcript-panel" aria-label="Transcript">
+    <aside ref={panelRef} className="transcript-panel" aria-label="Transcript">
       <h2 className="pane-heading">Transcript</h2>
       {meetingId === null ? (
         <p className="empty-hint">Open a meeting to see its transcript.</p>
       ) : (
-        <MeetingTranscript key={meetingId} meetingId={meetingId} recording={recording} />
+        <MeetingTranscript key={meetingId} meetingId={meetingId} recording={recording} panelRef={panelRef} />
       )}
     </aside>
   );
 }
 
-function MeetingTranscript({ meetingId, recording }: { meetingId: number; recording: boolean }) {
+function MeetingTranscript({
+  meetingId,
+  recording,
+  panelRef,
+}: {
+  meetingId: number;
+  recording: boolean;
+  panelRef: RefObject<HTMLElement | null>;
+}) {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [previews, setPreviews] = useState<Previews>({});
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [systemAudioAllowed, setSystemAudioAllowed] = useState(false);
+  // The pane follows new text while the user is at the bottom. A scroll up
+  // detaches it; scrolling back down, or the jump control, reattaches it.
+  const [following, setFollowing] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,8 +125,16 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
   const heardThem = segments.some((s) => s.source === "them") || previews.them !== undefined;
 
   useEffect(() => {
-    if (recording) endRef.current?.scrollIntoView?.({ block: "end" });
-  }, [segments.length, tentativeText, recording]);
+    const panel = panelRef.current;
+    if (!panel) return;
+    const onScroll = () => setFollowing(isNearBottom(panel));
+    panel.addEventListener("scroll", onScroll, { passive: true });
+    return () => panel.removeEventListener("scroll", onScroll);
+  }, [panelRef]);
+
+  useEffect(() => {
+    if (recording && following) endRef.current?.scrollIntoView?.({ block: "end" });
+  }, [segments.length, tentativeText, recording, following]);
 
   if (state.kind === "loading") return <p className="empty-hint">Loading transcript…</p>;
   if (state.kind === "error") {
@@ -180,6 +203,13 @@ function MeetingTranscript({ meetingId, recording }: { meetingId: number; record
           Not seeing the other side? macOS may be blocking system audio. Allow Earshot Notes in System Settings &gt;
           Privacy &amp; Security &gt; Screen &amp; System Audio Recording.
         </p>
+      )}
+      {recording && !following && (
+        <div className="transcript-jump">
+          <button type="button" className="button primary" onClick={() => setFollowing(true)}>
+            Jump to latest
+          </button>
+        </div>
       )}
       <div ref={endRef} />
     </>

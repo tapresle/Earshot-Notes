@@ -3,9 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { CONSENT_NOTICE } from "./features/recording/consent";
+import { showSegment } from "./features/transcript/showSegment";
 import type { MeetingDetail, TranscriptSegment } from "./lib/api";
 import {
   chatExchange,
@@ -746,6 +747,141 @@ describe("App", () => {
     await user.click(await within(sidebar()).findByRole("button", { name: /Quiet/ }));
 
     expect(await within(transcript).findByText(/Start recording to transcribe/)).toBeInTheDocument();
+  });
+
+  describe("transcript scrolling", () => {
+    const pane = () => screen.getByRole("complementary", { name: "Transcript" }) as HTMLElement;
+
+    /**
+     * jsdom has no layout, so the pane's scroll metrics are faked, then a
+     * scroll event is dispatched the way the browser would after the change.
+     */
+    function scrollPane(position: "bottom" | "top") {
+      const metrics =
+        position === "bottom"
+          ? { scrollTop: 2000, scrollHeight: 2300, clientHeight: 300 }
+          : { scrollTop: 0, scrollHeight: 2300, clientHeight: 300 };
+      Object.defineProperties(
+        pane(),
+        Object.fromEntries(Object.entries(metrics).map(([name, value]) => [name, { value, configurable: true }])),
+      );
+      fireEvent.scroll(pane());
+    }
+
+    async function startRecording() {
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Open/ }));
+      await user.click(await screen.findByRole("button", { name: "Start recording" }));
+      await screen.findByRole("button", { name: "Stop recording" });
+      return user;
+    }
+
+    const scrollCalls = () => vi.mocked(HTMLElement.prototype.scrollIntoView).mock.calls;
+
+    beforeEach(() => {
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+    });
+
+    afterEach(() => {
+      delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    });
+
+    it("keeps the latest text in view while the pane is at the bottom", async () => {
+      fakeBackend([seedMeeting(1, "Open")]);
+      await startRecording();
+      scrollPane("bottom");
+      vi.mocked(HTMLElement.prototype.scrollIntoView).mockClear();
+
+      emit("transcript:segment", segment(10, 1, "me", 1000, "Hello everyone"));
+      emit("transcript:preview", { meetingId: 1, source: "them", startMs: 2000, text: "We're" });
+
+      expect(await within(pane()).findByText("Hello everyone")).toBeInTheDocument();
+      expect(scrollCalls()).toEqual([[{ block: "end" }], [{ block: "end" }]]);
+    });
+
+    it("stops following after the user scrolls up, and offers to jump back", async () => {
+      fakeBackend([seedMeeting(1, "Open")]);
+      await startRecording();
+      scrollPane("bottom");
+      scrollPane("top");
+
+      expect(screen.getByRole("button", { name: "Jump to latest" })).toBeInTheDocument();
+      vi.mocked(HTMLElement.prototype.scrollIntoView).mockClear();
+
+      emit("transcript:segment", segment(10, 1, "me", 1000, "Hello everyone"));
+      emit("transcript:preview", { meetingId: 1, source: "them", startMs: 2000, text: "We're" });
+
+      expect(await within(pane()).findByText("Hello everyone")).toBeInTheDocument();
+      expect(scrollCalls()).toEqual([]);
+      expect(pane().scrollTop).toBe(0);
+      expect(screen.getByRole("button", { name: "Jump to latest" })).toBeInTheDocument();
+    });
+
+    it("resumes following when the user scrolls back to the bottom", async () => {
+      fakeBackend([seedMeeting(1, "Open")]);
+      await startRecording();
+      scrollPane("top");
+      expect(screen.getByRole("button", { name: "Jump to latest" })).toBeInTheDocument();
+      vi.mocked(HTMLElement.prototype.scrollIntoView).mockClear();
+
+      scrollPane("bottom");
+
+      expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
+      expect(scrollCalls()).toEqual([[{ block: "end" }]]);
+    });
+
+    it("jumps to the latest text from the control", async () => {
+      fakeBackend([seedMeeting(1, "Open")]);
+      const user = await startRecording();
+      scrollPane("top");
+      vi.mocked(HTMLElement.prototype.scrollIntoView).mockClear();
+
+      await user.click(screen.getByRole("button", { name: "Jump to latest" }));
+
+      expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
+      expect(scrollCalls()).toEqual([[{ block: "end" }]]);
+    });
+
+    it("keeps the pane where a citation jumped it", async () => {
+      fakeBackend(
+        [seedMeeting(1, "Open")],
+        [
+          segment(1, 1, "me", 0, "Let's start with the copy."),
+          segment(2, 1, "them", 5000, "I have one more pass on it."),
+          segment(3, 1, "me", 10000, "Thursday works for me."),
+        ],
+      );
+      await startRecording();
+      scrollPane("bottom");
+      vi.mocked(HTMLElement.prototype.scrollIntoView).mockClear();
+
+      expect(showSegment(1, 0)).toBe(true);
+      expect(scrollCalls()).toEqual([[{ block: "center" }]]);
+
+      // The browser fires a scroll event for the jump: the pane is now far
+      // from the bottom, so following stops and later segments stay put.
+      scrollPane("top");
+      vi.mocked(HTMLElement.prototype.scrollIntoView).mockClear();
+
+      emit("transcript:segment", segment(4, 1, "them", 15000, "Thanks, ship it."));
+      await within(pane()).findByText("Thanks, ship it.");
+
+      expect(scrollCalls()).toEqual([]);
+      expect(screen.getByRole("button", { name: "Jump to latest" })).toBeInTheDocument();
+    });
+
+    it("doesn't offer the jump control when not recording", async () => {
+      fakeBackend([seedMeeting(1, "Open")], [segment(1, 1, "me", 0, "Let's start with the copy.")]);
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Open/ }));
+      await within(pane()).findByText("Let's start with the copy.");
+
+      scrollPane("top");
+
+      expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
+    });
   });
 
   it("restores the recording state when the window reloads", async () => {
