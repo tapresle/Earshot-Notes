@@ -123,6 +123,19 @@ body {
   border-left: 1px solid var(--border);
 }
 
+/* The jump control floats at the bottom of the pane while the user has
+   scrolled up, so the transcript lines behind it stay readable. */
+.transcript-jump {
+  position: sticky;
+  bottom: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.transcript-jump .button {
+  box-shadow: 0 1px 4px var(--shadow);
+}
+
 .workspace {
   background: var(--surface-2);
   overflow-y: auto;
