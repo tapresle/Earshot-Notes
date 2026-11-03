@@ -65,13 +65,10 @@ export default function App() {
       .catch(() => setRecordingMeetingId(null));
   }, []);
 
-  // Recordings can also start and stop from the menu bar. One started there
-  // records a new meeting, which opens here so the window shows it. A
-  // recording of the open meeting started from this window needs nothing more.
-  useEffect(() => {
-    const unlisten = api.onRecordingChanged(({ meetingId }) => {
-      setRecordingMeetingId(meetingId);
-      if (meetingId === null || meetingId === selectedId) return;
+  // Opens a meeting in the meetings view: selects it, shows the full list it
+  // belongs to, and switches away from Settings or the setup checklist.
+  const openMeeting = useCallback(
+    (meetingId: number) => {
       api
         .getMeeting(meetingId)
         .then((meeting) => {
@@ -82,12 +79,38 @@ export default function App() {
           setSelection({ ids: [meeting.id], anchor: meeting.id });
           setView("meetings");
         })
-        .catch((error) => console.error("couldn't open the meeting recording from the menu bar", error));
+        .catch((error) => console.error("couldn't open the meeting from the menu bar", meetingId, error));
+    },
+    [updateMeetings],
+  );
+
+  // Recordings can also start and stop from the menu bar. One started there
+  // records a new meeting, which opens here so the window shows it. A
+  // recording of the open meeting started from this window needs nothing more.
+  useEffect(() => {
+    const unlisten = api.onRecordingChanged(({ meetingId }) => {
+      setRecordingMeetingId(meetingId);
+      if (meetingId === null || meetingId === selectedId) return;
+      openMeeting(meetingId);
     });
     return () => {
       unlisten.then((stop) => stop()).catch(() => {});
     };
-  }, [selectedId, updateMeetings]);
+  }, [selectedId, openMeeting]);
+
+  // A stop from the menu bar opens the meeting that stopped (#184), so the
+  // transcript and summary you just finished are in front of you. The
+  // window's own stop stays where it is, and a meeting already on screen
+  // needs nothing more.
+  useEffect(() => {
+    const unlisten = api.onMeetingOpen(({ meetingId }) => {
+      if (view === "meetings" && meetingId === selectedId) return;
+      openMeeting(meetingId);
+    });
+    return () => {
+      unlisten.then((stop) => stop()).catch(() => {});
+    };
+  }, [view, selectedId, openMeeting]);
 
   async function createMeeting() {
     setCreating(true);

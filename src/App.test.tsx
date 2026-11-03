@@ -267,6 +267,65 @@ describe("App", () => {
     });
   });
 
+  describe("stopping from the menu bar", () => {
+    /** The events a menu bar stop sends: the stop, then the meeting to open. */
+    function stopFromMenuBar(meetingId: number) {
+      emit("recording:changed", { meetingId: null });
+      emit("meeting:open", { meetingId });
+    }
+
+    it("opens the stopped meeting when another meeting is showing", async () => {
+      fakeBackend([seedMeeting(1, "Design sync"), seedMeeting(2, "Retro")]);
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
+      expect(await screen.findByLabelText("Meeting title")).toHaveValue("Design sync");
+
+      stopFromMenuBar(2);
+
+      await waitFor(() => expect(screen.getByLabelText("Meeting title")).toHaveValue("Retro"));
+    });
+
+    it("leaves Settings to open the stopped meeting", async () => {
+      fakeBackend([seedMeeting(1, "Design sync")]);
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
+      await user.click(within(sidebar()).getByRole("button", { name: "Settings" }));
+      await screen.findByRole("heading", { level: 1, name: "Settings" });
+
+      stopFromMenuBar(1);
+
+      expect(await screen.findByLabelText("Meeting title")).toHaveValue("Design sync");
+      expect(screen.queryByRole("heading", { level: 1, name: "Settings" })).not.toBeInTheDocument();
+    });
+
+    it("keeps the stopped meeting open when it's already the one showing", async () => {
+      fakeBackend([seedMeeting(1, "Design sync")]);
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
+      expect(await screen.findByLabelText("Meeting title")).toHaveValue("Design sync");
+
+      stopFromMenuBar(1);
+
+      expect(screen.getByLabelText("Meeting title")).toHaveValue("Design sync");
+    });
+
+    it("keeps the window where it is when stopping from the window", async () => {
+      fakeBackend([seedMeeting(1, "Design sync")]);
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(sidebar()).findByRole("button", { name: /Design sync/ }));
+      await user.click(await screen.findByRole("button", { name: "Start recording" }));
+
+      await user.click(await screen.findByRole("button", { name: "Stop recording" }));
+
+      expect(screen.getByLabelText("Meeting title")).toHaveValue("Design sync");
+      expect(screen.getByRole("button", { name: "Start recording" })).toBeInTheDocument();
+    });
+  });
+
   describe("recording new meetings", () => {
     it("doesn't start recording a new meeting when the setting is off", async () => {
       const backend = fakeBackend();
